@@ -1,0 +1,20 @@
+# 過去の手動バックアップフォルダ・テストファイルを除外
+bbbbb/
+test.py
+
+# Python キャッシュ
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller ビルド生成物
+build/
+dist/
+*.spec
+
+# 実行時の一時ファイル・出力動画・エラーログ
+**/temp/
+**/output/
+**/error_log.txt
+*.mp4
+*.wav
