@@ -106,3 +106,88 @@ PIXELS_PER_BEAT = 120           # 1拍あたりの等速下落ピクセル数
 # 🚀【解決】：扁平な縦長メタル楕円（16x36）表示のための最大画像キャンバスサイズ
 LEVER_WIDTH_DEFAULT = 48        
 LEVER_HEIGHT_DEFAULT = 48
+
+
+def hex_to_rgb(hex_str):
+    """HEXカラーコード文字列 (#RRGGBB または #RGB) を (R, G, B) タプルに変換します。"""
+    hex_str = hex_str.lstrip('#')
+    if len(hex_str) == 3:
+        hex_str = "".join(c * 2 for c in hex_str)
+    return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
+
+
+def get_layout_params(inst_type, scale=1.0):
+    """
+    楽器タイプ (16穴 / 12穴標準 / 12穴バス) と描画スケールに応じた
+    表示対象ホールインデックス・描画開始X座標・シフト補正量を一元計算して返します。
+    """
+    if "16穴" in inst_type:
+        visible_indices = list(range(16))
+        X_start_draw = 72.0 * scale
+        X_shift = 0.0
+        X_shift_notes = 0.0
+    elif "標準" in inst_type or "バス" in inst_type:
+        visible_indices = list(range(4, 16))
+        X_start_draw = 168.0 * scale
+        orig_x_start = (72 + 4 * W_PITCH) * scale
+        X_shift = orig_x_start - X_start_draw
+        X_shift_notes = X_SHIFT_12HOLE * scale
+    else:
+        visible_indices = list(range(16))
+        X_start_draw = 72.0 * scale
+        X_shift = 0.0
+        X_shift_notes = 0.0
+
+    return visible_indices, X_start_draw, X_shift, X_shift_notes
+
+
+def get_note_dest_x(note, inst_type, scale=1.0, start_tick=0):
+    """
+    指定された楽器タイプ・Tick位置での、着地目標穴内4分割領域の
+    最終着地X座標（シフト補正およびスケール連動済み）を一元計算して返します。
+    """
+    from harmonica_map import get_note_fingering_for_song
+    fingering = get_note_fingering_for_song(start_tick, note, inst_type)
+    if not fingering:
+        return 480.0 * scale
+
+    _, _, X_shift, _ = get_layout_params(inst_type, scale)
+
+    hole = fingering["hole"]
+    action = fingering["action"]
+    lever = fingering["lever"]
+
+    hole_idx = hole - 1
+    W_pitch_s = W_PITCH * scale
+    center_x_absolute = (72.0 * scale) + (hole_idx * W_pitch_s) + (W_pitch_s / 2.0)
+
+    if hole == 16:
+        pattern = 3
+    elif hole in [4, 8, 12]:
+        pattern = 2
+    else:
+        pattern = 1
+
+    if pattern == 1:
+        if action == "吹" and lever == "OFF": offset = -18.0 * scale
+        elif action == "吹" and lever == "ON":  offset = -6.0 * scale
+        elif action == "吸" and lever == "OFF": offset = 6.0 * scale
+        elif action == "吸" and lever == "ON":  offset = 18.0 * scale
+        else: offset = 0.0
+    elif pattern == 2:
+        if action == "吸" and lever == "OFF": offset = -18.0 * scale
+        elif action == "吸" and lever == "ON":  offset = -6.0 * scale
+        elif action == "吹" and lever == "OFF": offset = 6.0 * scale
+        elif action == "吹" and lever == "ON":  offset = 18.0 * scale
+        else: offset = 0.0
+    elif pattern == 3:
+        if action == "吸" and lever == "OFF": offset = -18.0 * scale
+        elif action == "吹" and lever == "OFF": offset = -6.0 * scale
+        elif action == "吹" and lever == "ON":  offset = 6.0 * scale
+        elif action == "吸" and lever == "ON":  offset = 18.0 * scale
+        else: offset = 0.0
+    else:
+        offset = 0.0
+
+    dest_x = center_x_absolute + offset - X_shift
+    return dest_x

@@ -657,7 +657,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             color_blow_hex=self.color_blow_hex,  
             color_draw_hex=self.color_draw_hex,
             aspect_ratio=aspect_ratio,
-            use_skin=use_skin
+            use_skin=use_skin,
+            controller=self
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック

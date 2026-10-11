@@ -556,16 +556,4 @@ class PlaybackController:
             self.last_update_time = time.time()
             self.current_tick = self.midi_engine.accumulated_ticks
             self.update_clock()
-            print("[System] 再生ストリームの物理発音を検知 ➔ UIタイマーループ点火")
-
-    # ロード・変え指設定変更時に、全楽譜ノーツ(midi_notes)に解決済み運指をキャッシュインする関数
-    def rebind_all_notes_fingerings(self):
-        """すべての楽譜ノーツに対して、解決済み運指をあらかじめインパイル(埋め込み)します。"""
-        if not self.midi_notes:
-            return
-        inst_type = self.gui.inst_menu.get()
-        for note_data in self.midi_notes:
-            start_tick = note_data.get("start_tick", 0)
-            note_val = note_data["note"]
-            note_data["fingering"] = harmonica_map.get_note_fingering_for_song(start_tick, note_val, inst_type)
-        print("[システム] すべて of 音符オブジェクトへの運指プリ・バインドが完了しました。")
+            print("[System] 再生ストリームの物理発音を検知 ➔ UIタイマーループ点火")

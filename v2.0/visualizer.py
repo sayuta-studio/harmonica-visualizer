@@ -20,7 +20,8 @@ from config import (
     COLOR_BLOW_RGB, COLOR_BLOW_INNER, COLOR_DRAW_RGB, COLOR_DRAW_INNER,
     W_PITCH, D_HOLE, CANVAS_WIDTH, CANVAS_HEIGHT,
     get_canvas_height_by_ratio, get_y_layout_params, get_portable_path,
-    LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT
+    LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT,
+    get_layout_params, get_note_dest_x
 )
 from harmonica_map import (
     is_note_in_range, get_note_fingering, get_note_name, FINGERING_CANDIDATES,
@@ -32,79 +33,6 @@ _CACHE = {
     "base_image": None,   
 }
 
-def get_layout_params(inst_type, scale=1.0):
-    W_pitch_s = W_PITCH * scale
-    
-    if "16穴" in inst_type:
-        visible_indices = list(range(16))
-        X_start_draw = 72 * scale
-        X_shift = 0.0
-        X_shift_notes = 0.0             
-    elif "標準" in inst_type or "バス" in inst_type:
-        visible_indices = list(range(4, 16)) 
-        X_start_draw = 168.0 * scale
-        plate_w = (12 * W_PITCH + 30) * scale
-        orig_x_start = (72 + 4 * W_PITCH) * scale
-        X_shift = orig_x_start - X_start_draw
-        X_shift_notes = 96.0 * scale    
-    else:
-        visible_indices = list(range(16))
-        X_start_draw = 72 * scale
-        X_shift = 0.0
-        X_shift_notes = 0.0
-        
-    return visible_indices, X_start_draw, X_shift, X_shift_notes
-
-
-def get_note_dest_x(note, inst_type, scale=1.0, start_tick=0):
-    """
-    指定された楽器タイプでの、着地目標穴内4分割領域（A,B,C,D）の
-    最終着地X座標（シフト補正およびスケール連動済み）を正確に計算します。
-    """
-    fingering = get_note_fingering_for_song(start_tick, note, inst_type) 
-    if not fingering:
-        return 480 * scale
-    
-    _, _, X_shift, _ = get_layout_params(inst_type, scale)
-    
-    hole = fingering["hole"]
-    action = fingering["action"]
-    lever = fingering["lever"]
-    
-    hole_idx = hole - 1
-    W_pitch_s = W_PITCH * scale
-    center_x_absolute = (72 * scale) + (hole_idx * W_pitch_s) + (W_pitch_s / 2)
-    
-    if hole == 16:
-        pattern = 3
-    elif hole in [4, 8, 12]:
-        pattern = 2
-    else:
-        pattern = 1
-        
-    if pattern == 1:
-        if action == "吹" and lever == "OFF": offset = -18 * scale
-        elif action == "吹" and lever == "ON":  offset = -6 * scale
-        elif action == "吸" and lever == "OFF": offset = 6 * scale
-        elif action == "吸" and lever == "ON":  offset = 18 * scale
-        else: offset = 0
-    elif pattern == 2:
-        if action == "吸" and lever == "OFF": offset = -18 * scale
-        elif action == "吸" and lever == "ON":  offset = -6 * scale
-        elif action == "吹" and lever == "OFF": offset = 6 * scale
-        elif action == "吹" and lever == "ON":  offset = 18 * scale
-        else: offset = 0
-    elif pattern == 3:
-        if action == "吸" and lever == "OFF": offset = -18 * scale
-        elif action == "吹" and lever == "OFF": offset = -6 * scale
-        elif action == "吹" and lever == "ON":  offset = 6 * scale
-        elif action == "吸" and lever == "ON":  offset = 18 * scale
-        else: offset = 0
-    else:
-        offset = 0
-        
-    dest_x = center_x_absolute + offset - X_shift
-    return dest_x
 
 
 def draw_bordered_text_canvas(canvas, position, text, text_color, font=("Arial", 11, "bold"), border_width=2, tags="text"):

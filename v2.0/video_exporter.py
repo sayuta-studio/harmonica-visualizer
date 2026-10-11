@@ -44,7 +44,8 @@ from config import (
     COLOR_DRAW_RGB, COLOR_DRAW_INNER,
     W_PITCH, D_HOLE, CANVAS_WIDTH, CANVAS_HEIGHT,
     get_y_layout_params, get_portable_path,
-    LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT
+    LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT,
+    get_layout_params, get_note_dest_x, hex_to_rgb
 )
 from harmonica_map import (
     is_note_in_range, get_note_name, get_note_fingering_for_song
@@ -79,77 +80,6 @@ def resolve_resolution_and_scale(res_mode, aspect_ratio):
 
     return width, height, scale
 
-
-def get_layout_params_exporter(inst_type, scale=1.0):
-    W_pitch_s = W_PITCH * scale
-    
-    if "16穴" in inst_type:
-        visible_indices = list(range(16))
-        X_start_draw = 72 * scale
-        X_shift = 0.0
-        X_shift_notes = 0.0
-    elif "標準" in inst_type or "バス" in inst_type:
-        visible_indices = list(range(4, 16)) 
-        X_start_draw = 168.0 * scale
-        plate_w = (12 * W_PITCH + 30) * scale
-        orig_x_start = (72 + 4 * W_PITCH) * scale
-        X_shift = orig_x_start - X_start_draw
-        X_shift_notes = 96.0 * scale
-    else:
-        visible_indices = list(range(16))
-        X_start_draw = 72 * scale
-        X_shift = 0.0
-        X_shift_notes = 0.0
-        
-    return visible_indices, X_start_draw, X_shift, X_shift_notes
-
-
-def get_note_dest_x_exporter(note, inst_type, scale=1.0, start_tick=0):
-    """video_exporter専用：指定された楽器タイプでの、最終着地X座標を正確に計算します。"""
-    fingering = get_note_fingering_for_song(start_tick, note, inst_type)
-    if not fingering:
-        return 480 * scale
-    
-    _, X_start_draw, X_shift, _ = get_layout_params_exporter(inst_type, scale)
-    
-    hole = fingering["hole"]
-    action = fingering["action"]
-    lever = fingering["lever"]
-    
-    hole_idx = hole - 1
-    W_pitch_s = W_PITCH * scale
-    center_x_absolute = (72 * scale) + (hole_idx * W_pitch_s) + (W_pitch_s / 2)
-    
-    if hole == 16:
-        pattern = 3
-    elif hole in [4, 8, 12]:
-        pattern = 2
-    else:
-        pattern = 1
-        
-    if pattern == 1:
-        if action == "吹" and lever == "OFF": offset = -18 * scale
-        elif action == "吹" and lever == "ON":  offset = -6 * scale
-        elif action == "吸" and lever == "OFF": offset = 6 * scale
-        elif action == "吸" and lever == "ON":  offset = 18 * scale
-        else: offset = 0
-    elif pattern == 2:
-        if action == "吸" and lever == "OFF": offset = -18 * scale
-        elif action == "吸" and lever == "ON":  offset = -6 * scale
-        elif action == "吹" and lever == "OFF": offset = 6 * scale
-        elif action == "吹" and lever == "ON":  offset = 18 * scale
-        else: offset = 0
-    elif pattern == 3:
-        if action == "吸" and lever == "OFF": offset = -18 * scale
-        elif action == "吹" and lever == "OFF": offset = -6 * scale
-        elif action == "吹" and lever == "ON":  offset = 6 * scale
-        elif action == "吸" and lever == "ON":  offset = 18 * scale
-        else: offset = 0
-    else:
-        offset = 0
-        
-    dest_x = center_x_absolute + offset - X_shift
-    return dest_x
 
 
 def get_truetype_font(font_name, size):
@@ -201,13 +131,6 @@ def draw_bordered_text_pillow(draw, position, text, text_color, font, border_wid
     draw.text((x, y), text, fill=text_color, font=font, anchor="mm")
 
 
-def hex_to_rgb_exporter(hex_str):
-    hex_str = hex_str.lstrip('#')
-    if len(hex_str) == 3:
-        hex_str = "".join(c*2 for c in hex_str)
-    return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
-
-
 def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, inst_type, lang_seg_value, 
                                          is_hole_num_on, is_legend_on, is_notes_on, is_grid_on,
                                          note_opacity_value, midi_notes=None, current_time=0.0, current_bpm=120.0, 
@@ -230,12 +153,13 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     W_pitch_s = W_PITCH * scale
     D_hole_s = D_HOLE * scale
 
-    visible_indices, X_start_draw, X_shift, X_shift_notes = get_layout_params_exporter(inst_type, scale)
+    visible_indices, X_start_draw, X_shift, X_shift_notes = get_layout_params(inst_type, scale)
     N_visible = len(visible_indices)
     total_width = N_visible * W_pitch_s
 
-    color_blow_rgb = hex_to_rgb_exporter(color_blow_hex)
-    color_draw_rgb = hex_to_rgb_exporter(color_draw_hex)
+    color_blow_rgb = hex_to_rgb(color_blow_hex)
+    color_draw_rgb = hex_to_rgb(color_draw_hex)
+
 
     cache_key = f"{inst_type}_{canvas_bg_color}_{is_notes_on}_{is_grid_on}_{width}_{height}"
 
@@ -604,21 +528,18 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     if not midi_notes:
         return bgr_frame
 
-    color_blow_bgr = hex_to_rgb_exporter(color_blow_hex)[::-1]
-    color_draw_bgr = hex_to_rgb_exporter(color_draw_hex)[::-1]
+    color_blow_bgr = hex_to_rgb(color_blow_hex)[::-1]
+    color_draw_bgr = hex_to_rgb(color_draw_hex)[::-1]
 
     notes_overlay = np.zeros_like(bgr_frame)
     notes_mask = np.zeros((height, width), dtype=np.uint8)
 
-    # 古いハードコーディング（220, 405）を完全撤廃し、config の get_y_layout_params へ切り替え！
-    # これにより、消滅ライン（Y_HOLE_LINE = 445）がミリ単位で完全に同期し、ノーツがハーモニカの上端をスムーズに越え、
-    # 穴の入り口フチに吸着接触して美しく消え去るタイミングが完全に復元されました。
     y_center_full, y_collide_full, y_hole_line_full, height_converge_full = get_y_layout_params(height / scale)
     y_collide_s = y_collide_full * scale
     y_hole_line_s = y_hole_line_full * scale
     height_converge_s = height_converge_full * scale
 
-    _, _, _, X_shift_notes = get_layout_params_exporter(inst_type, scale)
+    _, _, _, X_shift_notes = get_layout_params(inst_type, scale)
     pixels_per_second = (220.0 * current_bpm) / 240.0
 
     for note_data in midi_notes:
@@ -672,7 +593,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 t_bottom = min(y_hole_line_s, y_bottom)
                 
                 if t_bottom > t_top:
-                    dest_x_center = get_note_dest_x_exporter(note_data["note"], inst_type, scale, start_tick=start_tick)
+                    dest_x_center = get_note_dest_x(note_data["note"], inst_type, scale, start_tick=start_tick)
                     dest_left = dest_x_center - 6 * scale
                     dest_right = dest_x_center + 6 * scale
                     
@@ -713,8 +634,6 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                     if y_top < y_collide_s:
                         pts_accum.append([int(x_top_l), int(t_top)])
                         if is_top_chamfer:
-                            # 🚀【解決（バグ根治）】：デバッグプリント残骸を廃止し、左上カドの面取り座標を安全に100%配列追加！
-                            # これにより、等速下落中のノーツの左上面取りエッジが歪まず、完全にシャープに描画されます。
                             pts_accum.append([lane_x_left, int(y_top + ch)])
                     else:
                         ratio_t_cap = ((y_top + ch_slope) - y_collide_s) / height_converge_s
@@ -766,7 +685,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               current_midi_path, status_label, export_btn, root_after,
                               ticks_per_beat=480, fps_mode="60 FPS",
                               color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                              aspect_ratio="16:9", use_skin=True):
+                              aspect_ratio="16:9", use_skin=True, controller=None):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -791,6 +710,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
         midi_name_only, _ = os.path.splitext(midi_filename)
         out_filename = f"{midi_name_only}.mp4"
     else:
+        midi_name_only = "chromatic_harmonica_output"
         out_filename = "chromatic_harmonica_output.mp4"
 
     temp_video_path = os.path.join(temp_dir, "temp_silent.mp4")
@@ -804,7 +724,17 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
     except Exception:
         opacity_val = 0.5
 
-    fps = 60 
+    try:
+        fps = int(str(fps_mode).split()[0])
+    except Exception:
+        fps = 60
+
+    ctrl = controller
+    if ctrl is None:
+        try:
+            ctrl = status_label.master.master.master.controller
+        except Exception:
+            ctrl = None
 
     def render_worker():
         try:
@@ -815,15 +745,15 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_writer = cv2.VideoWriter(temp_video_path, fourcc, fps, (width, height))
 
-            print(f"[Export] OpenCV高解像度ベクトル描画レンダリング開始: {width}x{height} (Scale: {scale}), 総フレーム: {total_frames}")
+            print(f"[Export] OpenCV高解像度ベクトル描画レンダリング開始: {width}x{height} (Scale: {scale}, FPS: {fps}), 総フレーム: {total_frames}")
 
             for frame_idx in range(total_frames):
                 try:
-                    if getattr(status_label.master.master.master.controller, "video_export_cancelled", False):
+                    if ctrl and getattr(ctrl, "video_export_cancelled", False):
                         print("[Export] レンダリングがユーザーによって正常に中止されました。")
                         video_writer.release()
                         if os.path.exists(temp_video_path): os.remove(temp_video_path)
-                        root_after(0, lambda: status_label.master.master.master.controller.on_export_finished_or_cancelled("cancelled"))
+                        root_after(0, lambda: ctrl.on_export_finished_or_cancelled("cancelled"))
                         return
                 except Exception:
                     pass
@@ -894,15 +824,13 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 text="🎵 高音質WAV音声を合成中...", text_color="#00ffcc"
             ))
 
-            try:
-                import sys
-                app = sys.modules['__main__']
-                measures_timeline_ref = status_label.master.master.master.controller.midi_engine.measures_timeline
-                ticks_per_beat_ref = status_label.master.master.controller.midi_engine.ticks_per_beat
-                metronome_pattern_ref = status_label.master.master.master.controller.midi_engine.metronome_pattern
-            except Exception:
+            if ctrl and hasattr(ctrl, "midi_engine"):
+                measures_timeline_ref = ctrl.midi_engine.measures_timeline
+                ticks_per_beat_ref = ctrl.midi_engine.ticks_per_beat
+                metronome_pattern_ref = ctrl.midi_engine.metronome_pattern
+            else:
                 measures_timeline_ref = None
-                ticks_per_beat_ref = 480
+                ticks_per_beat_ref = ticks_per_beat
                 metronome_pattern_ref = "標準（頭拍強調）"
 
             synthesize_midi_to_wav(
@@ -958,7 +886,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         text=f"🎉 エクスポート成功！\n'{os.path.basename(final_output_path)}'", 
                         text_color="#2b8c54"
                     ))
-                    root_after(0, lambda: status_label.master.master.master.controller.on_export_finished_or_cancelled("success"))
+                    if ctrl:
+                        root_after(0, lambda: ctrl.on_export_finished_or_cancelled("success"))
                 else:
                     raise subprocess.CalledProcessError(result.returncode, ffmpeg_cmd)
                     
@@ -978,13 +907,15 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                              f"音声: '{os.path.basename(fallback_audio_path)}'", 
                         text_color="#e0a300"
                     ))
-                    root_after(0, lambda: status_label.master.master.master.controller.on_export_finished_or_cancelled("success_split"))
+                    if ctrl:
+                        root_after(0, lambda: ctrl.on_export_finished_or_cancelled("success_split"))
                 except Exception as copy_err:
                     print(f"[致命的フォールバック不全] {copy_err}")
                     root_after(0, lambda: status_label.configure(
                         text="❌ 動画の保存（フォールバック）に完全に失敗しました", text_color="#ff5555"
                     ))
-                    root_after(0, lambda: status_label.master.master.master.controller.on_export_finished_or_cancelled("failed", str(copy_err)))
+                    if ctrl:
+                        root_after(0, lambda: ctrl.on_export_finished_or_cancelled("failed", str(copy_err)))
 
             try:
                 if os.path.exists(temp_video_path): os.remove(temp_video_path)
@@ -998,7 +929,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
             root_after(0, lambda e=error_details: status_label.configure(
                 text=f"❌ レンダリング失敗: {e[:30]}...", text_color="#ff5555"
             ))
-            root_after(0, lambda e=error_details: status_label.master.master.master.controller.on_export_finished_or_cancelled("failed", e))
+            if ctrl:
+                root_after(0, lambda e=error_details: ctrl.on_export_finished_or_cancelled("failed", e))
 
     t = threading.Thread(target=render_worker, daemon=True)
-    t.start()
+    t.start()
