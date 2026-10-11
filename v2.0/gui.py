@@ -55,78 +55,58 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         def create_sep(parent):
             return ctk.CTkLabel(parent, text="|", text_color="#3d3d3d", font=self.f_bold)
 
-        self.row1.grid_columnconfigure(5, weight=1) 
-        
-        # --- ■ 1行目：左側グループ（左詰め） ---
+        # --- ■ 1行目：左側グループ（ファイル・固定幅曲名・パート選択・パート再生モード） ---
         self.file_btn = ctk.CTkButton(self.row1, text="MIDIを開く", width=95, font=self.f_jp_bold, command=self.controller.on_open_file)
-        self.file_btn.grid(row=0, column=0, padx=(0, 8), sticky="w")
+        self.file_btn.pack(side="left", padx=(0, 8))
 
-        # ファイル名表示
-        self.file_label = ctk.CTkLabel(self.row1, text="demo.mid", text_color="#1f538d", font=self.f_bold, anchor="w")
-        self.file_label.grid(row=0, column=1, padx=(0, 10), sticky="w")
+        # 曲名表示ボックス（幅220px完全固定：長い曲名でも右側のボタン群が1ピクセルも動かない構造）
+        self.file_label_box = ctk.CTkFrame(self.row1, width=220, height=32, fg_color="transparent")
+        self.file_label_box.pack(side="left", padx=(0, 6))
+        self.file_label_box.pack_propagate(False)
+
+        self.file_label = ctk.CTkLabel(self.file_label_box, text="demo.mid", text_color="#1f538d", font=self.f_bold, anchor="w")
+        self.file_label.pack(side="left", fill="both", expand=True)
 
         self.sep_r1_0 = create_sep(self.row1)
-        self.sep_r1_0.grid(row=0, column=2, padx=(2, 8), sticky="w")
+        self.sep_r1_0.pack(side="left", padx=(2, 10))
 
         # マルチパートMIDI：主旋律パート選択 ＆ パート再生モード
         self.part_select_btn = ctk.CTkButton(
-            self.row1, text="🎼 パート選択", width=108, font=self.f_jp_bold,
+            self.row1, text="🎼 パート選択", width=112, font=self.f_jp_bold,
             fg_color="#2b5b84", hover_color="#1f4361",
             command=self.controller.open_part_select_dialog
         )
-        self.part_select_btn.grid(row=0, column=3, padx=(0, 6), sticky="w")
+        self.part_select_btn.pack(side="left", padx=(0, 8))
 
         self.part_play_mode_menu = ctk.CTkOptionMenu(
             self.row1, values=["全パート再生", "主旋律ソロ", "伴奏のみ(カラオケ)"],
-            width=152, font=self.f_jp_bold,
+            width=160, font=self.f_jp_bold,
             command=self.controller.on_part_play_mode_changed
         )
         self.part_play_mode_menu.set("全パート再生")
-        self.part_play_mode_menu.grid(row=0, column=4, padx=(0, 8), sticky="w")
+        self.part_play_mode_menu.pack(side="left", padx=(0, 8))
 
-        # --- ■ 1行目：右側グループ ---
-        self.audio_mode_menu = ctk.CTkOptionMenu(self.row1, values=["MIDI再生 (Windows標準音源)", "簡易再生 (内蔵軽量シンセ)", "ミュート"], width=190, font=self.f_jp_bold, command=self.controller.on_audio_mode_changed)
-        self.audio_mode_menu.grid(row=0, column=6, padx=2, sticky="e")
+        # --- ■ 1行目：右側グループ（右端完全固定：再生速度(%)設定） ---
+        self.row1_right = ctk.CTkFrame(self.row1, fg_color="transparent")
+        self.row1_right.pack(side="right", padx=(0, 10))
 
-        self.sep_r1_1 = create_sep(self.row1)
-        self.sep_r1_1.grid(row=0, column=7, padx=10, sticky="e")
+        self.bpm_title_label = ctk.CTkLabel(self.row1_right, text="再生速度(%):", text_color="#aaaaaa", font=self.f_jp_bold)
+        self.bpm_title_label.pack(side="left", padx=(0, 4))
 
-        # 小節ジャンプ
-        self.jump_btn = ctk.CTkButton(self.row1, text="Go", width=30, font=self.f_bold, command=self.controller.on_jump_measure)
-        self.jump_btn.grid(row=0, column=11, padx=2, sticky="e")
+        self.bpm_minus_btn = ctk.CTkButton(self.row1_right, text="-5%", width=38, font=self.f_bold, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.controller.step_speed_percent(-5))
+        self.bpm_minus_btn.pack(side="left", padx=2)
 
-        self.jump_label = ctk.CTkLabel(self.row1, text=" / 1 小節", text_color="#aaaaaa", font=self.f_jp_bold)
-        self.jump_label.grid(row=0, column=10, padx=2, sticky="e")
-
-        self.jump_entry = ctk.CTkEntry(self.row1, width=38, font=self.f_norm)
-        self.jump_entry.insert(0, "1")
-        self.jump_entry.grid(row=0, column=9, padx=2, sticky="e")
-        self.jump_entry.bind("<Return>", lambda e: self.controller.on_jump_measure())
-
-        self.jump_title_lbl = ctk.CTkLabel(self.row1, text="小節ジャンプ:", text_color="#aaaaaa", font=self.f_jp_bold)
-        self.jump_title_lbl.grid(row=0, column=8, padx=0, sticky="e")
-
-        self.sep_r1_2 = create_sep(self.row1)
-        self.sep_r1_2.grid(row=0, column=12, padx=10, sticky="e")
-
-        # 再生速度(%)設定
-        self.bpm_title_label = ctk.CTkLabel(self.row1, text="再生速度(%):", text_color="#aaaaaa", font=self.f_jp_bold)
-        self.bpm_title_label.grid(row=0, column=13, padx=2, sticky="e")
-
-        self.bpm_minus_btn = ctk.CTkButton(self.row1, text="-5%", width=36, font=self.f_bold, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.controller.step_speed_percent(-5))
-        self.bpm_minus_btn.grid(row=0, column=14, padx=1, sticky="e")
-
-        self.bpm_entry = ctk.CTkEntry(self.row1, width=45, font=self.f_norm, justify="center")
+        self.bpm_entry = ctk.CTkEntry(self.row1_right, width=48, font=self.f_norm, justify="center")
         self.bpm_entry.insert(0, "100")
-        self.bpm_entry.grid(row=0, column=15, padx=1, sticky="e")
+        self.bpm_entry.pack(side="left", padx=2)
         self.bpm_entry.bind("<Return>", lambda e: self.controller.apply_bpm())
         self.bpm_entry.bind("<FocusOut>", lambda e: self.controller.apply_bpm())
 
-        self.bpm_plus_btn = ctk.CTkButton(self.row1, text="+5%", width=36, font=self.f_bold, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.controller.step_speed_percent(5))
-        self.bpm_plus_btn.grid(row=0, column=16, padx=1, sticky="e")
+        self.bpm_plus_btn = ctk.CTkButton(self.row1_right, text="+5%", width=38, font=self.f_bold, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.controller.step_speed_percent(5))
+        self.bpm_plus_btn.pack(side="left", padx=2)
 
-        self.default_bpm_btn = ctk.CTkButton(self.row1, text="100%", width=46, font=self.f_norm, command=self.controller.reset_bpm)
-        self.default_bpm_btn.grid(row=0, column=17, padx=(4, 0), sticky="e")
+        self.default_bpm_btn = ctk.CTkButton(self.row1_right, text="100%", width=48, font=self.f_norm, command=self.controller.reset_bpm)
+        self.default_bpm_btn.pack(side="left", padx=(6, 0))
 
 
         # --- ■ 2行目 (中段：トランスポート ➔ シークタイムライン ➔ LCDステータス液晶) ---
@@ -182,81 +162,55 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.lbl_lcd_bpm.pack(side="left", padx=(8, 2))
 
 
-        # --- ■ 3行目 (下段：演奏設定 ➔ 高機能ABループ数値) ---
-        self.row3.grid_columnconfigure(14, weight=1)
+        # --- ■ 3行目 (下段：小節ジャンプ ＆ 高機能A-Bループ操作を一括集約) ---
+        self.jump_title_lbl = ctk.CTkLabel(self.row3, text="小節ジャンプ:", text_color="#aaaaaa", font=self.f_jp_bold)
+        self.jump_title_lbl.pack(side="left", padx=(0, 4))
 
-        self.metro_lbl_title = ctk.CTkLabel(self.row3, text="メトロノーム:", text_color="#aaaaaa", font=self.f_jp_bold)
-        self.metro_lbl_title.grid(row=0, column=0, padx=(0, 5), sticky="w")
-        
-        self.metro_menu = ctk.CTkOptionMenu(
-            self.row3, 
-            values=["標準（頭拍強調）", "小節頭のみ", "強調なし全拍", "なし"], 
-            width=135, 
-            font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm, 
-            command=self.controller.on_metro_menu_changed
-        )
-        self.metro_menu.grid(row=0, column=1, padx=(0, 10), sticky="w")
+        self.jump_entry = ctk.CTkEntry(self.row3, width=42, font=self.f_norm, justify="center")
+        self.jump_entry.insert(0, "1")
+        self.jump_entry.pack(side="left", padx=2)
+        self.jump_entry.bind("<Return>", lambda e: self.controller.on_jump_measure())
 
-        self.count_in_lbl_title = ctk.CTkLabel(self.row3, text="カウントイン:", text_color="#aaaaaa", font=self.f_jp_bold)
-        self.count_in_lbl_title.grid(row=0, column=2, padx=(0, 5), sticky="w")
-        
-        self.count_in_menu = ctk.CTkOptionMenu(
-            self.row3, 
-            values=["0 小節", "1 小節", "2 小節"], 
-            width=80, 
-            font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm, 
-            command=self.controller.on_count_in_menu_changed
-        )
-        self.count_in_menu.set("1 小節")
-        self.count_in_menu.grid(row=0, column=3, padx=(0, 10), sticky="w")
+        self.jump_label = ctk.CTkLabel(self.row3, text=" / 1 小節", text_color="#aaaaaa", font=self.f_jp_bold)
+        self.jump_label.pack(side="left", padx=(2, 4))
+
+        self.jump_btn = ctk.CTkButton(self.row3, text="Go", width=38, font=self.f_bold, command=self.controller.on_jump_measure)
+        self.jump_btn.pack(side="left", padx=(2, 8))
 
         self.sep_r3_1 = create_sep(self.row3)
-        self.sep_r3_1.grid(row=0, column=4, padx=10)
+        self.sep_r3_1.pack(side="left", padx=12)
 
-        # ABループ有効トグルスイッチ
+        # ABループ有効トグルスイッチ ＆ A点・B点小節指定
         self.cb_loop = ctk.CTkSwitch(self.row3, text="A-Bループ", font=self.f_jp_bold, command=self.controller.on_loop_toggle)
-        self.cb_loop.grid(row=0, column=5, padx=(0, 8), sticky="w")
+        self.cb_loop.pack(side="left", padx=(0, 10))
 
-        # ABループの直接小節数値指定Entry
-        self.btn_set_a = ctk.CTkButton(self.row3, text="A点設定", width=55, font=self.f_jp_bold, command=self.controller.set_loop_a_at_current)
-        self.btn_set_a.grid(row=0, column=6, padx=2, sticky="w")
+        self.btn_set_a = ctk.CTkButton(self.row3, text="A点設定", width=60, font=self.f_jp_bold, command=self.controller.set_loop_a_at_current)
+        self.btn_set_a.pack(side="left", padx=2)
         
-        self.loop_a_entry = ctk.CTkEntry(self.row3, width=32, font=self.f_norm)
+        self.loop_a_entry = ctk.CTkEntry(self.row3, width=38, font=self.f_norm, justify="center")
         self.loop_a_entry.insert(0, "1")
-        self.loop_a_entry.grid(row=0, column=7, padx=2, sticky="w")
+        self.loop_a_entry.pack(side="left", padx=2)
         self.loop_a_entry.bind("<Return>", lambda e: self.controller.on_loop_entry_changed())
 
-        # A点手入力Entryの横ラベル
         self.loop_a_lbl = ctk.CTkLabel(self.row3, text="小節頭", text_color="#00ffcc", font=self.f_jp_bold)
-        self.loop_a_lbl.grid(row=0, column=8, padx=(2, 8), sticky="w")
+        self.loop_a_lbl.pack(side="left", padx=(2, 6))
 
-        self.btn_set_b = ctk.CTkButton(self.row3, text="B点設定", width=55, font=self.f_jp_bold, command=self.controller.set_loop_b_at_current)
-        self.btn_set_b.grid(row=0, column=9, padx=2, sticky="w")
+        self.loop_tilde_lbl = ctk.CTkLabel(self.row3, text="〜", text_color="#aaaaaa", font=self.f_jp_bold)
+        self.loop_tilde_lbl.pack(side="left", padx=4)
 
-        self.loop_b_entry = ctk.CTkEntry(self.row3, width=32, font=self.f_norm)
+        self.btn_set_b = ctk.CTkButton(self.row3, text="B点設定", width=60, font=self.f_jp_bold, command=self.controller.set_loop_b_at_current)
+        self.btn_set_b.pack(side="left", padx=2)
+
+        self.loop_b_entry = ctk.CTkEntry(self.row3, width=38, font=self.f_norm, justify="center")
         self.loop_b_entry.insert(0, "12")
-        self.loop_b_entry.grid(row=0, column=10, padx=2, sticky="w")
+        self.loop_b_entry.pack(side="left", padx=2)
         self.loop_b_entry.bind("<Return>", lambda e: self.controller.on_loop_entry_changed())
 
-        # B点手入力Entryの横ラベル
         self.loop_b_lbl = ctk.CTkLabel(self.row3, text="小節末尾", text_color="#00ffcc", font=self.f_jp_bold)
-        self.loop_b_lbl.grid(row=0, column=11, padx=(2, 8), sticky="w")
+        self.loop_b_lbl.pack(side="left", padx=(2, 10))
 
-        self.btn_clear_loop = ctk.CTkButton(self.row3, text="ループ解除", width=65, fg_color="#555555", hover_color="#444444", font=self.f_jp_bold, command=self.controller.reset_loop_points)
-        self.btn_clear_loop.grid(row=0, column=12, padx=(0, 15), sticky="w")
-
-        self.sep_r3_2 = create_sep(self.row3)
-        self.sep_r3_2.grid(row=0, column=13, padx=10)
-
-        # 音量スライダー
-        self.volume_label = ctk.CTkLabel(self.row3, text="音量 (簡易再生時のみ): 80%", text_color="#aaaaaa", font=self.f_jp_bold)
-        self.volume_label.grid(row=0, column=15, padx=(0, 5), sticky="e")
-
-        self.volume_slider = ctk.CTkSlider(self.row3, from_=0.0, to=1.0, width=100, command=self.controller.on_volume_change)
-        self.volume_slider.set(0.8)
-        self.volume_slider.grid(row=0, column=16, padx=(0, 10), sticky="e")
+        self.btn_clear_loop = ctk.CTkButton(self.row3, text="ループ解除", width=70, fg_color="#555555", hover_color="#444444", font=self.f_jp_bold, command=self.controller.reset_loop_points)
+        self.btn_clear_loop.pack(side="left", padx=(2, 0))
 
 
         # ==========================================
@@ -299,60 +253,114 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.tab_export_frame = ctk.CTkFrame(self.right_frame, fg_color="transparent")
 
         # ======================================================================
-        # 🟢 タブ1：【🎵 練習】 (楽器・パート・練習ガイド・運指エディタ)
+        # 🟢 タブ1：【🎵 練習】 (楽器・音源・メトロノーム・運指エディタ)
         # ======================================================================
         self.practice_group = ctk.CTkFrame(self.tab_practice_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.practice_group.pack(fill="x", padx=12, pady=(6, 8))
+        self.practice_group.pack(fill="x", padx=12, pady=(4, 5))
 
         inst_menu_label = ctk.CTkLabel(self.practice_group, text="🎛️ 楽器・音名表記設定:", font=self.f_jp_bold)
-        inst_menu_label.pack(anchor="w", padx=15, pady=(10, 4))
+        inst_menu_label.pack(anchor="w", padx=15, pady=(8, 3))
 
-        inst_sub_lbl = ctk.CTkLabel(self.practice_group, text="使用ハーモニカ:", font=self.f_jp_bold, text_color="#aaaaaa")
-        inst_sub_lbl.pack(anchor="w", padx=15, pady=(2, 1))
-
+        inst_row = ctk.CTkFrame(self.practice_group, fg_color="transparent")
+        inst_row.pack(fill="x", padx=15, pady=2)
+        ctk.CTkLabel(inst_row, text="ハーモニカ:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
         self.inst_menu = ctk.CTkOptionMenu(
-            self.practice_group,
+            inst_row,
             values=["16穴 (C3-D7)", "12穴 標準 (C4-D7)", "12穴 バス (C1-D4)"],
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
             command=self.controller.on_setting_changed
         )
-        self.inst_menu.pack(fill="x", padx=15, pady=(0, 8))
+        self.inst_menu.pack(side="right", fill="x", expand=True)
 
-        lang_sub_lbl = ctk.CTkLabel(self.practice_group, text="音名表記スタイル:", font=self.f_jp_bold, text_color="#aaaaaa")
-        lang_sub_lbl.pack(anchor="w", padx=15, pady=(2, 1))
-
+        lang_row = ctk.CTkFrame(self.practice_group, fg_color="transparent")
+        lang_row.pack(fill="x", padx=15, pady=(2, 8))
+        ctk.CTkLabel(lang_row, text="音名表記:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
         self.lang_menu = ctk.CTkOptionMenu(
-            self.practice_group,
+            lang_row,
             values=["CDE", "ドレミ", "なし"],
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
             command=self.controller.on_setting_changed
         )
         self.lang_menu.set("CDE")
-        self.lang_menu.pack(fill="x", padx=15, pady=(0, 12))
+        self.lang_menu.pack(side="right", fill="x", expand=True)
+
+        # --- 🔊 音源・メトロノーム・カウントイン設定 ---
+        self.audio_metro_group = ctk.CTkFrame(self.tab_practice_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.audio_metro_group.pack(fill="x", padx=12, pady=5)
+
+        audio_metro_title = ctk.CTkLabel(self.audio_metro_group, text="🔊 音源・メトロノーム設定:", font=self.f_jp_bold)
+        audio_metro_title.pack(anchor="w", padx=15, pady=(8, 3))
+
+        metro_row = ctk.CTkFrame(self.audio_metro_group, fg_color="transparent")
+        metro_row.pack(fill="x", padx=15, pady=2)
+        self.metro_lbl_title = ctk.CTkLabel(metro_row, text="メトロノーム:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w")
+        self.metro_lbl_title.pack(side="left")
+        self.metro_menu = ctk.CTkOptionMenu(
+            metro_row,
+            values=["標準（頭拍強調）", "小節頭のみ", "強調なし全拍", "なし"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_metro_menu_changed
+        )
+        self.metro_menu.pack(side="right", fill="x", expand=True)
+
+        count_in_row = ctk.CTkFrame(self.audio_metro_group, fg_color="transparent")
+        count_in_row.pack(fill="x", padx=15, pady=2)
+        self.count_in_lbl_title = ctk.CTkLabel(count_in_row, text="カウントイン:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w")
+        self.count_in_lbl_title.pack(side="left")
+        self.count_in_menu = ctk.CTkOptionMenu(
+            count_in_row,
+            values=["0 小節", "1 小節", "2 小節"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_count_in_menu_changed
+        )
+        self.count_in_menu.set("1 小節")
+        self.count_in_menu.pack(side="right", fill="x", expand=True)
+
+        audio_row = ctk.CTkFrame(self.audio_metro_group, fg_color="transparent")
+        audio_row.pack(fill="x", padx=15, pady=2)
+        ctk.CTkLabel(audio_row, text="再生音源:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
+        self.audio_mode_menu = ctk.CTkOptionMenu(
+            audio_row,
+            values=["MIDI再生 (Windows標準音源)", "簡易再生 (内蔵軽量シンセ)", "ミュート"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_audio_mode_changed
+        )
+        self.audio_mode_menu.pack(side="right", fill="x", expand=True)
+
+        vol_row = ctk.CTkFrame(self.audio_metro_group, fg_color="transparent")
+        vol_row.pack(fill="x", padx=15, pady=(3, 8))
+        self.volume_label = ctk.CTkLabel(vol_row, text="音量 (簡易再生時のみ): 80%", text_color="#aaaaaa", font=self.f_jp_bold, anchor="w")
+        self.volume_label.pack(side="left")
+        self.volume_slider = ctk.CTkSlider(vol_row, from_=0.0, to=1.0, width=115, command=self.controller.on_volume_change)
+        self.volume_slider.set(0.8)
+        self.volume_slider.pack(side="right")
 
         # --- 🎯 運指エディタ ---
         self.editor_group = ctk.CTkFrame(self.tab_practice_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.editor_group.pack(fill="x", padx=12, pady=6)
+        self.editor_group.pack(fill="x", padx=12, pady=5)
 
         editor_lbl_title = ctk.CTkLabel(self.editor_group, text="🎯 運指エディタ (変え指設定):", font=self.f_jp_bold)
-        editor_lbl_title.pack(anchor="w", padx=15, pady=(10, 4))
+        editor_lbl_title.pack(anchor="w", padx=15, pady=(8, 3))
 
-        preset_sub_lbl = ctk.CTkLabel(self.editor_group, text="曲別ベース運指プリセット:", font=self.f_jp_bold, text_color="#aaaaaa")
-        preset_sub_lbl.pack(anchor="w", padx=15, pady=(2, 1))
-
+        preset_row = ctk.CTkFrame(self.editor_group, fg_color="transparent")
+        preset_row.pack(fill="x", padx=15, pady=2)
+        ctk.CTkLabel(preset_row, text="運指プリセット:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
         self.alt_fingering_menu = ctk.CTkOptionMenu(
-            self.editor_group,
+            preset_row,
             values=["スライド最小化", "スライド優先"],
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
             command=self.controller.on_fingering_preset_changed
         )
-        self.alt_fingering_menu.pack(fill="x", padx=15, pady=(0, 8))
+        self.alt_fingering_menu.pack(side="right", fill="x", expand=True)
 
         self.switch_frame_edit = ctk.CTkFrame(self.editor_group, fg_color="transparent")
-        self.switch_frame_edit.pack(fill="x", padx=15, pady=(4, 6))
+        self.switch_frame_edit.pack(fill="x", padx=15, pady=(4, 4))
 
         self.fingering_edit_switch = ctk.CTkSwitch(
             self.switch_frame_edit,
@@ -372,7 +380,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             hover_color="#8a3d3d",
             command=self.controller.on_reset_song_fingering
         )
-        self.reset_fingering_btn.pack(fill="x", padx=15, pady=(2, 12))
+        self.reset_fingering_btn.pack(fill="x", padx=15, pady=(2, 10))
 
         # ======================================================================
         # 🎨 タブ2：【🎨 デザイン】 (カラーテーマ・外部スキン・表示パーツON/OFF)

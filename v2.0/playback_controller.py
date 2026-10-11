@@ -160,18 +160,32 @@ class PlaybackController:
         sign = "-" if is_negative else ""
         self.gui.seek_label.configure(text=f"{sign}{cur_min:02d}:{cur_sec:02d} / {max_min:02d}:{max_sec:02d}")
 
+    def _truncate_by_visual_width(self, text, max_width=24):
+        """全角文字=2・半角文字=1として見た目幅を計算し、固定幅ボックスに収まるよう省略します。"""
+        import unicodedata
+        def char_w(c):
+            return 2 if unicodedata.east_asian_width(c) in ("F", "W", "A") else 1
+        total_w = sum(char_w(c) for c in text)
+        if total_w <= max_width:
+            return text
+        head = []
+        w = 0
+        for c in text:
+            cw = char_w(c)
+            if w + cw > max_width - 7:
+                break
+            head.append(c)
+            w += cw
+        return "".join(head) + "..." + text[-4:]
+
     def on_open_file(self):
-        """MIDIファイルのパース読み込み ＆ 30文字トリミング表示"""
+        """MIDIファイルのパース読み込み ＆ 固定幅トリミング表示"""
         self.on_stop()
         file_path = filedialog.askopenfilename(title="MIDIファイルを選択してください", filetypes=[("MIDI Files", "*.mid")])
         if not file_path: return
 
         filename = os.path.basename(file_path)
-        
-        if len(filename) > 30:
-            display_name = filename[:20] + "..." + filename[-6:]
-        else:
-            display_name = filename
+        display_name = self._truncate_by_visual_width(filename, max_width=24)
             
         self.gui.file_label.configure(text=display_name, text_color="#1f538d")
         self.current_midi_path = file_path
