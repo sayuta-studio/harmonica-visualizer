@@ -88,6 +88,13 @@ class SettingsController:
         self.gui.alt_fingering_menu.set(fingering_preset)
         harmonica_map.apply_fingering_preset(fingering_preset)
 
+        # ノーツ落下軌道の復元
+        traj_mode = loaded.get("ノーツ落下軌道", "3段階収束 (標準)")
+        if traj_mode not in ["3段階収束 (標準)", "垂直落下 (穴直上)"]:
+            traj_mode = "3段階収束 (標準)"
+        if hasattr(self.gui, "trajectory_menu"):
+            self.gui.trajectory_menu.set(traj_mode)
+
     def save_user_settings_txt(self):
         """settings_managerへの設定自動保存"""
         settings_manager.save_settings(
@@ -110,11 +117,12 @@ class SettingsController:
             fingering_preset=self.gui.alt_fingering_menu.get(),
             ratio=self.gui.ratio_menu.get(),
             use_skin="ON" if self.gui.use_skin_switch.get() else "OFF",
-            ring="ON" if self.gui.show_ring_switch.get() else "OFF"  # 🚀【追加】：レバーリング状態保存
+            ring="ON" if self.gui.show_ring_switch.get() else "OFF",
+            trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階収束 (標準)"
         )
 
     def on_setting_changed(self, value=None):
-        # トグル表示（ガイド線/ノーツ表示など）切り替え時に
+        # トグル表示（ガイド線/ノーツ表示/落下軌道など）切り替え時に
         # Canvas内の静的なグリッドや凡例キャッシュを強制的にデリート消去するロジックを肉付け。
         # これにより、再生中・一時停止中にかかわらず、スイッチのオン/オフが完全不整合なくリアルタイムに反映。
         if hasattr(self, "gui") and self.gui.canvas:
@@ -128,14 +136,16 @@ class SettingsController:
             self.gui.canvas.delete("cached_body")
             self.gui.canvas.delete("static_text")
             if hasattr(self.gui.canvas, "note_pool"):
-                # ノーツ表示ON/OFF切り替え時にオブジェクトプールを完全クリーンアップ
+                # ノーツ表示ON/OFF・軌道切り替え時にオブジェクトプールを完全クリーンアップ
                 for pool_item in self.gui.canvas.note_pool.values():
-                    if pool_item["rect_id"] is not None: self.gui.canvas.delete(pool_item["rect_id"])
-                    if pool_item["poly_id"] is not None: self.gui.canvas.delete(pool_item["poly_id"])
+                    for cid in pool_item.values():
+                        if cid is not None:
+                            self.gui.canvas.delete(cid)
                 self.gui.canvas.note_pool.clear()
 
         self.apply_bpm()
-        self.draw_harmonica_static()
+        if getattr(self, "play_state", "stopped") != "playing":
+            self.draw_harmonica_static()
         self.save_user_settings_txt()
 
     def sync_audio_mode_internals(self, mode_str):

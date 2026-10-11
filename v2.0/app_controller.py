@@ -400,6 +400,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         # 連動リング表示スイッチのON/OFF状態を引き渡す
         use_ring = bool(self.gui.show_ring_switch.get())
+        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階収束 (標準)"
 
         draw_harmonica_canvas(
             canvas=self.gui.canvas,
@@ -425,7 +426,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             use_skin=use_skin,
             scale=disp_scale,
             aspect_ratio=aspect_ratio,
-            use_ring=use_ring  # 中継
+            use_ring=use_ring,
+            trajectory_mode=trajectory_mode
         )
 
     def draw_harmonica_body_only(self, pitches):
@@ -576,6 +578,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.btn_clear_loop.configure(state=state)
         self.gui.inst_menu.configure(state=state)
         self.gui.lang_menu.configure(state=state)
+        if hasattr(self.gui, "trajectory_menu"):
+            self.gui.trajectory_menu.configure(state=state)
         self.gui.alt_fingering_menu.configure(state=state)
         self.gui.fingering_edit_switch.configure(state=state)
         if hasattr(self.gui, "reset_fingering_btn"):
@@ -664,6 +668,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         aspect_ratio = self.gui.ratio_menu.get()
         use_skin = bool(self.gui.use_skin_switch.get())
+        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階収束 (標準)"
 
         execute_video_export_core(
             midi_notes=midi_notes,
@@ -691,7 +696,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             color_draw_hex=self.color_draw_hex,
             aspect_ratio=aspect_ratio,
             use_skin=use_skin,
-            controller=self
+            controller=self,
+            trajectory_mode=trajectory_mode
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック
@@ -742,6 +748,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         aspect_ratio = self.gui.ratio_menu.get()
         use_skin = bool(self.gui.use_skin_switch.get())
+        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階収束 (標準)"
 
         execute_single_frame_preview(
             midi_notes=midi_notes,
@@ -761,7 +768,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             color_blow_hex=self.color_blow_hex,  
             color_draw_hex=self.color_draw_hex,
             aspect_ratio=aspect_ratio,
-            use_skin=use_skin
+            use_skin=use_skin,
+            trajectory_mode=trajectory_mode
         )
 
     def destroy(self):

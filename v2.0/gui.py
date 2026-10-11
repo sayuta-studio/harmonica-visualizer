@@ -290,7 +290,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.practice_group = ctk.CTkFrame(self.tab_practice_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
         self.practice_group.pack(fill="x", padx=12, pady=(4, 5))
 
-        inst_menu_label = ctk.CTkLabel(self.practice_group, text="🎛️ 楽器・音名表記設定:", font=self.f_jp_bold)
+        inst_menu_label = ctk.CTkLabel(self.practice_group, text="🎛️ 楽器・音名・軌道設定:", font=self.f_jp_bold)
         inst_menu_label.pack(anchor="w", padx=15, pady=(8, 3))
 
         inst_row = ctk.CTkFrame(self.practice_group, fg_color="transparent")
@@ -306,7 +306,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.inst_menu.pack(side="right", fill="x", expand=True)
 
         lang_row = ctk.CTkFrame(self.practice_group, fg_color="transparent")
-        lang_row.pack(fill="x", padx=15, pady=(2, 8))
+        lang_row.pack(fill="x", padx=15, pady=2)
         ctk.CTkLabel(lang_row, text="音名表記:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
         self.lang_menu = ctk.CTkOptionMenu(
             lang_row,
@@ -317,6 +317,19 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         )
         self.lang_menu.set("CDE")
         self.lang_menu.pack(side="right", fill="x", expand=True)
+
+        traj_row = ctk.CTkFrame(self.practice_group, fg_color="transparent")
+        traj_row.pack(fill="x", padx=15, pady=(2, 8))
+        ctk.CTkLabel(traj_row, text="ノーツ軌道:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
+        self.trajectory_menu = ctk.CTkOptionMenu(
+            traj_row,
+            values=["3段階収束 (標準)", "垂直落下 (穴直上)"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.trajectory_menu.set("3段階収束 (標準)")
+        self.trajectory_menu.pack(side="right", fill="x", expand=True)
 
         # --- 🔊 音源・音量設定 ---
         self.audio_metro_group = ctk.CTkFrame(self.tab_practice_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")

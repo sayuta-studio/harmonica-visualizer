@@ -485,6 +485,8 @@ class PlaybackController:
         
         self.gui.inst_menu.configure(state=state)
         self.gui.lang_menu.configure(state=state)
+        if hasattr(self.gui, "trajectory_menu"):
+            self.gui.trajectory_menu.configure(state="normal")
         
         self.gui.hole_num_switch.configure(state=state)
         self.gui.show_legend_switch.configure(state=state)

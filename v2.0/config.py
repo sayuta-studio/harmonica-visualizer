@@ -59,6 +59,22 @@ def get_y_layout_params(canvas_height):
     
     return y_center, y_collide_line, y_hole_line, height_converge
 
+
+def get_y_trajectory_params(canvas_height):
+    """
+    3段階収束（上部60音垂直 ➔ 斜め収束 ➔ 穴直上垂直）および垂直落下モード用の
+    Y軸座標パラメータを一元計算して返します。
+    """
+    y_offset = canvas_height - 540
+    y_center = 460 + y_offset
+    y_collide_line = 260 + y_offset
+    y_hole_line = 445 + y_offset
+    height_straight = HEIGHT_STRAIGHT_ABOVE_HOLE
+    y_straight_line = y_hole_line - height_straight  # 385 + y_offset (カバー上端415の30px上、穴上端445の60px上)
+    height_diag = y_straight_line - y_collide_line   # 125
+    return y_center, y_collide_line, y_straight_line, y_hole_line, height_diag, height_straight
+
+
 def get_visualizer_layout_params(ratio_str):
     """
     練習画面の最大表示枠 960x540 内に美しく収まるように、
@@ -99,8 +115,11 @@ X_SHIFT_12HOLE = 96.0
 
 # 衝突終点および収束境界スライドライントラック（穴の真上へ吸着）
 Y_COLLIDE_LINE = 260            # 等速下落と収束の境界
+HEIGHT_STRAIGHT_ABOVE_HOLE = 60 # 穴直上の垂直落下区間高さ (60px = 半拍分)
+Y_STRAIGHT_LINE = 385           # 斜め収束終了・穴直上垂直開始ライン (445 - 60 = 385)
 Y_HOLE_LINE = 445               # 物理穴の衝突終点（ホールの最上フチに完全同期）
-HEIGHT_CONVERGE = 185           # 収束高さ
+HEIGHT_CONVERGE = 185           # 収束領域合計高さ (445 - 260 = 185)
+HEIGHT_DIAG_CONVERGE = 125      # 斜め収束区間高さ (385 - 260 = 125)
 PIXELS_PER_BEAT = 120           # 1拍あたりの等速下落ピクセル数
 
 # 🚀【解決】：扁平な縦長メタル楕円（16x36）表示のための最大画像キャンバスサイズ

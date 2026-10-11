@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 from config import (
     COLOR_BLOW_RGB, COLOR_BLOW_INNER, COLOR_DRAW_RGB, COLOR_DRAW_INNER,
     W_PITCH, D_HOLE, CANVAS_WIDTH, CANVAS_HEIGHT,
-    get_canvas_height_by_ratio, get_y_layout_params, get_portable_path,
+    get_canvas_height_by_ratio, get_y_layout_params, get_y_trajectory_params, get_portable_path,
     LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT,
     get_layout_params, get_note_dest_x
 )
@@ -53,7 +53,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                           edit_mode_active=False,
                           last_edit_note=None, last_edit_fing=None,
                           use_skin=True, scale=1.0, aspect_ratio="16:9",
-                          use_ring=True):  
+                          use_ring=True, trajectory_mode="3段階収束 (標準)"):  
     """
     Pillowを一切経由せず、Tkinter Canvasのネイティブ命令だけで超高速描画。
     縮小フィットスケール scale および アスペクト比に応じたY軸平行移動を完全加算して描画。
@@ -64,14 +64,16 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
     # マルチアスペクト仮想フル高さ解決
     canvas_height_full = get_canvas_height_by_ratio(aspect_ratio)
     
-    # フル高さに応じた下部基準Y座標を解決
-    y_center_full, y_collide_full, y_hole_line_full, height_converge_full = get_y_layout_params(canvas_height_full)
+    # フル高さに応じた下部基準Y座標を解決（3段階収束＆垂直落下対応）
+    y_center_full, y_collide_full, y_straight_full, y_hole_line_full, height_diag_full, _ = get_y_trajectory_params(canvas_height_full)
 
     # スケールを掛け合わせて、表示用Canvas内にパーフェクトにフィット縮小！
     y_center_s = y_center_full * scale
     y_collide_s = y_collide_full * scale
+    y_straight_s = y_straight_full * scale
     y_hole_line_s = y_hole_line_full * scale
-    height_converge_s = height_converge_full * scale
+    height_diag_s = height_diag_full * scale
+    is_straight_mode = ("垂直落下" in str(trajectory_mode))
 
     visible_indices, X_start_draw, X_shift, X_shift_notes = get_layout_params(inst_type, scale)
     N_visible = len(visible_indices)
@@ -140,12 +142,29 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         
         if is_grid_on:
             guide_color = "#002200" if canvas_bg_color == "#00FF00" else "#1c1c1c"
-            for idx in range(58):
-                x_pos = (24 + idx * 16) * scale
-                canvas.create_line(x_pos, 0, x_pos, y_collide_s, fill=guide_color, tags="static_grid")
+            if is_straight_mode:
+                # 垂直落下モード：画面上端から穴上端まで各穴カラム境界＋穴内4分割ガイド線を描画
+                for k in range(N_visible):
+                    hx = X_start_draw + k * W_PITCH * scale
+                    for sub in (1, 2, 3):
+                        sx = hx + sub * 12 * scale
+                        canvas.create_line(sx, 0, sx, y_hole_line_s, fill=guide_color, tags="static_grid")
+                    canvas.create_line(hx, 0, hx, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
+                canvas.create_line(X_start_draw + total_width, 0, X_start_draw + total_width, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
+            else:
+                # 3段階収束モード：上部60音等幅グリッド + 穴直上の垂直助走区間ガイド線
+                for idx in range(58):
+                    x_pos = (24 + idx * 16) * scale
+                    canvas.create_line(x_pos, 0, x_pos, y_collide_s, fill=guide_color, tags="static_grid")
 
-            canvas.create_line(24 * scale, 0, 24 * scale, y_collide_s, fill=grid_line_color, tags="static_grid_border")
-            canvas.create_line(936 * scale, 0, 936 * scale, y_collide_s, fill=grid_line_color, tags="static_grid_border")
+                canvas.create_line(24 * scale, 0, 24 * scale, y_collide_s, fill=grid_line_color, tags="static_grid_border")
+                canvas.create_line(936 * scale, 0, 936 * scale, y_collide_s, fill=grid_line_color, tags="static_grid_border")
+
+                # 穴直上の垂直落下区間 (y_straight_s 〜 y_hole_line_s) の穴境界ガイド
+                canvas.create_line(X_start_draw, y_straight_s, X_start_draw + total_width, y_straight_s, fill=guide_color, tags="static_grid")
+                for k in range(N_visible + 1):
+                    hx = X_start_draw + k * W_PITCH * scale
+                    canvas.create_line(hx, y_straight_s, hx, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
 
         # マウスピース外部スキン貼り付け合成
         if use_skin and canvas.skin_cache.get("face"):
@@ -255,12 +274,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         )
     else:
         lever_fill = "#555555"
-        # 🚀【解決】：フォールバック（スキンOFF）時の表示でも、赤・黄を完全に全廃し、
-        # マウスピースと同調するステンレスシルバーカラー（ON時は陰影がついたシルバー #A9A9A9、OFF時は明るい #DCDCDC）に統合！
-        # シャフト開始座標をプレート右端に完全吸着させ、x1 >= x0 の逆転バグを物理的に完全根絶！
-        # さらにボタン頭の「扁平な縦長楕円（16x36比率）」を完全復元し、大ストロークの沈み込みを表現！
         if lever_pressed:
-            # 🚀 押し込みON時：軸x0=プレート右端(隙間0)、軸x1=プレート右端+6*scale（逆転しない）、3Dステンレスボタン左寄せ（X=3*scaleにペースト、隙間3pxで本体フチに超密着！）
             canvas.create_rectangle(
                 lever_x, y_center_s - 12 * scale,
                 lever_x + 6 * scale, y_center_s + 12 * scale,
@@ -272,7 +286,6 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                 fill="#A9A9A9", outline="#4d4d4d", width=1, tags="dynamic_lever"
             )
         else:
-            # 🚀 OFF通常時：軸x0=プレート右端(隙間0)、軸x1=プレート右端+24*scale、3Dステンレスボタン右寄せ（X=22*scaleにペースト、隙間22pxで本体から大きく離す！）
             canvas.create_rectangle(
                 lever_x, y_center_s - 12 * scale,
                 lever_x + 24 * scale, y_center_s + 12 * scale,
@@ -390,85 +403,132 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     note_in_range = is_note_in_range(note_val, inst_type)
                     
                     if key not in canvas.note_pool:
-                        canvas.note_pool[key] = {"rect_id": None, "poly_id": None}
+                        canvas.note_pool[key] = {"rect_id": None, "poly_id": None, "lower_rect_id": None}
                     pool_item = canvas.note_pool[key]
+                    if "lower_rect_id" not in pool_item:
+                        pool_item["lower_rect_id"] = None
                     
-                    tag_list_rect = ["note"]
-                    if edit_tag: tag_list_rect.append(edit_tag)
-                    
-                    v_top = max(0, y_top)
-                    v_bottom = min(y_collide_s, y_bottom)
-                    if v_bottom > v_top:
-                        if pool_item["rect_id"] is None:
-                            pool_item["rect_id"] = canvas.create_rectangle(
-                                lane_x_left, v_top, lane_x_right, v_bottom,
-                                fill=col_hex, outline="", tags=tuple(tag_list_rect)
-                            )
-                        else:
-                            canvas.coords(pool_item["rect_id"], lane_x_left, v_top, lane_x_right, v_bottom)
-                            canvas.itemconfig(pool_item["rect_id"], fill=col_hex)
-                            canvas.itemconfig(pool_item["rect_id"], tags=tuple(tag_list_rect))
-                    else:
+                    tag_list = ["note"]
+                    if edit_tag: tag_list.append(edit_tag)
+                    tag_tuple = tuple(tag_list)
+
+                    dest_x_center = get_note_dest_x(note_val, inst_type, scale=scale, start_tick=note_start)
+                    dest_left = dest_x_center - 6 * scale
+                    dest_right = dest_x_center + 6 * scale
+
+                    if is_straight_mode:
+                        # 垂直落下モード：画面上端 (y=0) から穴直上 (y_hole_line_s) まで目標穴の真上を垂直に落下
                         if pool_item["rect_id"] is not None:
                             canvas.delete(pool_item["rect_id"])
                             pool_item["rect_id"] = None
-                    
-                    tag_list_poly = ["note"]
-                    if edit_tag: tag_list_poly.append(edit_tag)
+                        if pool_item["poly_id"] is not None:
+                            canvas.delete(pool_item["poly_id"])
+                            pool_item["poly_id"] = None
 
-                    if note_in_range and y_bottom > y_collide_s:
-                        t_top = max(y_collide_s, y_top)
-                        t_bottom = min(y_hole_line_s, y_bottom)
-                        
-                        if t_bottom > t_top:
-                            dest_x_center = get_note_dest_x(note_val, inst_type, scale=scale, start_tick=note_start)
-                            dest_left = dest_x_center - 6 * scale
-                            dest_right = dest_x_center + 6 * scale
-                            
-                            ratio_top = (t_top - y_collide_s) / height_converge_s if t_top > y_collide_s else 0.0
-                            ratio_bottom = (t_bottom - y_collide_s) / height_converge_s
-                            
-                            x_top_left = lane_x_left + (dest_left - lane_x_left) * ratio_top
-                            x_top_right = lane_x_right + (dest_right - lane_x_right) * ratio_top
-                            x_bottom_left = lane_x_left + (dest_left - lane_x_left) * ratio_bottom
-                            x_bottom_right = lane_x_right + (dest_right - lane_x_right) * ratio_bottom
-                            
-                            if pool_item["poly_id"] is None:
-                                pool_item["poly_id"] = canvas.create_polygon(
-                                    x_top_left, t_top, x_top_right, t_top,
-                                    x_bottom_right, t_bottom, x_bottom_left, t_bottom,
-                                    fill=col_hex, outline="", tags=tuple(tag_list_poly)
+                        if note_in_range:
+                            s_top = max(0.0, y_top)
+                            s_bottom = min(y_hole_line_s, y_bottom)
+                            if s_bottom > s_top:
+                                if pool_item["lower_rect_id"] is None:
+                                    pool_item["lower_rect_id"] = canvas.create_rectangle(
+                                        dest_left, s_top, dest_right, s_bottom,
+                                        fill=col_hex, outline="", tags=tag_tuple
+                                    )
+                                else:
+                                    canvas.coords(pool_item["lower_rect_id"], dest_left, s_top, dest_right, s_bottom)
+                                    canvas.itemconfig(pool_item["lower_rect_id"], fill=col_hex, tags=tag_tuple)
+                            else:
+                                if pool_item["lower_rect_id"] is not None:
+                                    canvas.delete(pool_item["lower_rect_id"])
+                                    pool_item["lower_rect_id"] = None
+                    else:
+                        # 3段階収束 (標準) モード：
+                        # [第1段階] 上部60音等幅垂直レーン (0 <= y <= y_collide_s)
+                        v_top = max(0.0, y_top)
+                        v_bottom = min(y_collide_s, y_bottom)
+                        if v_bottom > v_top:
+                            if pool_item["rect_id"] is None:
+                                pool_item["rect_id"] = canvas.create_rectangle(
+                                    lane_x_left, v_top, lane_x_right, v_bottom,
+                                    fill=col_hex, outline="", tags=tag_tuple
                                 )
                             else:
-                                canvas.coords(
-                                    pool_item["poly_id"],
-                                    x_top_left, t_top, x_top_right, t_top,
-                                    x_bottom_right, t_bottom, x_bottom_left, t_bottom
-                                )
-                                canvas.itemconfig(pool_item["poly_id"], fill=col_hex)
-                                canvas.itemconfig(pool_item["poly_id"], tags=tuple(tag_list_poly))
+                                canvas.coords(pool_item["rect_id"], lane_x_left, v_top, lane_x_right, v_bottom)
+                                canvas.itemconfig(pool_item["rect_id"], fill=col_hex, tags=tag_tuple)
+                        else:
+                            if pool_item["rect_id"] is not None:
+                                canvas.delete(pool_item["rect_id"])
+                                pool_item["rect_id"] = None
+
+                        # [第2段階] 斜め収束区間 (y_collide_s <= y <= y_straight_s)
+                        if note_in_range and y_bottom > y_collide_s and y_top < y_straight_s:
+                            t_top = max(y_collide_s, y_top)
+                            t_bottom = min(y_straight_s, y_bottom)
+                            
+                            if t_bottom > t_top:
+                                ratio_top = (t_top - y_collide_s) / height_diag_s if t_top > y_collide_s else 0.0
+                                ratio_bottom = (t_bottom - y_collide_s) / height_diag_s
+                                
+                                x_top_left = lane_x_left + (dest_left - lane_x_left) * ratio_top
+                                x_top_right = lane_x_right + (dest_right - lane_x_right) * ratio_top
+                                x_bottom_left = lane_x_left + (dest_left - lane_x_left) * ratio_bottom
+                                x_bottom_right = lane_x_right + (dest_right - lane_x_right) * ratio_bottom
+                                
+                                if pool_item["poly_id"] is None:
+                                    pool_item["poly_id"] = canvas.create_polygon(
+                                        x_top_left, t_top, x_top_right, t_top,
+                                        x_bottom_right, t_bottom, x_bottom_left, t_bottom,
+                                        fill=col_hex, outline="", tags=tag_tuple
+                                    )
+                                else:
+                                    canvas.coords(
+                                        pool_item["poly_id"],
+                                        x_top_left, t_top, x_top_right, t_top,
+                                        x_bottom_right, t_bottom, x_bottom_left, t_bottom
+                                    )
+                                    canvas.itemconfig(pool_item["poly_id"], fill=col_hex, tags=tag_tuple)
+                            else:
+                                if pool_item["poly_id"] is not None:
+                                    canvas.delete(pool_item["poly_id"])
+                                    pool_item["poly_id"] = None
                         else:
                             if pool_item["poly_id"] is not None:
                                 canvas.delete(pool_item["poly_id"])
                                 pool_item["poly_id"] = None
-                    else:
-                        if pool_item["poly_id"] is not None:
-                            canvas.delete(pool_item["poly_id"])
-                            pool_item["poly_id"] = None
+
+                        # [第3段階] 穴直上の垂直落下区間 (y_straight_s <= y <= y_hole_line_s)
+                        if note_in_range and y_bottom > y_straight_s:
+                            s_top = max(y_straight_s, y_top)
+                            s_bottom = min(y_hole_line_s, y_bottom)
+                            if s_bottom > s_top:
+                                if pool_item["lower_rect_id"] is None:
+                                    pool_item["lower_rect_id"] = canvas.create_rectangle(
+                                        dest_left, s_top, dest_right, s_bottom,
+                                        fill=col_hex, outline="", tags=tag_tuple
+                                    )
+                                else:
+                                    canvas.coords(pool_item["lower_rect_id"], dest_left, s_top, dest_right, s_bottom)
+                                    canvas.itemconfig(pool_item["lower_rect_id"], fill=col_hex, tags=tag_tuple)
+                            else:
+                                if pool_item["lower_rect_id"] is not None:
+                                    canvas.delete(pool_item["lower_rect_id"])
+                                    pool_item["lower_rect_id"] = None
+                        else:
+                            if pool_item["lower_rect_id"] is not None:
+                                canvas.delete(pool_item["lower_rect_id"])
+                                pool_item["lower_rect_id"] = None
             
             for old_key in list(canvas.note_pool.keys()):
                 if old_key not in visible_keys:
                     pool_item = canvas.note_pool.pop(old_key)
-                    if pool_item["rect_id"] is not None:
-                        canvas.delete(pool_item["rect_id"])
-                    if pool_item["poly_id"] is not None:
-                        canvas.delete(pool_item["poly_id"])
+                    for cid in pool_item.values():
+                        if cid is not None:
+                            canvas.delete(cid)
         else:
             for pool_item in canvas.note_pool.values():
-                if pool_item["rect_id"] is not None:
-                    canvas.delete(pool_item["rect_id"])
-                if pool_item["poly_id"] is not None:
-                    canvas.delete(pool_item["poly_id"])
+                for cid in pool_item.values():
+                    if cid is not None:
+                        canvas.delete(cid)
             canvas.note_pool.clear()
 
     # 運指変更モードが有効な場合、凡例の下に「常時運指表示枠」を描画 (スケール連動)

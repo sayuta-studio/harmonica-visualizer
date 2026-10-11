@@ -43,7 +43,7 @@ from config import (
     COLOR_BLOW_RGB, COLOR_BLOW_INNER,
     COLOR_DRAW_RGB, COLOR_DRAW_INNER,
     W_PITCH, D_HOLE, CANVAS_WIDTH, CANVAS_HEIGHT,
-    get_y_layout_params, get_portable_path,
+    get_y_layout_params, get_y_trajectory_params, get_portable_path,
     LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT,
     get_layout_params, get_note_dest_x, hex_to_rgb
 )
@@ -136,7 +136,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          note_opacity_value, midi_notes=None, current_time=0.0, current_bpm=120.0, 
                                          active_pitches=None, show_glow_effect=True,
                                          color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                         use_skin=True):
+                                         use_skin=True, trajectory_mode="3段階収束 (標準)"):
     """
     オフライン書き出し専用：Pillowの高度なレイヤー合成をフル稼働させ、基本フレームパーツのみを描画。
     外部スキン（PNG）が指定されている場合は、透過アルファチャネルを100%美しくレイヤーブレンドします。
@@ -144,11 +144,13 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     if active_pitches is None: active_pitches = set()
     if midi_notes is None: midi_notes = []
 
-    y_center_s, y_collide_s, y_hole_line_s, height_converge_s = get_y_layout_params(height / scale)
+    y_center_s, y_collide_s, y_straight_s, y_hole_line_s, height_diag_s, _ = get_y_trajectory_params(height / scale)
     y_center_s *= scale
     y_collide_s *= scale
+    y_straight_s *= scale
     y_hole_line_s *= scale
-    height_converge_s *= scale
+    height_diag_s *= scale
+    is_straight_mode = ("垂直落下" in str(trajectory_mode))
 
     W_pitch_s = W_PITCH * scale
     D_hole_s = D_HOLE * scale
@@ -161,7 +163,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     color_draw_rgb = hex_to_rgb(color_draw_hex)
 
 
-    cache_key = f"{inst_type}_{canvas_bg_color}_{is_notes_on}_{is_grid_on}_{width}_{height}"
+    cache_key = f"{inst_type}_{canvas_bg_color}_{is_notes_on}_{is_grid_on}_{trajectory_mode}_{width}_{height}"
 
     global _CACHE
     if _CACHE["key"] != cache_key or _CACHE["base_image"] is None:
@@ -177,17 +179,34 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         else:
             base_draw.rectangle([0, 0, width, height], fill=(13, 13, 13, 255))
 
-        # Pillow（エクスポート映像）のベース背景でも、ガイド線トグルがONであれば、内側等幅グリッドを完全に描画！
+        # Pillow（エクスポート映像）のベース背景でも、ガイド線トグルがONであれば、軌道モードに応じたグリッドを描画！
         if is_grid_on:
-            grid_alpha = 15 if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else 25
-            grid_color = (0, 0, 0, grid_alpha) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else (255, 255, 255, grid_alpha)
-            for idx in range(58):
-                x_pos = (24 + idx * 16) * scale
-                base_draw.line([(x_pos, 0), (x_pos, y_collide_s)], fill=grid_color, width=max(1, int(1 * scale)))
+            is_bright_bg = (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
+            grid_alpha = 15 if is_bright_bg else 25
+            grid_color = (0, 0, 0, grid_alpha) if is_bright_bg else (255, 255, 255, grid_alpha)
+            grid_line_color = (0, 0, 0, 40) if is_bright_bg else (255, 255, 255, 25)
+            line_w = max(1, int(1 * scale))
 
-            grid_line_color = (0, 0, 0, 40) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else (255, 255, 255, 25)
-            base_draw.line([(24 * scale, 0), (24 * scale, y_collide_s)], fill=grid_line_color, width=max(1, int(1 * scale)))
-            base_draw.line([(936 * scale, 0), (936 * scale, y_collide_s)], fill=grid_line_color, width=max(1, int(1 * scale)))
+            if is_straight_mode:
+                for k in range(N_visible):
+                    hx = X_start_draw + k * W_pitch_s
+                    for sub in (1, 2, 3):
+                        sx = hx + sub * 12 * scale
+                        base_draw.line([(sx, 0), (sx, y_hole_line_s)], fill=grid_color, width=line_w)
+                    base_draw.line([(hx, 0), (hx, y_hole_line_s)], fill=grid_line_color, width=line_w)
+                base_draw.line([(X_start_draw + total_width, 0), (X_start_draw + total_width, y_hole_line_s)], fill=grid_line_color, width=line_w)
+            else:
+                for idx in range(58):
+                    x_pos = (24 + idx * 16) * scale
+                    base_draw.line([(x_pos, 0), (x_pos, y_collide_s)], fill=grid_color, width=line_w)
+
+                base_draw.line([(24 * scale, 0), (24 * scale, y_collide_s)], fill=grid_line_color, width=line_w)
+                base_draw.line([(936 * scale, 0), (936 * scale, y_collide_s)], fill=grid_line_color, width=line_w)
+
+                base_draw.line([(X_start_draw, y_straight_s), (X_start_draw + total_width, y_straight_s)], fill=grid_color, width=line_w)
+                for k in range(N_visible + 1):
+                    hx = X_start_draw + k * W_pitch_s
+                    base_draw.line([(hx, y_straight_s), (hx, y_hole_line_s)], fill=grid_line_color, width=line_w)
 
         _CACHE["key"] = cache_key
         _CACHE["base_image"] = base_img
@@ -418,7 +437,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
                                  res_mode, inst_type, notation_mode, bg_color, 
                                  is_hole_num_on, is_legend_on, is_notes_on, is_grid_on, is_glow_on, note_opacity,
                                  parent_window, color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                 aspect_ratio="16:9", use_skin=True):
+                                 aspect_ratio="16:9", use_skin=True, trajectory_mode="3段階収束 (標準)"):
     if not OPENCV_AVAILABLE:
         return
 
@@ -455,7 +474,8 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         show_glow_effect=is_glow_on,
         color_blow_hex=color_blow_hex,                
         color_draw_hex=color_draw_hex,
-        use_skin=use_skin
+        use_skin=use_skin,
+        trajectory_mode=trajectory_mode
     )
 
     if aspect_ratio == "9:16":
@@ -476,21 +496,23 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
     bgr_frame = cv2.cvtColor(np.array(preview_canvas), cv2.COLOR_RGB2BGR)
     
     bgr_notes_part = cv2.cvtColor(np.array(resized_pil), cv2.COLOR_RGB2BGR)
-    bgr_notes_part = apply_opencv_vector_notes_draw(
-        bgr_frame=bgr_notes_part,
-        width=preview_w,
-        height=preview_h,
-        scale=preview_w / 960.0,
-        inst_type=inst_type,
-        midi_notes=midi_notes,
-        current_time=current_time,
-        current_bpm=current_bpm,
-        active_pitches=active_pitches,
-        note_opacity_value=opacity_val,
-        color_blow_hex=color_blow_hex,
-        color_draw_hex=color_draw_hex,
-        aspect_ratio=aspect_ratio
-    )
+    if is_notes_on:
+        bgr_notes_part = apply_opencv_vector_notes_draw(
+            bgr_frame=bgr_notes_part,
+            width=preview_w,
+            height=preview_h,
+            scale=preview_w / 960.0,
+            inst_type=inst_type,
+            midi_notes=midi_notes,
+            current_time=current_time,
+            current_bpm=current_bpm,
+            active_pitches=active_pitches,
+            note_opacity_value=opacity_val,
+            color_blow_hex=color_blow_hex,
+            color_draw_hex=color_draw_hex,
+            aspect_ratio=aspect_ratio,
+            trajectory_mode=trajectory_mode
+        )
     
     preview_canvas.paste(Image.fromarray(cv2.cvtColor(bgr_notes_part, cv2.COLOR_BGR2RGB)), ((960 - preview_w)//2, (540 - preview_h)//2))
     
@@ -505,8 +527,6 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
     pop_win.lift()
     pop_win.attributes("-topmost", True)
     
-    # PhotoImage から customtkinter専用の CTkImage 構築へ完全移行！
-    # 高解像度モニターでのボケ現象および、コンソールの警告(UserWarning)を100%完璧に根絶しました。
     ctk_img = ctk.CTkImage(light_image=pil_final_preview, size=(960, 540))
     pop_win.ctk_img = ctk_img 
     
@@ -520,10 +540,10 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
 def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, midi_notes, 
                                    current_time, current_bpm, active_pitches, note_opacity_value,
                                    color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                   aspect_ratio="16:9"):
+                                   aspect_ratio="16:9", trajectory_mode="3段階収束 (標準)"):
     """
-    OpenCVの LINE_AA を用いて、斜め面取りされたソリッドでシャープな幾学多角形ノーツを合成描画。
-    アスペクト比引き延ばしに応じた上空レーン伸長オフセット計算を完全に加算します。
+    OpenCVの LINE_AA を用いて、斜め面取りされたソリッドでシャープな幾何学多角形ノーツを合成描画。
+    「3段階収束 (標準)」（上部60音垂直 ➔ 斜め収束 ➔ 穴直上垂直）および「垂直落下 (穴直上)」の両モードに対応。
     """
     if not midi_notes:
         return bgr_frame
@@ -534,10 +554,12 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     notes_overlay = np.zeros_like(bgr_frame)
     notes_mask = np.zeros((height, width), dtype=np.uint8)
 
-    y_center_full, y_collide_full, y_hole_line_full, height_converge_full = get_y_layout_params(height / scale)
+    y_center_full, y_collide_full, y_straight_full, y_hole_line_full, height_diag_full, _ = get_y_trajectory_params(height / scale)
     y_collide_s = y_collide_full * scale
+    y_straight_s = y_straight_full * scale
     y_hole_line_s = y_hole_line_full * scale
-    height_converge_s = height_converge_full * scale
+    height_diag_s = height_diag_full * scale
+    is_straight_mode = ("垂直落下" in str(trajectory_mode))
 
     _, _, _, X_shift_notes = get_layout_params(inst_type, scale)
     pixels_per_second = (220.0 * current_bpm) / 240.0
@@ -562,109 +584,87 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 simulated_note = note_data["note"] + 36
                 
             lane_idx = simulated_note - 48
-            
-            lane_x_left = int((72 + lane_idx * 16) * scale - X_shift_notes)
-            lane_x_right = int(lane_x_left + 16 * scale)
+            lane_x_left = (72.0 + lane_idx * 16.0) * scale - X_shift_notes
+            lane_x_right = lane_x_left + 16.0 * scale
             
             note_in_range = is_note_in_range(note_data["note"], inst_type)
-            
-            v_top = max(0, y_top)
-            v_bottom = min(y_collide_s, y_bottom)
-            
-            length = max(1.0, y_bottom - y_top)
-            ch = min(int(4 * scale), int(length / 2))
-            ch_slope = min(int(3 * scale), int(length / 2))
+            if not note_in_range and is_straight_mode:
+                continue
+
+            dest_x_center = get_note_dest_x(note_data["note"], inst_type, scale, start_tick=start_tick)
+            dest_left = dest_x_center - 6.0 * scale
+            dest_right = dest_x_center + 6.0 * scale
+
+            y_limit_bot = y_hole_line_s if note_in_range else y_collide_s
+            y_vis_top = max(0.0, y_top)
+            y_vis_bot = min(y_limit_bot, y_bottom)
+            if y_vis_bot <= y_vis_top:
+                continue
+
+            if is_straight_mode:
+                def x_left_at(yv): return dest_left
+                def x_right_at(yv): return dest_right
+                bend_ys = []
+            else:
+                def x_left_at(yv):
+                    if yv <= y_collide_s:
+                        return lane_x_left
+                    elif yv >= y_straight_s:
+                        return dest_left
+                    else:
+                        r = (yv - y_collide_s) / height_diag_s
+                        return lane_x_left + (dest_left - lane_x_left) * r
+
+                def x_right_at(yv):
+                    if yv <= y_collide_s:
+                        return lane_x_right
+                    elif yv >= y_straight_s:
+                        return dest_right
+                    else:
+                        r = (yv - y_collide_s) / height_diag_s
+                        return lane_x_right + (dest_right - lane_x_right) * r
+
+                bend_ys = [y_collide_s, y_straight_s] if note_in_range else []
+
+            length = max(1.0, y_vis_bot - y_vis_top)
+            ch_base = min(3.5 * scale, length / 3.0)
+            ch_top = ch_base if (y_top >= 0.0 and y_top < y_limit_bot) else 0.0
+            ch_bot = ch_base if (y_bottom > 0.0 and y_bottom <= y_limit_bot) else 0.0
+
+            y_r_start = y_vis_top + ch_top
+            y_r_end = y_vis_bot - ch_bot
+            active_bends = [by for by in bend_ys if y_r_start < by < y_r_end]
 
             pts_accum = []
-
-            is_top_chamfer = (y_top >= 0 and y_top < y_collide_s)
-
-            if v_bottom > v_top:
-                if is_top_chamfer:
-                    pts_accum.append([lane_x_left + ch, int(y_top)])     
-                    pts_accum.append([lane_x_right - ch, int(y_top)])    
-                    pts_accum.append([lane_x_right, int(y_top + ch)])    
-                else:
-                    pts_accum.append([lane_x_left, int(v_top)])
-                    pts_accum.append([lane_x_right, int(v_top)])
-
-            if note_in_range and y_bottom > y_collide_s:
-                t_top = max(y_collide_s, y_top)
-                t_bottom = min(y_hole_line_s, y_bottom)
-                
-                if t_bottom > t_top:
-                    dest_x_center = get_note_dest_x(note_data["note"], inst_type, scale, start_tick=start_tick)
-                    dest_left = dest_x_center - 6 * scale
-                    dest_right = dest_x_center + 6 * scale
-                    
-                    ratio_top = (t_top - y_collide_s) / height_converge_s
-                    ratio_bottom = (t_bottom - y_collide_s) / height_converge_s
-                    
-                    x_top_l = lane_x_left + (dest_left - lane_x_left) * ratio_top
-                    x_top_r = lane_x_right + (dest_right - lane_x_right) * ratio_top
-                    x_bot_l = lane_x_left + (dest_left - lane_x_left) * ratio_bottom
-                    x_bot_r = lane_x_right + (dest_right - lane_x_right) * ratio_bottom
-                    
-                    if y_top >= y_collide_s:
-                        pts_accum.clear() 
-                        ratio_t_cap = ((y_top + ch_slope) - y_collide_s) / height_converge_s
-                        x_top_l_ch = lane_x_left + (dest_left - lane_x_left) * ratio_t_cap
-                        x_top_r_ch = lane_x_right + (dest_right - lane_x_right) * ratio_t_cap
-                        
-                        pts_accum.append([int(x_top_l + ch_slope), int(y_top)])
-                        pts_accum.append([int(x_top_r - ch_slope), int(y_top)])
-                        pts_accum.append([int(x_top_r_ch), int(y_top + ch_slope)])
-                    else:
-                        pts_accum.append([int(x_top_r), int(t_top)])
-
-                    y_bot_clamped = min(y_hole_line_s, y_bottom)
-                    if y_bottom >= y_collide_s and y_bottom <= y_hole_line_s:
-                        ratio_b_cap = ((y_bot_clamped - ch_slope) - y_collide_s) / height_converge_s
-                        x_bottom_l_ch = lane_x_left + (dest_left - lane_x_left) * ratio_b_cap
-                        x_bottom_right_ch = lane_x_right + (dest_right - lane_x_right) * ratio_b_cap
-                        
-                        pts_accum.append([int(x_bottom_right_ch), int(y_bot_clamped - ch_slope)])
-                        pts_accum.append([int(x_bot_r - ch_slope), int(y_bot_clamped)])
-                        pts_accum.append([int(x_bot_l + ch_slope), int(y_bot_clamped)])
-                        pts_accum.append([int(x_bottom_l_ch), int(y_bot_clamped - ch_slope)])
-                    else:
-                        pts_accum.append([int(x_bot_r), int(t_bottom)])
-                        pts_accum.append([int(x_bot_l), int(t_bottom)])
-                        
-                    if y_top < y_collide_s:
-                        pts_accum.append([int(x_top_l), int(t_top)])
-                        if is_top_chamfer:
-                            pts_accum.append([lane_x_left, int(y_top + ch)])
-                    else:
-                        ratio_t_cap = ((y_top + ch_slope) - y_collide_s) / height_converge_s
-                        x_top_l_ch = lane_x_left + (dest_left - lane_x_left) * ratio_t_cap
-                        pts_accum.append([int(x_top_l_ch), int(y_top + ch_slope)])
-                else:
-                    is_bottom_chamfer = (v_bottom > v_top and y_bottom < y_collide_s)
-                    if is_bottom_chamfer:
-                        pts_accum.append([lane_x_right, int(y_bottom - ch)])
-                        pts_accum.append([lane_x_right - ch, int(y_bottom)])
-                        pts_accum.append([lane_x_left + ch, int(y_bottom)])
-                        pts_accum.append([lane_x_left, int(y_bottom - ch)])
-                    else:
-                        pts_accum.append([lane_x_right, int(v_bottom)])
-                        pts_accum.append([lane_x_left, int(v_bottom)])
-                        
-                    if is_top_chamfer:
-                        pts_accum.append([lane_x_left, int(y_top + ch)])
+            # 上端キャップ
+            if ch_top > 0.5:
+                pts_accum.append([int(round(x_left_at(y_vis_top) + ch_top)), int(round(y_vis_top))])
+                pts_accum.append([int(round(x_right_at(y_vis_top) - ch_top)), int(round(y_vis_top))])
+                pts_accum.append([int(round(x_right_at(y_r_start))), int(round(y_r_start))])
             else:
-                is_bottom_chamfer = (v_bottom > v_top and y_bottom < y_collide_s)
-                if is_bottom_chamfer:
-                    pts_accum.append([lane_x_right, int(y_bottom - ch)])
-                    pts_accum.append([lane_x_right - ch, int(y_bottom)])
-                    pts_accum.append([lane_x_left + ch, int(y_bottom)])
-                    pts_accum.append([lane_x_left, int(y_bottom - ch)])
-                else:
-                    pts_accum.append([lane_x_right, int(v_bottom)])
-                    pts_accum.append([lane_x_left, int(v_bottom)])
-                    
-                if is_top_chamfer:
-                    pts_accum.append([lane_x_left, int(y_top + ch)])
+                pts_accum.append([int(round(x_left_at(y_vis_top))), int(round(y_vis_top))])
+                pts_accum.append([int(round(x_right_at(y_vis_top))), int(round(y_vis_top))])
+
+            # 右辺の屈曲点（上から下）
+            for by in active_bends:
+                pts_accum.append([int(round(x_right_at(by))), int(round(by))])
+
+            # 下端キャップ
+            if ch_bot > 0.5:
+                pts_accum.append([int(round(x_right_at(y_r_end))), int(round(y_r_end))])
+                pts_accum.append([int(round(x_right_at(y_vis_bot) - ch_bot)), int(round(y_vis_bot))])
+                pts_accum.append([int(round(x_left_at(y_vis_bot) + ch_bot)), int(round(y_vis_bot))])
+                pts_accum.append([int(round(x_left_at(y_r_end))), int(round(y_r_end))])
+            else:
+                pts_accum.append([int(round(x_right_at(y_vis_bot))), int(round(y_vis_bot))])
+                pts_accum.append([int(round(x_left_at(y_vis_bot))), int(round(y_vis_bot))])
+
+            # 左辺の屈曲点（下から上）
+            for by in reversed(active_bends):
+                pts_accum.append([int(round(x_left_at(by))), int(round(by))])
+
+            if ch_top > 0.5:
+                pts_accum.append([int(round(x_left_at(y_r_start))), int(round(y_r_start))])
 
             if len(pts_accum) >= 3:
                 pts = np.array(pts_accum, dtype=np.int32)
@@ -685,7 +685,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               current_midi_path, status_label, export_btn, root_after,
                               ticks_per_beat=480, fps_mode="60 FPS",
                               color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                              aspect_ratio="16:9", use_skin=True, controller=None):
+                              aspect_ratio="16:9", use_skin=True, controller=None,
+                              trajectory_mode="3段階収束 (標準)"):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -786,7 +787,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     show_glow_effect=is_glow_on,
                     color_blow_hex=color_blow_hex,            
                     color_draw_hex=color_draw_hex,
-                    use_skin=use_skin
+                    use_skin=use_skin,
+                    trajectory_mode=trajectory_mode
                 )
 
                 rgb_frame = pil_frame.convert("RGB")
@@ -807,7 +809,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         note_opacity_value=opacity_val,
                         color_blow_hex=color_blow_hex,
                         color_draw_hex=color_draw_hex,
-                        aspect_ratio=aspect_ratio
+                        aspect_ratio=aspect_ratio,
+                        trajectory_mode=trajectory_mode
                     )
                 
                 video_writer.write(bgr_frame)
