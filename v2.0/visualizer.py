@@ -501,10 +501,12 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
             m_line_color = "#003300" if canvas_bg_color == "#00FF00" else "#2e2e2e"
             m_txt_color = "#005500" if canvas_bg_color == "#00FF00" else "#555555"
             f_m_size = max(6, int(8 * scale))
-            upper_left = 24.0 * scale
-            upper_right = 936.0 * scale
-            lower_left = X_start_draw
-            lower_right = X_start_draw + total_width
+            if is_straight_mode:
+                x_l = X_start_draw
+                x_r = X_start_draw + total_width
+            else:
+                x_l = 24.0 * scale
+                x_r = 936.0 * scale
 
             for m in measures_timeline:
                 m_tick = m["start_tick"]
@@ -514,14 +516,6 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                 if y_m <= y_hole_line_s:
                     m_num = m["measure_num"]
                     visible_measures.add(m_num)
-                    if is_straight_mode or y_m >= y_straight_s or height_diag_s <= 0:
-                        x_l, x_r = lower_left, lower_right
-                    elif y_m <= y_collide_s:
-                        x_l, x_r = upper_left, upper_right
-                    else:
-                        ratio_m = (y_m - y_collide_s) / height_diag_s
-                        x_l = upper_left + (lower_left - upper_left) * ratio_m
-                        x_r = upper_right + (lower_right - upper_right) * ratio_m
 
                     m_item = canvas.measure_pool.get(m_num)
                     if m_item is None:
