@@ -113,9 +113,10 @@ def generate_metronome_click(freq, sample_rate, duration=0.05):
 
 def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, is_metro, output_wav_path, 
                            time_sig_num=4, time_sig_den=4, count_in_measures=1, measures_timeline=None, 
-                           metronome_pattern="標準（頭拍強調）", ticks_per_beat=480, sample_rate=44100):
+                           metronome_pattern="標準（頭拍強調）", ticks_per_beat=480, sample_rate=44100,
+                           tick_to_sec_fn=None):
     """
-    MIDI演奏情報および変拍子タイムラインから16-bit PCMモノラルWAVファイルを高速に物理合成して出力します。
+    MIDI演奏情報および変拍子・曲中テンポ変化タイムラインから16-bit PCMモノラルWAVファイルを高速に物理合成して出力します。
     """
     # 末尾に2秒の無音余韻（残響安全パディング）を強制追加
     extended_duration = max_duration + 2.0
@@ -157,9 +158,12 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
             for b in range(num):
                 beat_tick = m['start_tick'] + b * beat_len_ticks
                 
-                # ティックから本編内の正確な秒数を逆算
-                sec_per_tick = 60.0 / (current_bpm * ticks_per_beat)
-                beat_time_in_midi = beat_tick * sec_per_tick
+                # ティックから本編内の正確な秒数を逆算（曲中テンポ変化対応）
+                if tick_to_sec_fn is not None:
+                    beat_time_in_midi = tick_to_sec_fn(beat_tick)
+                else:
+                    sec_per_tick = 60.0 / (current_bpm * ticks_per_beat)
+                    beat_time_in_midi = beat_tick * sec_per_tick
                 
                 # カウントイン秒数分だけ後ろにスライド
                 beat_time = beat_time_in_midi + count_in_duration

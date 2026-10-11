@@ -16,13 +16,14 @@ class PlaybackController:
     # Mixinのため self は app_controller.HarmonicaAppIntegrator インスタンスを指します
 
     def get_count_in_duration(self):
-        """現在のBPMと拍子に基づき、カウントイン期間の秒数を正確に算出"""
+        """現在の再生速度倍率・開始テンポ・拍子に基づき、カウントイン期間の秒数を正確に算出"""
         count_in_measures_val = int(self.gui.count_in_menu.get().split()[0])
         if count_in_measures_val > 0:
             time_sig_num = self.midi_engine.time_sig_num
             time_sig_den = self.midi_engine.time_sig_den
             total_beats = count_in_measures_val * time_sig_num
-            return total_beats * ((60.0 / self.current_bpm) * (4.0 / time_sig_den))
+            start_bpm = max(1.0, self.midi_engine.get_bpm_at_tick(0))
+            return total_beats * ((60.0 / start_bpm) * (4.0 / time_sig_den))
         return 0.0
 
     def load_safe_melody(self):
@@ -36,13 +37,16 @@ class PlaybackController:
                 f.write(midi_bytes)
                 
             self.midi_engine.load_file(self.current_midi_path)
-            self.default_bpm = self.midi_engine.bpm
-            self.current_bpm = self.midi_engine.bpm
+            self.default_bpm = self.midi_engine.default_bpm
+            self.speed_percent = 100.0
+            self.speed_ratio = 1.0
+            self.midi_engine.speed_ratio = 1.0
+            self.current_bpm = self.default_bpm
             self.bpm_ratio = 1.0
             
             if self.gui.bpm_entry:
                 self.gui.bpm_entry.delete(0, tk.END)
-                self.gui.bpm_entry.insert(0, str(int(self.default_bpm)))
+                self.gui.bpm_entry.insert(0, "100")
                 
             total_measures = len(self.midi_engine.measures_timeline) if self.midi_engine.measures_timeline else 1
             self.gui.jump_label.configure(text=f" / {total_measures} 小節")
@@ -143,13 +147,16 @@ class PlaybackController:
         
         try:
             self.midi_engine.load_file(file_path)
-            self.default_bpm = self.midi_engine.bpm
-            self.current_bpm = self.midi_engine.bpm
+            self.default_bpm = self.midi_engine.default_bpm
+            self.speed_percent = 100.0
+            self.speed_ratio = 1.0
+            self.midi_engine.speed_ratio = 1.0
+            self.current_bpm = self.default_bpm
             self.bpm_ratio = 1.0
             
             if self.gui.bpm_entry:
                 self.gui.bpm_entry.delete(0, tk.END)
-                self.gui.bpm_entry.insert(0, str(self.default_bpm))
+                self.gui.bpm_entry.insert(0, "100")
 
             total_measures = len(self.midi_engine.measures_timeline) if self.midi_engine.measures_timeline else 1
             self.gui.loop_b_entry.delete(0, tk.END)
@@ -210,7 +217,7 @@ class PlaybackController:
                 last_note = self.midi_notes[-1]
                 self.original_max_duration = last_note["original_start_time"] + last_note["original_duration"]
                 self.apply_bpm()
-                self.gui.status_label.configure(text=f"MIDIロード成功！ (デフォルトBPM: {self.default_bpm})", text_color="#2b8c54")
+                self.gui.status_label.configure(text=f"MIDIロード成功！ (基準テンポ: {int(self.default_bpm)} BPM / 再生速度: 100%)", text_color="#2b8c54")
             else:
                 self.gui.status_label.configure(text="エラー: 有効な半音階の音符が見つかりません。", text_color="#ff5555")
         except Exception as e:
@@ -218,21 +225,28 @@ class PlaybackController:
             traceback.print_exc()
 
     def apply_bpm(self):
-        """テンポとタイムラインの同期適用"""
+        """再生速度(%)倍率と曲中テンポ変化タイムラインの同期適用"""
         if not self.midi_notes: return
         try:
-            new_bpm = 120.0
+            speed_pct = 100.0
             if self.gui.bpm_entry:
-                try: new_bpm = float(self.gui.bpm_entry.get())
-                except ValueError: pass
+                raw_str = str(self.gui.bpm_entry.get()).replace("%", "").strip()
+                try:
+                    speed_pct = float(raw_str)
+                except ValueError:
+                    pass
 
-            if new_bpm <= 10 or new_bpm > 500:
-                self.gui.status_label.configure(text="BPMは10〜500の間で設定してください", text_color="#ff5555")
+            if speed_pct < 10 or speed_pct > 400:
+                self.gui.status_label.configure(text="再生速度は 10% 〜 400% の間で設定してください", text_color="#ff5555")
                 return
 
-            self.current_bpm = new_bpm
-            self.bpm_ratio = self.default_bpm / self.current_bpm
-            self.midi_engine.bpm = self.current_bpm
+            self.speed_percent = speed_pct
+            self.speed_ratio = speed_pct / 100.0
+            self.midi_engine.speed_ratio = self.speed_ratio
+
+            self.current_bpm = self.midi_engine.get_bpm_at_tick(self.midi_engine.accumulated_ticks, self.speed_ratio)
+            self.bpm_ratio = 1.0 / self.speed_ratio
+            self.midi_engine.bpm = round(self.current_bpm)
 
             count_in_duration = self.get_count_in_duration()
 
@@ -251,19 +265,24 @@ class PlaybackController:
                     note["duration_ticks"] = int(note["duration"] * ticks_per_sec)
 
             self.max_duration = (self.original_max_duration * self.bpm_ratio) + count_in_duration
-            self.current_time = 0.0
+            self.current_time = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks) + count_in_duration
             self.update_time_label()
             
+            if hasattr(self, "gui") and hasattr(self.gui, "lbl_lcd_bpm"):
+                self.gui.lbl_lcd_bpm.configure(
+                    text=f"テンポ:{int(round(self.current_bpm)):03d}BPM({int(round(self.speed_percent))}%)"
+                )
+
             if hasattr(self, "gui") and self.gui.canvas:
                 self.draw_harmonica_static() 
             self.save_user_settings_txt()
         except Exception as ex:
-            print(f"[警告] BPM適用中に例外が発生しました: {ex}")
+            print(f"[警告] 再生速度適用中に例外が発生しました: {ex}")
 
     def reset_bpm(self):
         if not self.midi_notes: return
         self.gui.bpm_entry.delete(0, tk.END)
-        self.gui.bpm_entry.insert(0, str(self.default_bpm))
+        self.gui.bpm_entry.insert(0, "100")
         self.apply_bpm()
 
     def lock_controls_on_play(self, lock=True):
@@ -533,7 +552,9 @@ class PlaybackController:
             return
         self.gui.lbl_lcd_pos.configure(text=f"位置：{measure:03d}小節 . {beat:02d}拍")
         self.gui.lbl_lcd_sig.configure(text=f"拍子：{num}/{den}")
-        self.gui.lbl_lcd_bpm.configure(text=f"テンポ：{int(self.current_bpm):03d} BPM")
+        cur_bpm = int(round(self.midi_engine.get_bpm_at_tick(self.midi_engine.accumulated_ticks)))
+        speed_pct = int(round(getattr(self, "speed_percent", 100)))
+        self.gui.lbl_lcd_bpm.configure(text=f"テンポ:{cur_bpm:03d}BPM({speed_pct}%)")
         
         self.gui.jump_entry.delete(0, tk.END)
         self.gui.jump_entry.insert(0, str(measure))

@@ -83,6 +83,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.default_bpm = 120.0
         self.current_bpm = 120.0
         self.bpm_ratio = 1.0
+        self.speed_percent = 100.0
+        self.speed_ratio = 1.0
         
         self.midi_engine = MidiEngine()
         
@@ -112,6 +114,20 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.canvas.bind("<Button-1>", self.on_canvas_click)
 
         self.after(100, self.initialize_flow)
+
+    def report_callback_exception(self, exc, val, tb):
+        """ボタンクリック等のTkinterコールバック例外も自動で error_log.txt に記録し自己診断可能にします。"""
+        import traceback
+        err_text = "".join(traceback.format_exception(exc, val, tb))
+        print("Exception in Tkinter callback\n" + err_text, file=sys.stderr)
+        try:
+            log_path = os.path.join(self.base_dir, "error_log.txt")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write("\n=== Tkinter Callback Exception ===\n")
+                f.write(err_text)
+        except Exception:
+            pass
+
 
     def check_and_build_directories(self):
         """環境用フォルダ自動作成 ＆ デフォルトスキン自立書き出し"""
@@ -309,13 +325,14 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             self.current_tick = 0.0
         else:
             elapsed_main = self.current_time - count_in_duration
-            self.current_tick = elapsed_main * (self.current_bpm * ticks_per_beat / 60.0)
+            self.current_tick = self.midi_engine.sec_to_tick(elapsed_main)
 
             if not is_count_in_active:
-                diff_sec = abs(self.current_tick - self.midi_engine.accumulated_ticks) * (60.0 / (self.current_bpm * ticks_per_beat))
+                eng_sec = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks)
+                diff_sec = abs(elapsed_main - eng_sec)
                 if diff_sec > 0.15:
                     self.current_tick = self.midi_engine.accumulated_ticks
-                    self.play_start_time = now - (self.midi_engine.accumulated_ticks * (60.0 / (self.current_bpm * ticks_per_beat)) + count_in_duration)
+                    self.play_start_time = now - (eng_sec + count_in_duration)
                     self.current_time = now - self.play_start_time
 
         if self.current_time > self.max_duration:
@@ -331,6 +348,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.update_time_label()
 
         measure, beat, num, den, total_measures = self.midi_engine.get_measure_and_beat(self.current_tick)
+        self.current_bpm = self.midi_engine.get_bpm_at_tick(self.current_tick)
         
         status_state = self.midi_engine.playing_state
         status_map = {
@@ -349,7 +367,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             self.gui.lbl_lcd_pos.configure(text=f"位置：{measure:03d}小節 . {beat:02d}拍")
             
         self.gui.lbl_lcd_sig.configure(text=f"拍子：{num}/{den}")
-        self.gui.lbl_lcd_bpm.configure(text=f"テンポ：{int(self.current_bpm):03d} BPM")
+        speed_pct = int(round(getattr(self, "speed_percent", 100)))
+        self.gui.lbl_lcd_bpm.configure(text=f"テンポ:{int(round(self.current_bpm)):03d}BPM({speed_pct}%)")
         
         self.last_update_time = now
 
@@ -423,7 +442,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         ticks_per_beat = self.midi_engine.ticks_per_beat
         
         count_in_duration = self.get_count_in_duration()
-        self.current_time = (self.midi_engine.accumulated_ticks * (60.0 / (self.current_bpm * ticks_per_beat))) + count_in_duration
+        self.current_time = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks) + count_in_duration
+        self.current_bpm = self.midi_engine.get_bpm_at_tick(self.midi_engine.accumulated_ticks)
         
         self.draw_harmonica(
             active_pitches=set(),
@@ -694,11 +714,10 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             return
 
         midi_notes = self.midi_notes
-        current_bpm = self.current_bpm
+        current_bpm = self.midi_engine.get_bpm_at_tick(self.midi_engine.accumulated_ticks)
         
-        ticks_per_beat = self.midi_engine.ticks_per_beat
         count_in_duration = self.get_count_in_duration()
-        current_time_sec = (self.midi_engine.accumulated_ticks * (60.0 / (self.current_bpm * ticks_per_beat))) + count_in_duration
+        current_time_sec = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks) + count_in_duration
 
         res_mode = self.gui.res_menu.get()
         inst_type = self.gui.inst_menu.get()

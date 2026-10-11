@@ -90,18 +90,19 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.sep_r1_2 = create_sep(self.row1)
         self.sep_r1_2.grid(row=0, column=9, padx=12, sticky="e")
 
-        # BPM設定
-        self.bpm_title_label = ctk.CTkLabel(self.row1, text="BPM設定:", text_color="#aaaaaa", font=self.f_jp_bold)
+        # 再生速度(%)設定
+        self.bpm_title_label = ctk.CTkLabel(self.row1, text="再生速度(%):", text_color="#aaaaaa", font=self.f_jp_bold)
         self.bpm_title_label.grid(row=0, column=10, padx=2, sticky="e")
 
-        self.bpm_entry = ctk.CTkEntry(self.row1, width=45, font=self.f_norm)
-        self.bpm_entry.insert(0, "120")
+        self.bpm_entry = ctk.CTkEntry(self.row1, width=48, font=self.f_norm, justify="center")
+        self.bpm_entry.insert(0, "100")
         self.bpm_entry.grid(row=0, column=11, padx=2, sticky="e")
+        self.bpm_entry.bind("<Return>", lambda e: self.controller.apply_bpm())
 
-        self.apply_bpm_btn = ctk.CTkButton(self.row1, text="適用", width=35, font=self.f_jp_bold, command=self.controller.apply_bpm)
+        self.apply_bpm_btn = ctk.CTkButton(self.row1, text="適用", width=38, font=self.f_jp_bold, command=self.controller.apply_bpm)
         self.apply_bpm_btn.grid(row=0, column=12, padx=2, sticky="e")
 
-        self.default_bpm_btn = ctk.CTkButton(self.row1, text="Default", width=50, font=self.f_norm, command=self.controller.reset_bpm)
+        self.default_bpm_btn = ctk.CTkButton(self.row1, text="100%", width=48, font=self.f_norm, command=self.controller.reset_bpm)
         self.default_bpm_btn.grid(row=0, column=13, padx=(5, 0), sticky="e")
 
 
@@ -128,7 +129,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         create_sep(self.row2).pack(side="left", padx=5)
 
         # LCD風液晶表示パネル
-        self.lcd_frame = ctk.CTkFrame(self.row2, fg_color="#111111", border_width=1, border_color="#333333", width=520, height=34)
+        self.lcd_frame = ctk.CTkFrame(self.row2, fg_color="#111111", border_width=1, border_color="#333333", width=560, height=34)
         self.lcd_frame.pack(side="right", padx=(0, 10))
         self.lcd_frame.pack_propagate(False)
 
@@ -140,7 +141,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.lbl_lcd_split.pack(side="left")
 
         # 小節 ＆ 拍位置表示
-        self.lbl_lcd_pos = ctk.CTkLabel(self.lcd_frame, text="位置: 001小節 . 01拍", text_color="#00ffcc", font=("Courier New", 12, "bold"), width=170, anchor="w")
+        self.lbl_lcd_pos = ctk.CTkLabel(self.lcd_frame, text="位置: 001小節 . 01拍", text_color="#00ffcc", font=("Courier New", 12, "bold"), width=165, anchor="w")
         self.lbl_lcd_pos.pack(side="left", padx=(10, 2))
 
         self.lbl_lcd_split2 = ctk.CTkLabel(self.lcd_frame, text="|", text_color="#333333")
@@ -154,8 +155,8 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.lbl_lcd_split3.pack(side="left")
 
         # テンポ表示
-        self.lbl_lcd_bpm = ctk.CTkLabel(self.lcd_frame, text="テンポ: 120 BPM", text_color="#00ffcc", font=("Courier New", 12, "bold"), width=110, anchor="w")
-        self.lbl_lcd_bpm.pack(side="left", padx=(10, 2))
+        self.lbl_lcd_bpm = ctk.CTkLabel(self.lcd_frame, text="テンポ:120BPM(100%)", text_color="#00ffcc", font=("Courier New", 12, "bold"), width=145, anchor="w")
+        self.lbl_lcd_bpm.pack(side="left", padx=(8, 2))
 
 
         # --- ■ 3行目 (下段：演奏設定 ➔ 高機能ABループ数値) ---

@@ -75,7 +75,10 @@ class MidiEngine:
         self.play_thread = None
         
         # 演奏属性
+        self.default_bpm = 120.0
         self.bpm = 120
+        self.speed_ratio = 1.0
+        self.tempo_timeline = [{"tick": 0, "tempo": 500000, "bpm": 120.0, "base_sec": 0.0}]
         self.time_sig_num = 4
         self.time_sig_den = 4
         self.count_in_measures = 1
@@ -217,16 +220,12 @@ class MidiEngine:
         self.mido_file = mido.MidiFile(filepath)
         self.ticks_per_beat = self.mido_file.ticks_per_beat
         
-        tempo = 500000
-        for track in self.mido_file.tracks:
-            for msg in track:
-                if msg.type == 'set_tempo':
-                    tempo = msg.tempo
-                    break
-        self.bpm = round(mido.tempo2bpm(tempo))
-        
         raw_merged = list(mido.merge_tracks(self.mido_file.tracks))
         self.total_ticks = sum(msg.time for msg in raw_merged)
+        
+        self.compute_tempo_timeline(raw_merged)
+        self.default_bpm = round(self.tempo_timeline[0]["bpm"]) if self.tempo_timeline else 120
+        self.bpm = round(self.default_bpm * self.speed_ratio)
         
         self.compute_measure_timeline()
         
@@ -243,6 +242,100 @@ class MidiEngine:
         self.loop_b_index = None
         self.loop_b_target_tick = None 
         self.reset_playback_state()
+
+    def compute_tempo_timeline(self, raw_merged):
+        """曲中のすべての set_tempo メタイベントを走査し、ティックと100%基準秒数のテンポタイムラインを構築します。"""
+        tempo_changes = [(0, 500000)]
+        current_tick = 0
+        for msg in raw_merged:
+            current_tick += msg.time
+            if msg.is_meta and msg.type == 'set_tempo':
+                tempo_changes.append((current_tick, msg.tempo))
+
+        tempo_changes.sort(key=lambda x: x[0])
+        filtered_tempos = []
+        for change in tempo_changes:
+            if not filtered_tempos or filtered_tempos[-1][0] != change[0]:
+                filtered_tempos.append(change)
+            else:
+                filtered_tempos[-1] = change
+
+        self.tempo_timeline = []
+        cum_sec = 0.0
+        for i, (t_tick, tempo_us) in enumerate(filtered_tempos):
+            bpm_val = 60000000.0 / max(1, tempo_us)
+            if i > 0:
+                prev_seg = self.tempo_timeline[-1]
+                dt = max(0, t_tick - prev_seg["tick"])
+                cum_sec += dt * (60.0 / (prev_seg["bpm"] * self.ticks_per_beat))
+            self.tempo_timeline.append({
+                "tick": t_tick,
+                "tempo": tempo_us,
+                "bpm": bpm_val,
+                "base_sec": cum_sec
+            })
+
+    def get_base_bpm_at_tick(self, tick):
+        """指定ティック時点での原曲BPM（100%速度時）を返します。"""
+        if not self.tempo_timeline:
+            return float(self.default_bpm)
+        t = max(0.0, float(tick))
+        active_bpm = self.tempo_timeline[0]["bpm"]
+        for seg in self.tempo_timeline:
+            if seg["tick"] <= t:
+                active_bpm = seg["bpm"]
+            else:
+                break
+        return active_bpm
+
+    def get_bpm_at_tick(self, tick, speed_ratio=None):
+        """指定ティック時点での実効BPM（原曲BPM × 再生速度倍率）を返します。"""
+        sr = self.speed_ratio if speed_ratio is None else speed_ratio
+        return self.get_base_bpm_at_tick(tick) * max(0.05, sr)
+
+    def tick_to_sec(self, tick, speed_ratio=None):
+        """指定ティックを、曲中テンポ変化と再生速度倍率を考慮した実経過秒数（カウントイン除く）へ変換します。"""
+        sr = max(0.05, self.speed_ratio if speed_ratio is None else speed_ratio)
+        if not self.tempo_timeline:
+            base_sec = float(tick) * (60.0 / (max(1.0, self.default_bpm) * self.ticks_per_beat))
+            return base_sec / sr
+
+        if tick <= 0:
+            first_bpm = max(1.0, self.tempo_timeline[0]["bpm"])
+            base_sec = float(tick) * (60.0 / (first_bpm * self.ticks_per_beat))
+            return base_sec / sr
+
+        active_seg = self.tempo_timeline[0]
+        for seg in self.tempo_timeline:
+            if seg["tick"] <= tick:
+                active_seg = seg
+            else:
+                break
+
+        dt = float(tick) - active_seg["tick"]
+        base_sec = active_seg["base_sec"] + dt * (60.0 / (max(1.0, active_seg["bpm"]) * self.ticks_per_beat))
+        return base_sec / sr
+
+    def sec_to_tick(self, sec, speed_ratio=None):
+        """実経過秒数（カウントイン除く）を、曲中テンポ変化と再生速度倍率を考慮したティックへ変換します。"""
+        sr = max(0.05, self.speed_ratio if speed_ratio is None else speed_ratio)
+        target_base_sec = float(sec) * sr
+        if not self.tempo_timeline:
+            return target_base_sec * (max(1.0, self.default_bpm) * self.ticks_per_beat / 60.0)
+
+        if target_base_sec <= 0:
+            first_bpm = max(1.0, self.tempo_timeline[0]["bpm"])
+            return target_base_sec * (first_bpm * self.ticks_per_beat / 60.0)
+
+        active_seg = self.tempo_timeline[0]
+        for seg in self.tempo_timeline:
+            if seg["base_sec"] <= target_base_sec:
+                active_seg = seg
+            else:
+                break
+
+        delta_base_sec = target_base_sec - active_seg["base_sec"]
+        return active_seg["tick"] + delta_base_sec * (max(1.0, active_seg["bpm"]) * self.ticks_per_beat / 60.0)
 
     def compute_measure_timeline(self):
         sig_changes = [(0, 4, 4)]
@@ -522,13 +615,10 @@ class MidiEngine:
             self.measure_beat_callback(measure, beat, num, den, total_measures)
 
     def ticks_to_ms(self, ticks):
-        sec_per_tick = 60.0 / (self.bpm * self.ticks_per_beat)
-        return ticks * sec_per_tick * 1000.0
+        return self.tick_to_sec(ticks) * 1000.0
 
     def ms_to_ticks(self, ms):
-        sec = ms / 1000.0
-        ticks_per_sec = (self.bpm * self.ticks_per_beat) / 60.0
-        return int(sec * ticks_per_sec)
+        return int(self.sec_to_tick(ms / 1000.0))
 
     def sync_with_wav_ms(self, ms):
         target_tick = self.ms_to_ticks(ms)
@@ -555,6 +645,7 @@ class MidiEngine:
                     start_tick = self.merged_messages[self.current_msg_index].abs_tick
                     _, _, active_num, active_den, _ = self.get_measure_and_beat(start_tick)
                 else:
+                    start_tick = 0
                     active_num = self.time_sig_num
                     active_den = self.time_sig_den
                 
@@ -578,7 +669,9 @@ class MidiEngine:
                         
                         self.play_metronome_tick(beat_in_measure, force_standard=True)
                         
-                        beat_dur = (60.0 / self.bpm) * (4.0 / active_den)
+                        active_bpm = max(1.0, self.get_bpm_at_tick(start_tick))
+                        self.bpm = round(active_bpm)
+                        beat_dur = (60.0 / active_bpm) * (4.0 / active_den)
                         start_wait = time.perf_counter()
                         
                         ticks_per_beat_val = int(self.ticks_per_beat * (4.0 / active_den))
@@ -590,7 +683,7 @@ class MidiEngine:
                             
                             elapsed = time.perf_counter() - start_wait
                             
-                            ticks_per_sec = (self.bpm * self.ticks_per_beat) / 60.0
+                            ticks_per_sec = (active_bpm * self.ticks_per_beat) / 60.0
                             self.accumulated_ticks = beat_start_tick + int(elapsed * ticks_per_sec)
                             if self.accumulated_ticks > 0:
                                 self.accumulated_ticks = 0
@@ -633,19 +726,22 @@ class MidiEngine:
                             self.active_pitches_callback(self.currently_playing_notes)
                             
                         start_wait = time.perf_counter()
-                        start_tick_base = event.abs_tick - ticks 
+                        start_tick_base = event.abs_tick - ticks
+                        base_delta_sec = max(0.0, self.tick_to_sec(event.abs_tick, speed_ratio=1.0) - self.tick_to_sec(start_tick_base, speed_ratio=1.0))
                         
                         while True:
                             if self.playing_state != 'playing':
                                 break
                             
-                            sec_per_tick = 60.0 / (self.bpm * self.ticks_per_beat)
-                            dynamic_delay = ticks * sec_per_tick
+                            speed_r = max(0.05, self.speed_ratio)
+                            dynamic_delay = base_delta_sec / speed_r
                             
                             elapsed = time.perf_counter() - start_wait
                             
-                            ticks_per_sec = (self.bpm * self.ticks_per_beat) / 60.0
-                            self.accumulated_ticks = start_tick_base + int(elapsed * ticks_per_sec)
+                            cur_bpm = max(1.0, self.get_bpm_at_tick(start_tick_base, speed_r))
+                            self.bpm = round(cur_bpm)
+                            ticks_per_sec = (cur_bpm * self.ticks_per_beat) / 60.0
+                            self.accumulated_ticks = min(event.abs_tick, start_tick_base + int(elapsed * ticks_per_sec))
                             
                             if self.loop_enabled and self.loop_b_target_tick is not None:
                                 if self.accumulated_ticks >= self.loop_b_target_tick:
@@ -670,6 +766,7 @@ class MidiEngine:
                         break
                     
                     self.accumulated_ticks = event.abs_tick
+                    self.bpm = round(self.get_bpm_at_tick(self.accumulated_ticks))
                     measure, beat, num, den, total_measures = self.get_measure_and_beat(self.accumulated_ticks)
                     
                     if measure != last_sent_measure or beat != last_sent_beat:
