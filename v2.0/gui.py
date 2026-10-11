@@ -106,11 +106,8 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.bpm_plus_btn = ctk.CTkButton(self.row1, text="+5%", width=36, font=self.f_bold, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.controller.step_speed_percent(5))
         self.bpm_plus_btn.grid(row=0, column=13, padx=1, sticky="e")
 
-        self.apply_bpm_btn = ctk.CTkButton(self.row1, text="適用", width=36, font=self.f_jp_bold, command=self.controller.apply_bpm)
-        self.apply_bpm_btn.grid(row=0, column=14, padx=2, sticky="e")
-
         self.default_bpm_btn = ctk.CTkButton(self.row1, text="100%", width=46, font=self.f_norm, command=self.controller.reset_bpm)
-        self.default_bpm_btn.grid(row=0, column=15, padx=(4, 0), sticky="e")
+        self.default_bpm_btn.grid(row=0, column=14, padx=(4, 0), sticky="e")
 
 
         # --- ■ 2行目 (中段：トランスポート ➔ シークタイムライン ➔ LCDステータス液晶) ---

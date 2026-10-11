@@ -308,7 +308,6 @@ class PlaybackController:
         self.gui.bpm_minus_btn.configure(state="normal")
         self.gui.bpm_entry.configure(state="normal")
         self.gui.bpm_plus_btn.configure(state="normal")
-        self.gui.apply_bpm_btn.configure(state="normal")
         self.gui.default_bpm_btn.configure(state="normal")
         self.gui.file_btn.configure(state=state)
         

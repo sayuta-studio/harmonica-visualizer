@@ -242,6 +242,7 @@ class MidiEngine:
         self.loop_b_index = None
         self.loop_b_target_tick = None 
         self.reset_playback_state()
+        self.sync_midi_channel_states(0)
 
     def compute_tempo_timeline(self, raw_merged):
         """曲中のすべての set_tempo メタイベントを走査し、ティックと100%基準秒数のテンポタイムラインを構築します。"""
@@ -479,6 +480,8 @@ class MidiEngine:
         else:
             self.accumulated_ticks = int(target_tick)
             
+        self.sync_midi_channel_states(self.current_msg_index)
+            
         if was_playing:
             self.playing_state = 'playing'
             self.play_thread = threading.Thread(target=self._playback_worker, daemon=True)
@@ -494,6 +497,53 @@ class MidiEngine:
             
             if self.status_callback:
                 self.status_callback(f"Paused (M: {measure} | B: {beat} / {num} | {num}/{den}拍子)")
+
+    def sync_midi_channel_states(self, up_to_index=None):
+        """
+        小節ジャンプ・シーク・ループ折り返し等で途中から再生した際にも、
+        その時点までに設定されているべき楽器音色(program_change)と主要コントロール(音量・パン・表現等)を
+        漏れなくMIDIデバイスへ先行送信し、ピアノ音色へ戻ってしまう現象を防止します。
+        """
+        if not self.merged_messages or not self.device_opened or not winmm:
+            return
+
+        if up_to_index is None:
+            up_to_index = self.current_msg_index
+
+        target_tick = 0
+        if 0 <= up_to_index < len(self.merged_messages):
+            target_tick = self.merged_messages[up_to_index].abs_tick
+        elif self.merged_messages:
+            target_tick = self.merged_messages[-1].abs_tick
+
+        latest_programs = {}
+        latest_ccs = {}
+        tracked_cc_nums = {0, 2, 7, 10, 11, 32}
+
+        for idx, event in enumerate(self.merged_messages):
+            if event.abs_tick > target_tick:
+                break
+            if event.is_metronome:
+                continue
+            msg = event.msg
+            if msg.is_meta:
+                continue
+            if msg.type == "program_change":
+                latest_programs[msg.channel] = msg
+            elif msg.type == "control_change" and msg.control in tracked_cc_nums:
+                latest_ccs[(msg.channel, msg.control)] = msg
+
+        for (_, _), cc_msg in sorted(latest_ccs.items()):
+            b = cc_msg.bytes()
+            if len(b) >= 3:
+                dw_msg = b[0] | (b[1] << 8) | (b[2] << 16)
+                winmm.midiOutShortMsg(self.h_midi_out, dw_msg)
+
+        for ch, pc_msg in sorted(latest_programs.items()):
+            b = pc_msg.bytes()
+            if len(b) >= 2:
+                dw_msg = b[0] | (b[1] << 8)
+                winmm.midiOutShortMsg(self.h_midi_out, dw_msg)
 
     def set_loop_point_by_measure(self, point_type, measure_number):
         """A小節の頭から、B小節の末尾（end_tick）までをループ範囲に解決します。"""
@@ -640,6 +690,7 @@ class MidiEngine:
             has_triggered_stream_start = False
             
             while self.playing_state in ['playing', 'count_in']:
+                self.sync_midi_channel_states(self.current_msg_index)
                 
                 if self.current_msg_index < len(self.merged_messages):
                     start_tick = self.merged_messages[self.current_msg_index].abs_tick
