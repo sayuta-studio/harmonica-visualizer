@@ -417,6 +417,9 @@ class PlaybackController:
                 acc_note["start_time"] = (acc_note["original_start_time"] * self.bpm_ratio) + count_in_duration
                 acc_note["duration"] = acc_note["original_duration"] * self.bpm_ratio
 
+            for m in getattr(self.midi_engine, "measures_timeline", []):
+                m["start_time"] = self.midi_engine.tick_to_sec(m["start_tick"]) + count_in_duration
+
             self.max_duration = (self.original_max_duration * self.bpm_ratio) + count_in_duration
             self.current_time = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks) + count_in_duration
             if self.play_state == "playing":

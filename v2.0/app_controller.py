@@ -718,7 +718,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             controller=self,
             trajectory_mode=trajectory_mode,
             show_lookahead=show_lookahead,
-            show_grid4=show_grid4
+            show_grid4=show_grid4,
+            measures_timeline=self.midi_engine.measures_timeline
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック
@@ -794,7 +795,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             use_skin=use_skin,
             trajectory_mode=trajectory_mode,
             show_lookahead=show_lookahead,
-            show_grid4=show_grid4
+            show_grid4=show_grid4,
+            measures_timeline=self.midi_engine.measures_timeline
         )
 
     def destroy(self):

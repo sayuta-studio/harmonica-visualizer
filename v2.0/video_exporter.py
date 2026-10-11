@@ -137,7 +137,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          active_pitches=None, show_glow_effect=True,
                                          color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                                          use_skin=True, trajectory_mode="3段階 (練習標準)",
-                                         show_lookahead=True, show_grid4=True):
+                                         show_lookahead=True, show_grid4=True, measures_timeline=None):
     """
     オフライン書き出し専用：Pillowの高度なレイヤー合成をフル稼働させ、基本フレームパーツのみを描画。
     外部スキン（PNG）が指定されている場合は、透過アルファチャネルを100%美しくレイヤーブレンドします。
@@ -220,6 +220,30 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
 
     frame_img = _CACHE["base_image"].copy()
     draw_img = ImageDraw.Draw(frame_img)
+
+    # 小節ごとの薄い横線＋左端小節番号の落下描画（ガイド線ON時）
+    if is_grid_on and measures_timeline:
+        is_bright_bg = (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
+        m_line_color = (0, 51, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((50, 0, 50, 255) if is_bright_bg else (46, 46, 46, 255))
+        m_txt_color = (0, 85, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((80, 0, 80, 255) if is_bright_bg else (85, 85, 85, 255))
+        f_m = get_truetype_font("arial.ttf", max(6, int(8 * scale)))
+        line_w = max(1, int(1 * scale))
+        pixels_per_second = (220.0 * current_bpm) / 240.0
+        if is_straight_mode:
+            x_l = X_start_draw
+            x_r = X_start_draw + total_width
+        else:
+            x_l = 24.0 * scale
+            x_r = 936.0 * scale
+
+        for m in measures_timeline:
+            m_start_t = m.get("start_time", 0.0)
+            y_m = y_hole_line_s - (m_start_t - current_time) * pixels_per_second * scale
+            if y_m < 0.0:
+                break
+            if y_m <= y_hole_line_s:
+                draw_img.line([(x_l, y_m), (x_r, y_m)], fill=m_line_color, width=line_w)
+                draw_img.text((x_l + 4 * scale, y_m - 2 * scale), str(m["measure_num"]), fill=m_txt_color, font=f_m, anchor="lb")
 
     lever_pressed = False
     playing_holes_data = {}
@@ -469,7 +493,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
                                  is_hole_num_on, is_legend_on, is_notes_on, is_grid_on, is_glow_on, note_opacity,
                                  parent_window, color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                                  aspect_ratio="16:9", use_skin=True, trajectory_mode="3段階 (練習標準)",
-                                 show_lookahead=True, show_grid4=True):
+                                 show_lookahead=True, show_grid4=True, measures_timeline=None):
     if not OPENCV_AVAILABLE:
         return
 
@@ -509,7 +533,8 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         use_skin=use_skin,
         trajectory_mode=trajectory_mode,
         show_lookahead=show_lookahead,
-        show_grid4=show_grid4
+        show_grid4=show_grid4,
+        measures_timeline=measures_timeline
     )
 
     if aspect_ratio == "9:16":
@@ -750,7 +775,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                               aspect_ratio="16:9", use_skin=True, controller=None,
                               trajectory_mode="3段階 (練習標準)",
-                              show_lookahead=True, show_grid4=True):
+                              show_lookahead=True, show_grid4=True, measures_timeline=None):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -854,7 +879,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     use_skin=use_skin,
                     trajectory_mode=trajectory_mode,
                     show_lookahead=show_lookahead,
-                    show_grid4=show_grid4
+                    show_grid4=show_grid4,
+                    measures_timeline=measures_timeline
                 )
 
                 rgb_frame = pil_frame.convert("RGB")
