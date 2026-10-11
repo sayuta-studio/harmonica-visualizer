@@ -94,16 +94,23 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.bpm_title_label = ctk.CTkLabel(self.row1, text="再生速度(%):", text_color="#aaaaaa", font=self.f_jp_bold)
         self.bpm_title_label.grid(row=0, column=10, padx=2, sticky="e")
 
-        self.bpm_entry = ctk.CTkEntry(self.row1, width=48, font=self.f_norm, justify="center")
+        self.bpm_minus_btn = ctk.CTkButton(self.row1, text="-5%", width=36, font=self.f_bold, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.controller.step_speed_percent(-5))
+        self.bpm_minus_btn.grid(row=0, column=11, padx=1, sticky="e")
+
+        self.bpm_entry = ctk.CTkEntry(self.row1, width=45, font=self.f_norm, justify="center")
         self.bpm_entry.insert(0, "100")
-        self.bpm_entry.grid(row=0, column=11, padx=2, sticky="e")
+        self.bpm_entry.grid(row=0, column=12, padx=1, sticky="e")
         self.bpm_entry.bind("<Return>", lambda e: self.controller.apply_bpm())
+        self.bpm_entry.bind("<FocusOut>", lambda e: self.controller.apply_bpm())
 
-        self.apply_bpm_btn = ctk.CTkButton(self.row1, text="適用", width=38, font=self.f_jp_bold, command=self.controller.apply_bpm)
-        self.apply_bpm_btn.grid(row=0, column=12, padx=2, sticky="e")
+        self.bpm_plus_btn = ctk.CTkButton(self.row1, text="+5%", width=36, font=self.f_bold, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.controller.step_speed_percent(5))
+        self.bpm_plus_btn.grid(row=0, column=13, padx=1, sticky="e")
 
-        self.default_bpm_btn = ctk.CTkButton(self.row1, text="100%", width=48, font=self.f_norm, command=self.controller.reset_bpm)
-        self.default_bpm_btn.grid(row=0, column=13, padx=(5, 0), sticky="e")
+        self.apply_bpm_btn = ctk.CTkButton(self.row1, text="適用", width=36, font=self.f_jp_bold, command=self.controller.apply_bpm)
+        self.apply_bpm_btn.grid(row=0, column=14, padx=2, sticky="e")
+
+        self.default_bpm_btn = ctk.CTkButton(self.row1, text="100%", width=46, font=self.f_norm, command=self.controller.reset_bpm)
+        self.default_bpm_btn.grid(row=0, column=15, padx=(4, 0), sticky="e")
 
 
         # --- ■ 2行目 (中段：トランスポート ➔ シークタイムライン ➔ LCDステータス液晶) ---

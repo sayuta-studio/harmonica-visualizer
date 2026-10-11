@@ -552,7 +552,11 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.pause_btn.configure(state=state)
         self.gui.stop_btn.configure(state=state)
         
+        if hasattr(self.gui, "bpm_minus_btn"):
+            self.gui.bpm_minus_btn.configure(state=state)
         self.gui.bpm_entry.configure(state=state)
+        if hasattr(self.gui, "bpm_plus_btn"):
+            self.gui.bpm_plus_btn.configure(state=state)
         self.gui.apply_bpm_btn.configure(state=state)
         self.gui.default_bpm_btn.configure(state=state)
         

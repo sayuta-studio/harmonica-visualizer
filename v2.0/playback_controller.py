@@ -266,18 +266,35 @@ class PlaybackController:
 
             self.max_duration = (self.original_max_duration * self.bpm_ratio) + count_in_duration
             self.current_time = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks) + count_in_duration
+            if self.play_state == "playing":
+                self.play_start_time = time.time() - self.current_time
             self.update_time_label()
             
             if hasattr(self, "gui") and hasattr(self.gui, "lbl_lcd_bpm"):
                 self.gui.lbl_lcd_bpm.configure(
-                    text=f"テンポ:{int(round(self.current_bpm)):03d}BPM({int(round(self.speed_percent))}%)"
-                )
+                    text=f"テンポ:{int(round(self.current_bpm)):03d}BPM({int(round(self.speed_percent))}%)")
 
-            if hasattr(self, "gui") and self.gui.canvas:
+            if hasattr(self, "gui") and self.gui.canvas and self.play_state != "playing":
                 self.draw_harmonica_static() 
             self.save_user_settings_txt()
         except Exception as ex:
             print(f"[警告] 再生速度適用中に例外が発生しました: {ex}")
+
+    def step_speed_percent(self, delta):
+        """-5% / +5% ボタンで再生速度をワンクリック増減します（再生中もリアルタイム反映）。"""
+        if not self.midi_notes: return
+        cur_pct = getattr(self, "speed_percent", 100.0)
+        if self.gui.bpm_entry:
+            raw_str = str(self.gui.bpm_entry.get()).replace("%", "").strip()
+            try:
+                cur_pct = float(raw_str)
+            except ValueError:
+                pass
+        new_pct = max(10, min(400, int(round(cur_pct + delta))))
+        if self.gui.bpm_entry:
+            self.gui.bpm_entry.delete(0, tk.END)
+            self.gui.bpm_entry.insert(0, str(new_pct))
+        self.apply_bpm()
 
     def reset_bpm(self):
         if not self.midi_notes: return
@@ -286,11 +303,13 @@ class PlaybackController:
         self.apply_bpm()
 
     def lock_controls_on_play(self, lock=True):
-        """再生中のUIコントロールロック"""
+        """再生中のUIコントロールロック（再生速度%・小節ジャンプ・ABループは再生中も常時操作可能）"""
         state = "disabled" if lock else "normal"
-        self.gui.bpm_entry.configure(state=state)
-        self.gui.apply_bpm_btn.configure(state=state)
-        self.gui.default_bpm_btn.configure(state=state)
+        self.gui.bpm_minus_btn.configure(state="normal")
+        self.gui.bpm_entry.configure(state="normal")
+        self.gui.bpm_plus_btn.configure(state="normal")
+        self.gui.apply_bpm_btn.configure(state="normal")
+        self.gui.default_bpm_btn.configure(state="normal")
         self.gui.file_btn.configure(state=state)
         
         # 音声選択メニュー(audio_mode_menu)のロックを追加補完
