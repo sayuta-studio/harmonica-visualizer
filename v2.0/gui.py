@@ -323,12 +323,12 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         ctk.CTkLabel(traj_row, text="ノーツ軌道:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
         self.trajectory_menu = ctk.CTkOptionMenu(
             traj_row,
-            values=["3段階収束 (標準)", "垂直落下 (穴直上)"],
+            values=["3段階 (練習標準)", "垂直落下 (穴直上)", "2段階 (ビジュアル)"],
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
             command=self.controller.on_setting_changed
         )
-        self.trajectory_menu.set("3段階収束 (標準)")
+        self.trajectory_menu.set("3段階 (練習標準)")
         self.trajectory_menu.pack(side="right", fill="x", expand=True)
 
         # --- 🔊 音源・音量設定 ---

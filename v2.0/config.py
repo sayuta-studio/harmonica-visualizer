@@ -48,31 +48,40 @@ def get_y_layout_params(canvas_height):
     """
     全体のキャンバス高さ (canvas_height) に応じて、
     下部基準でハーモニカ幾何学が1ミリも動かず完全不動となるように、
-    各Y軸の座標を計算・変換して返します。
+    各Y軸の座標を計算・変換して返します（2段階ビジュアル基準）。
     """
     y_offset = canvas_height - 540
     
     y_center = 460 + y_offset        # 420から40px下げ
-    y_collide_line = 235 + y_offset  # 斜め収束開始ライン（斜め105px＋直上垂直105pxの1:1配分）
+    y_collide_line = 260 + y_offset  # 2段階モード標準の収束開始ライン
     y_hole_line = 445 + y_offset     # 衝突終点をホールの最上端（入り口のフチ、穴の真上）へ同期設定！
-    height_converge = 210            # 収束＋直上垂直の合計高さ（445 - 235 = 210）
+    height_converge = 185            # 2段階収束高さ（445 - 260 = 185）
     
     return y_center, y_collide_line, y_hole_line, height_converge
 
 
-def get_y_trajectory_params(canvas_height):
+def get_y_trajectory_params(canvas_height, trajectory_mode="3段階 (練習標準)"):
     """
-    3段階収束（上部60音垂直 ➔ 斜め収束 ➔ 穴直上垂直）および垂直落下モード用の
-    Y軸座標パラメータを一元計算して返します。
-    斜め収束区間 (105px) と穴直上の垂直落下区間 (105px) を1:1の同等の長さで確保します。
+    軌道モードに応じたY軸座標パラメータを一元計算して返します。
+    - 「3段階 (練習標準)」: 上部垂直(0〜145: 145px) ➔ 斜め収束(145〜245: 100px) ➔ 穴直上ロング垂直(245〜445: 200px)
+    - 「2段階 (ビジュアル)」: 上部垂直(0〜260: 260px) ➔ 斜め収束(260〜445: 185px) ➔ 直上垂直なし(0px)
+    - 「垂直落下 (穴直上)」: 画面最上部から穴直上まで全区間垂直(0〜445: 445px)
     """
     y_offset = canvas_height - 540
     y_center = 460 + y_offset
-    y_collide_line = 235 + y_offset
     y_hole_line = 445 + y_offset
-    height_straight = HEIGHT_STRAIGHT_ABOVE_HOLE
-    y_straight_line = y_hole_line - height_straight  # 340 + y_offset (斜め235〜340: 105px / 垂直340〜445: 105px)
-    height_diag = y_straight_line - y_collide_line   # 105
+
+    if "2段階" in str(trajectory_mode):
+        y_collide_line = 260 + y_offset
+        height_straight = 0
+        y_straight_line = y_hole_line
+        height_diag = y_straight_line - y_collide_line  # 185
+    else:
+        y_collide_line = 145 + y_offset
+        height_straight = HEIGHT_STRAIGHT_ABOVE_HOLE    # 200
+        y_straight_line = y_hole_line - height_straight # 245 + y_offset
+        height_diag = y_straight_line - y_collide_line  # 100
+
     return y_center, y_collide_line, y_straight_line, y_hole_line, height_diag, height_straight
 
 
@@ -115,12 +124,12 @@ CANVAS_HEIGHT = 540             # Canvas of 縦幅 (※デフォルト16:9)
 X_SHIFT_12HOLE = 96.0           
 
 # 衝突終点および収束境界スライドライントラック（穴の真上へ吸着）
-Y_COLLIDE_LINE = 235            # 等速下落と斜め収束の境界 (0〜235: 上部垂直235px)
-HEIGHT_STRAIGHT_ABOVE_HOLE = 105 # 穴直上の垂直落下区間高さ (340〜445: 105px)
-Y_STRAIGHT_LINE = 340           # 斜め収束終了・穴直上垂直開始ライン (445 - 105 = 340)
+Y_COLLIDE_LINE = 145            # 3段階モードの等速下落と斜め収束の境界 (0〜145: 上部垂直145px)
+HEIGHT_STRAIGHT_ABOVE_HOLE = 200 # 3段階モードの穴直上ロング垂直落下区間高さ (245〜445: 200px)
+Y_STRAIGHT_LINE = 245           # 3段階モードの斜め収束終了・穴直上垂直開始ライン (445 - 200 = 245)
 Y_HOLE_LINE = 445               # 物理穴の衝突終点（ホールの最上フチに完全同期）
-HEIGHT_CONVERGE = 210           # 収束領域合計高さ (445 - 235 = 210)
-HEIGHT_DIAG_CONVERGE = 105      # 斜め収束区間高さ (340 - 235 = 105、直上垂直区間と1:1)
+HEIGHT_CONVERGE = 185           # 2段階モード基準の収束高さ (445 - 260 = 185)
+HEIGHT_DIAG_CONVERGE = 100      # 3段階モードの斜め収束区間高さ (245 - 145 = 100)
 PIXELS_PER_BEAT = 120           # 1拍あたりの等速下落ピクセル数
 
 # 🚀【解決】：扁平な縦長メタル楕円（16x36）表示のための最大画像キャンバスサイズ

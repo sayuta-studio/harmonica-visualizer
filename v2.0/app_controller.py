@@ -400,7 +400,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         # 連動リング表示スイッチのON/OFF状態を引き渡す
         use_ring = bool(self.gui.show_ring_switch.get())
-        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階収束 (標準)"
+        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
 
         draw_harmonica_canvas(
             canvas=self.gui.canvas,
@@ -668,7 +668,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         aspect_ratio = self.gui.ratio_menu.get()
         use_skin = bool(self.gui.use_skin_switch.get())
-        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階収束 (標準)"
+        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
 
         execute_video_export_core(
             midi_notes=midi_notes,
@@ -748,7 +748,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         aspect_ratio = self.gui.ratio_menu.get()
         use_skin = bool(self.gui.use_skin_switch.get())
-        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階収束 (標準)"
+        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
 
         execute_single_frame_preview(
             midi_notes=midi_notes,

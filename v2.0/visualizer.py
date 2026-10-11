@@ -53,7 +53,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                           edit_mode_active=False,
                           last_edit_note=None, last_edit_fing=None,
                           use_skin=True, scale=1.0, aspect_ratio="16:9",
-                          use_ring=True, trajectory_mode="3段階収束 (標準)"):  
+                          use_ring=True, trajectory_mode="3段階 (練習標準)"):  
     """
     Pillowを一切経由せず、Tkinter Canvasのネイティブ命令だけで超高速描画。
     縮小フィットスケール scale および アスペクト比に応じたY軸平行移動を完全加算して描画。
@@ -64,8 +64,8 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
     # マルチアスペクト仮想フル高さ解決
     canvas_height_full = get_canvas_height_by_ratio(aspect_ratio)
     
-    # フル高さに応じた下部基準Y座標を解決（3段階収束＆垂直落下対応）
-    y_center_full, y_collide_full, y_straight_full, y_hole_line_full, height_diag_full, _ = get_y_trajectory_params(canvas_height_full)
+    # フル高さ・軌道モードに応じた下部基準Y座標を解決（3段階練習標準 / 垂直落下 / 2段階ビジュアル対応）
+    y_center_full, y_collide_full, y_straight_full, y_hole_line_full, height_diag_full, height_straight_full = get_y_trajectory_params(canvas_height_full, trajectory_mode)
 
     # スケールを掛け合わせて、表示用Canvas内にパーフェクトにフィット縮小！
     y_center_s = y_center_full * scale
@@ -73,6 +73,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
     y_straight_s = y_straight_full * scale
     y_hole_line_s = y_hole_line_full * scale
     height_diag_s = height_diag_full * scale
+    height_straight_s = height_straight_full * scale
     is_straight_mode = ("垂直落下" in str(trajectory_mode))
 
     visible_indices, X_start_draw, X_shift, X_shift_notes = get_layout_params(inst_type, scale)
@@ -152,7 +153,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     canvas.create_line(hx, 0, hx, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
                 canvas.create_line(X_start_draw + total_width, 0, X_start_draw + total_width, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
             else:
-                # 3段階収束モード：上部60音等幅グリッド + 穴直上の垂直助走区間ガイド線
+                # 3段階収束 / 2段階ビジュアルモード：上部60音等幅グリッド
                 for idx in range(58):
                     x_pos = (24 + idx * 16) * scale
                     canvas.create_line(x_pos, 0, x_pos, y_collide_s, fill=guide_color, tags="static_grid")
@@ -160,15 +161,16 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                 canvas.create_line(24 * scale, 0, 24 * scale, y_collide_s, fill=grid_line_color, tags="static_grid_border")
                 canvas.create_line(936 * scale, 0, 936 * scale, y_collide_s, fill=grid_line_color, tags="static_grid_border")
 
-                # 穴直上の垂直落下区間 (y_straight_s 〜 y_hole_line_s) の穴境界＋穴内4分割ガイド
-                canvas.create_line(X_start_draw, y_straight_s, X_start_draw + total_width, y_straight_s, fill=guide_color, tags="static_grid")
-                for k in range(N_visible):
-                    hx = X_start_draw + k * W_PITCH * scale
-                    for sub in (1, 2, 3):
-                        sx = hx + sub * 12 * scale
-                        canvas.create_line(sx, y_straight_s, sx, y_hole_line_s, fill=guide_color, tags="static_grid")
-                    canvas.create_line(hx, y_straight_s, hx, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
-                canvas.create_line(X_start_draw + total_width, y_straight_s, X_start_draw + total_width, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
+                # 3段階モード時のみ、穴直上の垂直落下区間 (y_straight_s 〜 y_hole_line_s) の穴境界＋穴内4分割ガイドを描画
+                if height_straight_s > 0:
+                    canvas.create_line(X_start_draw, y_straight_s, X_start_draw + total_width, y_straight_s, fill=guide_color, tags="static_grid")
+                    for k in range(N_visible):
+                        hx = X_start_draw + k * W_PITCH * scale
+                        for sub in (1, 2, 3):
+                            sx = hx + sub * 12 * scale
+                            canvas.create_line(sx, y_straight_s, sx, y_hole_line_s, fill=guide_color, tags="static_grid")
+                        canvas.create_line(hx, y_straight_s, hx, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
+                    canvas.create_line(X_start_draw + total_width, y_straight_s, X_start_draw + total_width, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
 
         # マウスピース外部スキン貼り付け合成
         if use_skin and canvas.skin_cache.get("face"):

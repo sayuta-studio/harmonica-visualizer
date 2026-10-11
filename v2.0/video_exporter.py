@@ -136,7 +136,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          note_opacity_value, midi_notes=None, current_time=0.0, current_bpm=120.0, 
                                          active_pitches=None, show_glow_effect=True,
                                          color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                         use_skin=True, trajectory_mode="3段階収束 (標準)"):
+                                         use_skin=True, trajectory_mode="3段階 (練習標準)"):
     """
     オフライン書き出し専用：Pillowの高度なレイヤー合成をフル稼働させ、基本フレームパーツのみを描画。
     外部スキン（PNG）が指定されている場合は、透過アルファチャネルを100%美しくレイヤーブレンドします。
@@ -144,12 +144,13 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     if active_pitches is None: active_pitches = set()
     if midi_notes is None: midi_notes = []
 
-    y_center_s, y_collide_s, y_straight_s, y_hole_line_s, height_diag_s, _ = get_y_trajectory_params(height / scale)
+    y_center_s, y_collide_s, y_straight_s, y_hole_line_s, height_diag_s, height_straight_s = get_y_trajectory_params(height / scale, trajectory_mode)
     y_center_s *= scale
     y_collide_s *= scale
     y_straight_s *= scale
     y_hole_line_s *= scale
     height_diag_s *= scale
+    height_straight_s *= scale
     is_straight_mode = ("垂直落下" in str(trajectory_mode))
 
     W_pitch_s = W_PITCH * scale
@@ -203,14 +204,15 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                 base_draw.line([(24 * scale, 0), (24 * scale, y_collide_s)], fill=grid_line_color, width=line_w)
                 base_draw.line([(936 * scale, 0), (936 * scale, y_collide_s)], fill=grid_line_color, width=line_w)
 
-                base_draw.line([(X_start_draw, y_straight_s), (X_start_draw + total_width, y_straight_s)], fill=grid_color, width=line_w)
-                for k in range(N_visible):
-                    hx = X_start_draw + k * W_pitch_s
-                    for sub in (1, 2, 3):
-                        sx = hx + sub * 12 * scale
-                        base_draw.line([(sx, y_straight_s), (sx, y_hole_line_s)], fill=grid_color, width=line_w)
-                    base_draw.line([(hx, y_straight_s), (hx, y_hole_line_s)], fill=grid_line_color, width=line_w)
-                base_draw.line([(X_start_draw + total_width, y_straight_s), (X_start_draw + total_width, y_hole_line_s)], fill=grid_line_color, width=line_w)
+                if height_straight_s > 0:
+                    base_draw.line([(X_start_draw, y_straight_s), (X_start_draw + total_width, y_straight_s)], fill=grid_color, width=line_w)
+                    for k in range(N_visible):
+                        hx = X_start_draw + k * W_pitch_s
+                        for sub in (1, 2, 3):
+                            sx = hx + sub * 12 * scale
+                            base_draw.line([(sx, y_straight_s), (sx, y_hole_line_s)], fill=grid_color, width=line_w)
+                        base_draw.line([(hx, y_straight_s), (hx, y_hole_line_s)], fill=grid_line_color, width=line_w)
+                    base_draw.line([(X_start_draw + total_width, y_straight_s), (X_start_draw + total_width, y_hole_line_s)], fill=grid_line_color, width=line_w)
 
         _CACHE["key"] = cache_key
         _CACHE["base_image"] = base_img
@@ -544,10 +546,10 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
 def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, midi_notes, 
                                    current_time, current_bpm, active_pitches, note_opacity_value,
                                    color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                   aspect_ratio="16:9", trajectory_mode="3段階収束 (標準)"):
+                                   aspect_ratio="16:9", trajectory_mode="3段階 (練習標準)"):
     """
     OpenCVの LINE_AA を用いて、斜め面取りされたソリッドでシャープな幾何学多角形ノーツを合成描画。
-    「3段階収束 (標準)」（上部60音垂直 ➔ 斜め収束 ➔ 穴直上垂直）および「垂直落下 (穴直上)」の両モードに対応。
+    「3段階 (練習標準)」「垂直落下 (穴直上)」「2段階 (ビジュアル)」の3モードすべてに対応。
     """
     if not midi_notes:
         return bgr_frame
@@ -558,11 +560,12 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     notes_overlay = np.zeros_like(bgr_frame)
     notes_mask = np.zeros((height, width), dtype=np.uint8)
 
-    y_center_full, y_collide_full, y_straight_full, y_hole_line_full, height_diag_full, _ = get_y_trajectory_params(height / scale)
+    y_center_full, y_collide_full, y_straight_full, y_hole_line_full, height_diag_full, height_straight_full = get_y_trajectory_params(height / scale, trajectory_mode)
     y_collide_s = y_collide_full * scale
     y_straight_s = y_straight_full * scale
     y_hole_line_s = y_hole_line_full * scale
     height_diag_s = height_diag_full * scale
+    height_straight_s = height_straight_full * scale
     is_straight_mode = ("垂直落下" in str(trajectory_mode))
 
     _, _, _, X_shift_notes = get_layout_params(inst_type, scale)

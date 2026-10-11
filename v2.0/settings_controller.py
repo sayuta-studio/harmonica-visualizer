@@ -89,9 +89,11 @@ class SettingsController:
         harmonica_map.apply_fingering_preset(fingering_preset)
 
         # ノーツ落下軌道の復元
-        traj_mode = loaded.get("ノーツ落下軌道", "3段階収束 (標準)")
-        if traj_mode not in ["3段階収束 (標準)", "垂直落下 (穴直上)"]:
-            traj_mode = "3段階収束 (標準)"
+        traj_mode = loaded.get("ノーツ落下軌道", "3段階 (練習標準)")
+        if traj_mode == "3段階収束 (標準)":
+            traj_mode = "3段階 (練習標準)"
+        if traj_mode not in ["3段階 (練習標準)", "垂直落下 (穴直上)", "2段階 (ビジュアル)"]:
+            traj_mode = "3段階 (練習標準)"
         if hasattr(self.gui, "trajectory_menu"):
             self.gui.trajectory_menu.set(traj_mode)
 
@@ -118,7 +120,7 @@ class SettingsController:
             ratio=self.gui.ratio_menu.get(),
             use_skin="ON" if self.gui.use_skin_switch.get() else "OFF",
             ring="ON" if self.gui.show_ring_switch.get() else "OFF",
-            trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階収束 (標準)"
+            trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
         )
 
     def on_setting_changed(self, value=None):
