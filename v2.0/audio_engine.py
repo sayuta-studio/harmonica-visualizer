@@ -111,12 +111,39 @@ def generate_metronome_click(freq, sample_rate, duration=0.05):
     return click_wave
 
 
+def generate_accompaniment_tone(freq, num_samples, sample_rate):
+    """
+    伴奏パート用の温かみのあるソフトなエレピ／アコースティック調トーンを生成します。
+    主旋律のハーモニカ音色を引き立てるよう倍音を抑えた柔らかいエンベロープにします。
+    """
+    t = np.arange(num_samples) / sample_rate
+    if len(t) == 0:
+        return np.array([], dtype=np.float32)
+
+    f0 = np.sin(2.0 * np.pi * freq * t)
+    f1 = np.sin(2.0 * np.pi * (2.0 * freq) * t) * 0.18
+    wave_data = (f0 + f1) * 0.45
+
+    dur = max(0.01, num_samples / sample_rate)
+    envelope = np.exp(-2.2 * t / dur)
+    wave_data *= envelope
+
+    fade_in_len = min(int(0.012 * sample_rate), len(wave_data))
+    fade_out_len = min(int(0.030 * sample_rate), len(wave_data))
+    if fade_in_len > 0:
+        wave_data[:fade_in_len] *= np.linspace(0.0, 1.0, fade_in_len)
+    if fade_out_len > 0:
+        wave_data[-fade_out_len:] *= np.linspace(1.0, 0.0, fade_out_len)
+    return wave_data
+
+
 def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, is_metro, output_wav_path, 
                            time_sig_num=4, time_sig_den=4, count_in_measures=1, measures_timeline=None, 
                            metronome_pattern="標準（頭拍強調）", ticks_per_beat=480, sample_rate=44100,
-                           tick_to_sec_fn=None):
+                           tick_to_sec_fn=None, accompaniment_notes=None, part_play_mode="全パート再生"):
     """
-    MIDI演奏情報および変拍子・曲中テンポ変化タイムラインから16-bit PCMモノラルWAVファイルを高速に物理合成して出力します。
+    MIDI演奏情報および変拍子・曲中テンポ変化タイムライン・パート再生モードから
+    16-bit PCMモノラルWAVファイルを高速に物理合成して出力します。
     """
     # 末尾に2秒の無音余韻（残響安全パディング）を強制追加
     extended_duration = max_duration + 2.0
@@ -190,26 +217,47 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
                     if start_sample < num_samples:
                         samples[start_sample:end_sample] += click_wave[:end_sample - start_sample]
     
-    # C. ハーモニカ演奏音符（サイン波＋倍音ブレンドマルチボイス）の合成
-    for note_data in midi_notes:
-        note = note_data['note']
-        start = note_data['start_time'] # カウントイン加算済みの絶対秒
-        dur = note_data['duration']
-        
-        start_sample = int(start * sample_rate)
-        end_sample = int((start + dur) * sample_rate)
-        
-        if start_sample >= num_samples:
-            continue
-        end_sample = min(end_sample, num_samples)
-        
-        freq = 440.0 * (2.0 ** ((note - 69) / 12.0))
-        
-        # 🚀【解決】：浮動小数の丸め誤差を排除するため、厳密なターゲットサンプル数を直接指定して波形を合成
-        target_length = end_sample - start_sample
-        if target_length > 0:
-            wave_data = generate_harmonica_tone(freq, target_length, sample_rate)
-            samples[start_sample:end_sample] += wave_data
+    # C-1. 主旋律ハーモニカ演奏音符（サイン波＋倍音ブレンドマルチボイス）の合成
+    if part_play_mode in ("全パート再生", "主旋律ソロ") and midi_notes:
+        for note_data in midi_notes:
+            note = note_data['note']
+            start = note_data['start_time']  # カウントイン加算済みの絶対秒
+            dur = note_data['duration']
+            
+            start_sample = int(start * sample_rate)
+            end_sample = int((start + dur) * sample_rate)
+            
+            if start_sample >= num_samples:
+                continue
+            end_sample = min(end_sample, num_samples)
+            
+            freq = 440.0 * (2.0 ** ((note - 69) / 12.0))
+            
+            target_length = end_sample - start_sample
+            if target_length > 0:
+                wave_data = generate_harmonica_tone(freq, target_length, sample_rate)
+                samples[start_sample:end_sample] += wave_data
+
+    # C-2. 伴奏パート音符の合成（全パート再生 または 伴奏のみ(カラオケ) 選択時）
+    if part_play_mode in ("全パート再生", "伴奏のみ(カラオケ)") and accompaniment_notes:
+        for acc_data in accompaniment_notes:
+            note = acc_data['note']
+            start = acc_data.get('start_time', acc_data.get('original_start_time', 0.0) + count_in_duration)
+            dur = acc_data.get('duration', acc_data.get('original_duration', 0.1))
+            vel_scale = max(0.2, min(1.0, acc_data.get('velocity', 80) / 100.0))
+
+            start_sample = int(start * sample_rate)
+            end_sample = int((start + dur) * sample_rate)
+
+            if start_sample >= num_samples:
+                continue
+            end_sample = min(end_sample, num_samples)
+
+            freq = 440.0 * (2.0 ** ((note - 69) / 12.0))
+            target_length = end_sample - start_sample
+            if target_length > 0:
+                acc_wave = generate_accompaniment_tone(freq, target_length, sample_rate) * vel_scale
+                samples[start_sample:end_sample] += acc_wave
         
     # D. 音割れ防止のための自動マスタリング（ノーマライズ）
     max_val = np.max(np.abs(samples))

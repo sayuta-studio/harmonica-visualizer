@@ -26,6 +26,84 @@ class PlaybackController:
             return total_beats * ((60.0 / start_bpm) * (4.0 / time_sig_den))
         return 0.0
 
+    def extract_notes_from_midi(self):
+        """
+        現在選択されている主旋律パート（main_track_index）からビジュアル描画・練習用ノーツ(self.midi_notes)を抽出し、
+        それ以外の非ドラム伴奏パートから伴奏用ノーツ(self.accompaniment_notes)を抽出します。
+        """
+        active_notes = {}
+        parsed_main_notes = []
+        parsed_accomp_notes = []
+        main_idx = self.midi_engine.main_track_index
+
+        for event in self.midi_engine.merged_messages:
+            if event.is_metronome:
+                continue
+            msg = event.msg
+            if msg.is_meta or not hasattr(msg, "channel"):
+                continue
+
+            abs_tick = event.abs_tick
+            abs_sec = self.midi_engine.tick_to_sec(abs_tick, speed_ratio=1.0)
+            key = (event.track_idx, msg.channel, getattr(msg, "note", -1))
+
+            if msg.type == "note_on" and msg.velocity > 0:
+                active_notes[key] = (abs_sec, abs_tick, msg.velocity)
+            elif (msg.type == "note_off") or (msg.type == "note_on" and msg.velocity == 0):
+                if key in active_notes:
+                    start_time, start_tick, velocity = active_notes.pop(key)
+                    duration = max(0.01, abs_sec - start_time)
+                    duration_ticks = max(1, abs_tick - start_tick)
+                    note_obj = {
+                        "note": msg.note,
+                        "original_start_time": start_time,
+                        "original_duration": duration,
+                        "start_tick": start_tick,
+                        "duration_ticks": duration_ticks,
+                        "velocity": velocity,
+                        "track_idx": event.track_idx,
+                    }
+                    if event.track_idx == main_idx:
+                        parsed_main_notes.append(note_obj)
+                    elif msg.channel != 9:
+                        parsed_accomp_notes.append(note_obj)
+
+        # 未終了ノーツの安全クローズ
+        end_tick = self.midi_engine.total_ticks
+        end_sec = self.midi_engine.tick_to_sec(end_tick, speed_ratio=1.0)
+        for (t_idx, ch, note_num), (start_time, start_tick, velocity) in list(active_notes.items()):
+            duration = max(0.05, end_sec - start_time)
+            duration_ticks = max(1, end_tick - start_tick)
+            note_obj = {
+                "note": note_num,
+                "original_start_time": start_time,
+                "original_duration": duration,
+                "start_tick": start_tick,
+                "duration_ticks": duration_ticks,
+                "velocity": velocity,
+                "track_idx": t_idx,
+            }
+            if t_idx == main_idx:
+                parsed_main_notes.append(note_obj)
+            elif ch != 9:
+                parsed_accomp_notes.append(note_obj)
+
+        self.midi_notes = [n for n in parsed_main_notes if 24 <= n["note"] <= 98]
+        self.midi_notes.sort(key=lambda x: x["start_tick"])
+
+        self.accompaniment_notes = [n for n in parsed_accomp_notes if 12 <= n["note"] <= 108]
+        self.accompaniment_notes.sort(key=lambda x: x["start_tick"])
+
+        # ロード・パート切替完了後に、主旋律ノーツへ解決済み運指データをキャッシュ埋め込み
+        self.rebind_all_notes_fingerings()
+
+        max_main_end = max((n["original_start_time"] + n["original_duration"] for n in self.midi_notes), default=0.0)
+        max_acc_end = max((n["original_start_time"] + n["original_duration"] for n in self.accompaniment_notes), default=0.0)
+        self.original_max_duration = max(max_main_end, max_acc_end)
+
+        if self.midi_notes:
+            self.apply_bpm()
+
     def load_safe_melody(self):
         """ユーザー様ご提供の自作高品位MIDIデータ（16進数ハッシュ）から物理展開・自動ロード"""
         hex_data = "4d546864000000060001000101e04d54726b0000023f00ff031d31362d486f6c652043204368726f6d61746963204861726d6f6e69636100ff58040402180800ff5902000000ff510307a12000b0790000640000650000060c00647f00657f00c01600b00764000a40005b00005d0000ff21010000903c5000b002508267903c00013d5000b0025077903d00013e5000b002508267903e00013f5000b0025077903f0001405000b00250826790400001415000b002507790410001425000b00250826790420001435000b002507790430001445000b00250826790440001455000b002507790450001465000b00250826790460001475000b002507790470001485000b00250835f9048008361485000b00250826790480001495000b0025077904900014a5000b002508267904a00014b5000b0025077904b00014c5000b002508267904c00014d5000b0025077904d00014e5000b002508267904e00014f5000b0025077904f0001505000b00250826790500001515000b002507790510001525000b00250826790520001535000b002507790530001545000b00250835f9054008361545000b00250826790540001555000b002507790550001565000b00250826790560001575000b002507790570001585000b00250826790580001595000b0025077905900015a5000b002508267905a00015b5000b0025077905b00015c5000b002508267905c00015d5000b0025077905d00015e5000b002508267905e00015f5000b0025077905f0001605000b00250835f9060008361625000b002508b1f90620001305000b002507790300001ff2f00"
@@ -60,54 +138,7 @@ class PlaybackController:
             self.gui.alt_fingering_menu.set(harmonica_map.CURRENT_SONG_PRESET)
             harmonica_map.apply_fingering_preset(harmonica_map.CURRENT_SONG_PRESET)
 
-            # 自作高品位MIDIメッセージから、正確な再生用 absolute ティックをパース構築
-            ticks_per_beat = self.midi_engine.ticks_per_beat
-            current_tempo = int(60000000 / self.default_bpm)
-
-            absolute_time_seconds = 0.0
-            absolute_ticks = 0
-            active_notes = {}
-            parsed_notes = []
-
-            for event in self.midi_engine.merged_messages:
-                msg = event.msg
-                if msg.is_meta and msg.type == "set_tempo":
-                    current_tempo = msg.tempo
-
-                seconds_per_tick = (current_tempo / 1000000.0) / ticks_per_beat
-                delta_seconds = event.time * seconds_per_tick
-                absolute_time_seconds += delta_seconds
-                absolute_ticks += event.time
-
-                if event.is_metronome:
-                    continue  
-
-                if msg.type == "note_on" and msg.velocity > 0:
-                    active_notes[msg.note] = (absolute_time_seconds, absolute_ticks, msg.velocity)
-                elif (msg.type == "note_off") or (msg.type == "note_on" and msg.velocity == 0):
-                    if msg.note in active_notes:
-                        start_time, start_tick, velocity = active_notes.pop(msg.note)
-                        duration = absolute_time_seconds - start_time
-                        duration_ticks = absolute_ticks - start_tick
-                        parsed_notes.append({
-                            "note": msg.note, 
-                            "original_start_time": start_time, 
-                            "original_duration": duration,
-                            "start_tick": start_tick,            
-                            "duration_ticks": duration_ticks,    
-                            "velocity": velocity,
-                        })
-
-            self.midi_notes = [n for n in parsed_notes if 24 <= n["note"] <= 98]
-            self.midi_notes.sort(key=lambda x: x["start_tick"])
-            
-            # ロード完了後に、全ノーツへ解決済み運指データをキャッシュ埋め込み！
-            self.rebind_all_notes_fingerings()
-
-            if self.midi_notes:
-                last_note = self.midi_notes[-1]
-                self.original_max_duration = last_note["original_start_time"] + last_note["original_duration"]
-                self.apply_bpm()
+            self.extract_notes_from_midi()
             
         except Exception as e:
             print(f"[警告] デモ曲MIDI物理展開・ロード失敗: {e}")
@@ -163,70 +194,173 @@ class PlaybackController:
             self.gui.loop_b_entry.insert(0, str(total_measures))
             self.midi_engine.set_loop_point_by_measure('B', total_measures)
 
-            total_measures = len(self.midi_engine.measures_timeline) if self.midi_engine.measures_timeline else 1
             self.gui.jump_label.configure(text=f" / {total_measures} 小節")
 
             harmonica_map.load_song_fingering(self.current_midi_path)
             self.gui.alt_fingering_menu.set(harmonica_map.CURRENT_SONG_PRESET)
             harmonica_map.apply_fingering_preset(harmonica_map.CURRENT_SONG_PRESET)
 
-            ticks_per_beat = self.midi_engine.ticks_per_beat
-            current_tempo = int(60000000 / self.default_bpm)
+            self.extract_notes_from_midi()
 
-            absolute_time_seconds = 0.0
-            absolute_ticks = 0
-            active_notes = {}
-            parsed_notes = []
-
-            for event in self.midi_engine.merged_messages:
-                msg = event.msg
-                if msg.is_meta and msg.type == "set_tempo":
-                    current_tempo = msg.tempo
-
-                seconds_per_tick = (current_tempo / 1000000.0) / ticks_per_beat
-                delta_seconds = event.time * seconds_per_tick
-                absolute_time_seconds += delta_seconds
-                absolute_ticks += event.time
-
-                if event.is_metronome:
-                    continue  
-
-                if msg.type == "note_on" and msg.velocity > 0:
-                    active_notes[msg.note] = (absolute_time_seconds, absolute_ticks, msg.velocity)
-                elif (msg.type == "note_off") or (msg.type == "note_on" and msg.velocity == 0):
-                    if msg.note in active_notes:
-                        start_time, start_tick, velocity = active_notes.pop(msg.note)
-                        duration = absolute_time_seconds - start_time
-                        duration_ticks = absolute_ticks - start_tick
-                        parsed_notes.append({
-                            "note": msg.note, 
-                            "original_start_time": start_time, 
-                            "original_duration": duration,
-                            "start_tick": start_tick,            
-                            "duration_ticks": duration_ticks,    
-                            "velocity": velocity,
-                        })
-
-            self.midi_notes = [n for n in parsed_notes if 24 <= n["note"] <= 98]
-            self.midi_notes.sort(key=lambda x: x["start_tick"])
-            
-            # ロード完了後に、全ノーツへ解決済み運指データをキャッシュ埋め込み！
-            self.rebind_all_notes_fingerings()
+            main_info = self.midi_engine.get_main_track_info()
+            part_name = main_info["name"] if main_info else "Track 1"
+            num_parts = len(self.midi_engine.tracks_info)
 
             if self.midi_notes:
-                last_note = self.midi_notes[-1]
-                self.original_max_duration = last_note["original_start_time"] + last_note["original_duration"]
-                self.apply_bpm()
-                self.gui.status_label.configure(text=f"MIDIロード成功！ (基準テンポ: {int(self.default_bpm)} BPM / 再生速度: 100%)", text_color="#2b8c54")
+                self.gui.status_label.configure(
+                    text=f"MIDIロード成功！ (主旋律: {part_name} [全{num_parts}パート] / 基準: {int(self.default_bpm)} BPM)",
+                    text_color="#2b8c54"
+                )
             else:
-                self.gui.status_label.configure(text="エラー: 有効な半音階の音符が見つかりません。", text_color="#ff5555")
+                self.gui.status_label.configure(
+                    text=f"警告: 選択パート({part_name})に有効な音符がありません。「🎼 パート選択」から別パートを選んでください。",
+                    text_color="#ffcc00"
+                )
         except Exception as e:
             self.gui.status_label.configure(text=f"MIDI解析失敗: {e}", text_color="#ff5555")
             traceback.print_exc()
 
+    def on_part_play_mode_changed(self, value):
+        """トップバーのパート再生モード（全パート再生 / 主旋律ソロ / 伴奏のみ(カラオケ)）切替ハンドラ"""
+        self.midi_engine.part_play_mode = value
+        if self.midi_engine.playing_state in ["playing", "count_in"]:
+            self.midi_engine.all_notes_off()
+            self.midi_engine.sync_midi_channel_states(self.midi_engine.current_msg_index)
+        if hasattr(self, "gui") and hasattr(self.gui, "status_label"):
+            self.gui.status_label.configure(text=f"🎼 パート再生モードを「{value}」に切り替えました", text_color="#00ffcc")
+
+    def select_main_track(self, track_idx, dialog=None):
+        """パート選択ウィンドウから主旋律パートを切り替えます。"""
+        self.on_stop()
+        self.midi_engine.set_main_track(track_idx)
+        self.extract_notes_from_midi()
+        main_info = self.midi_engine.get_main_track_info()
+        part_name = main_info["name"] if main_info else f"Track {track_idx + 1}"
+        if self.midi_notes:
+            self.gui.status_label.configure(
+                text=f"🎼 主旋律パートを「{part_name}」に設定しました ({len(self.midi_notes)}音)",
+                text_color="#00ffcc"
+            )
+        else:
+            self.gui.status_label.configure(
+                text=f"⚠ パート「{part_name}」にはハーモニカ音域内の音符がありません",
+                text_color="#ffcc00"
+            )
+        self.draw_harmonica_static()
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+
+    def on_toggle_force_harmonica(self, sw_var):
+        """主旋律パートのハーモニカ音色強制スイッチ切替"""
+        self.midi_engine.force_main_harmonica = bool(sw_var.get())
+        self.midi_engine.sync_midi_channel_states(self.midi_engine.current_msg_index)
+
+    def open_part_select_dialog(self):
+        """マルチパートMIDIの主旋律パート選択ポップアップウィンドウを表示します。"""
+        import customtkinter as ctk
+
+        if hasattr(self, "_part_dialog") and self._part_dialog is not None and self._part_dialog.winfo_exists():
+            self._part_dialog.focus()
+            return
+
+        dlg = ctk.CTkToplevel(self)
+        self._part_dialog = dlg
+        dlg.title("🎼 主旋律パート選択 (マルチパートMIDI)")
+        dlg.geometry("680x440")
+        dlg.resizable(False, False)
+        dlg.transient(self)
+        dlg.grab_set()
+
+        header_frame = ctk.CTkFrame(dlg, fg_color="#1a1a1a", corner_radius=8)
+        header_frame.pack(fill="x", padx=15, pady=(15, 8))
+
+        ctk.CTkLabel(
+            header_frame,
+            text="🎼 ハーモニカで演奏・表示する「主旋律パート」を選択してください",
+            font=("Meiryo", 13, "bold"),
+            text_color="#00ffcc",
+            anchor="w"
+        ).pack(fill="x", padx=12, pady=(10, 2))
+
+        ctk.CTkLabel(
+            header_frame,
+            text="※ 選択したパートのノーツと穴LEDが画面に表示され、伴奏パートはバックグラウンドで再生されます。",
+            font=("Meiryo", 11),
+            text_color="#bbbbbb",
+            anchor="w"
+        ).pack(fill="x", padx=12, pady=(0, 8))
+
+        sw_var = tk.BooleanVar(value=self.midi_engine.force_main_harmonica)
+        harm_sw = ctk.CTkSwitch(
+            header_frame,
+            text="主旋律パートのMIDI音色を常に「ハーモニカ (GM #23)」に固定する",
+            variable=sw_var,
+            font=("Meiryo", 11, "bold"),
+            command=lambda: self.on_toggle_force_harmonica(sw_var)
+        )
+        harm_sw.pack(anchor="w", padx=12, pady=(2, 10))
+
+        scroll_frame = ctk.CTkScrollableFrame(dlg, fg_color="#141414", corner_radius=8)
+        scroll_frame.pack(fill="both", expand=True, padx=15, pady=(0, 12))
+
+        tracks = self.midi_engine.tracks_info
+        current_main = self.midi_engine.main_track_index
+
+        for i, info in enumerate(tracks):
+            t_idx = info["track_idx"]
+            is_selected = (t_idx == current_main)
+            row_bg = "#1e3a2f" if is_selected else "#222222"
+
+            row_card = ctk.CTkFrame(scroll_frame, fg_color=row_bg, corner_radius=6)
+            row_card.pack(fill="x", padx=6, pady=4)
+
+            left_box = ctk.CTkFrame(row_card, fg_color="transparent")
+            left_box.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+
+            badge = "★ 主旋律" if is_selected else f"パート #{i + 1}"
+            title_text = f"[{badge}]  {info['name']}   (Ch.{info['channel'] + 1})"
+            ctk.CTkLabel(
+                left_box,
+                text=title_text,
+                font=("Meiryo", 12, "bold"),
+                text_color="#00ffcc" if is_selected else "#ffffff",
+                anchor="w"
+            ).pack(fill="x")
+
+            sub_text = f"元の音色: {info['instrument_name']}  |  総ノーツ数: {info['note_count']}音 (ハーモニカ音域内: {info['in_range_count']}音)"
+            ctk.CTkLabel(
+                left_box,
+                text=sub_text,
+                font=("Meiryo", 11),
+                text_color="#aaaaaa",
+                anchor="w"
+            ).pack(fill="x", pady=(2, 0))
+
+            btn_text = "✓ 選択中" if is_selected else "主旋律に設定"
+            btn_fg = "#2b8c54" if is_selected else "#1f538d"
+            btn_hover = "#1f6b3e" if is_selected else "#163c66"
+
+            ctk.CTkButton(
+                row_card,
+                text=btn_text,
+                width=115,
+                height=32,
+                font=("Meiryo", 11, "bold"),
+                fg_color=btn_fg,
+                hover_color=btn_hover,
+                command=lambda idx=t_idx: self.select_main_track(idx, dialog=dlg)
+            ).pack(side="right", padx=12, pady=8)
+
+        close_btn = ctk.CTkButton(
+            dlg, text="閉じる", width=120, font=("Meiryo", 11, "bold"),
+            fg_color="#444444", hover_color="#666666", command=dlg.destroy
+        )
+        close_btn.pack(pady=(0, 12))
+
     def apply_bpm(self):
         """再生速度(%)倍率と曲中テンポ変化タイムラインの同期適用"""
-        if not self.midi_notes: return
+        if not self.midi_notes and not getattr(self, "accompaniment_notes", []):
+            return
         try:
             speed_pct = 100.0
             if self.gui.bpm_entry:
@@ -263,6 +397,10 @@ class PlaybackController:
                     note["start_tick"] = int((note["start_time"] - count_in_duration) * ticks_per_sec)
                 if "duration_ticks" not in note:
                     note["duration_ticks"] = int(note["duration"] * ticks_per_sec)
+
+            for acc_note in getattr(self, "accompaniment_notes", []):
+                acc_note["start_time"] = (acc_note["original_start_time"] * self.bpm_ratio) + count_in_duration
+                acc_note["duration"] = acc_note["original_duration"] * self.bpm_ratio
 
             self.max_duration = (self.original_max_duration * self.bpm_ratio) + count_in_duration
             self.current_time = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks) + count_in_duration
@@ -303,13 +441,17 @@ class PlaybackController:
         self.apply_bpm()
 
     def lock_controls_on_play(self, lock=True):
-        """再生中のUIコントロールロック（再生速度%・小節ジャンプ・ABループは再生中も常時操作可能）"""
+        """再生中のUIコントロールロック（再生速度%・パート再生モード・小節ジャンプ・ABループは再生中も常時操作可能）"""
         state = "disabled" if lock else "normal"
         self.gui.bpm_minus_btn.configure(state="normal")
         self.gui.bpm_entry.configure(state="normal")
         self.gui.bpm_plus_btn.configure(state="normal")
         self.gui.default_bpm_btn.configure(state="normal")
         self.gui.file_btn.configure(state=state)
+        if hasattr(self.gui, "part_select_btn"):
+            self.gui.part_select_btn.configure(state=state)
+        if hasattr(self.gui, "part_play_mode_menu"):
+            self.gui.part_play_mode_menu.configure(state="normal")
         
         # 音声選択メニュー(audio_mode_menu)のロックを追加補完
         self.gui.audio_mode_menu.configure(state=state)

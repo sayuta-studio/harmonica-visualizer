@@ -830,12 +830,16 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 metronome_pattern_ref = ctrl.midi_engine.metronome_pattern
                 count_in_measures_ref = ctrl.midi_engine.count_in_measures if is_count_in else 0
                 tick_to_sec_ref = ctrl.midi_engine.tick_to_sec
+                part_play_mode_ref = getattr(ctrl.midi_engine, "part_play_mode", "全パート再生")
+                accompaniment_notes_ref = getattr(ctrl, "accompaniment_notes", None)
             else:
                 measures_timeline_ref = None
                 ticks_per_beat_ref = ticks_per_beat
                 metronome_pattern_ref = "標準（頭拍強調）"
                 count_in_measures_ref = 1 if is_count_in else 0
                 tick_to_sec_ref = None
+                part_play_mode_ref = "全パート再生"
+                accompaniment_notes_ref = None
 
             synthesize_midi_to_wav(
                 midi_notes=midi_notes,
@@ -851,7 +855,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 metronome_pattern=metronome_pattern_ref,
                 ticks_per_beat=ticks_per_beat_ref,
                 sample_rate=44100,
-                tick_to_sec_fn=tick_to_sec_ref
+                tick_to_sec_fn=tick_to_sec_ref,
+                accompaniment_notes=accompaniment_notes_ref,
+                part_play_mode=part_play_mode_ref
             )
             print("[Export] 高音質WAV物理合成完了。FFmpegによる最終音声結合を開始します。")
 

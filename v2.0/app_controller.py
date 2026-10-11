@@ -60,6 +60,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         # 状態管理変数
         self.midi_notes = []
+        self.accompaniment_notes = []
         self.current_time = 0.0
         self.max_duration = 0.0
         self.original_max_duration = 0.0
@@ -547,6 +548,10 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         # ロック漏れしていた音声選択(audio_mode_menu)をリストへ補完
         self.gui.audio_mode_menu.configure(state=state)
         self.gui.file_btn.configure(state=state)
+        if hasattr(self.gui, "part_select_btn"):
+            self.gui.part_select_btn.configure(state=state)
+        if hasattr(self.gui, "part_play_mode_menu"):
+            self.gui.part_play_mode_menu.configure(state=state)
         
         self.gui.play_btn.configure(state=state)
         self.gui.pause_btn.configure(state=state)

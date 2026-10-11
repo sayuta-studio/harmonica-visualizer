@@ -46,12 +46,63 @@ else:
     winmm = None
 
 
+GM_INSTRUMENT_NAMES = {
+    0: "Acoustic Grand Piano (ピアノ)",
+    1: "Bright Acoustic Piano (ピアノ)",
+    4: "Electric Piano 1 (エレピ)",
+    5: "Electric Piano 2 (エレピ)",
+    11: "Vibraphone (ヴィブラフォン)",
+    16: "Drawbar Organ (オルガン)",
+    19: "Church Organ (チャーチオルガン)",
+    21: "Accordion (アコーディオン)",
+    22: "Harmonica (ハーモニカ)",
+    23: "Tango Accordion (バンドネオン)",
+    24: "Acoustic Guitar Nylon (アコギ)",
+    25: "Acoustic Guitar Steel (アコギ)",
+    26: "Electric Guitar Jazz (ジャズギター)",
+    27: "Electric Guitar Clean (エレキギター)",
+    32: "Acoustic Bass (ウッドベース)",
+    33: "Electric Bass Finger (エレキベース)",
+    35: "Fretless Bass (フレットレスベース)",
+    40: "Violin (バイオリン)",
+    41: "Viola (ビオラ)",
+    42: "Cello (チェロ)",
+    48: "String Ensemble 1 (ストリングス)",
+    49: "String Ensemble 2 (ストリングス)",
+    52: "Choir Aahs (コーラス)",
+    56: "Trumpet (トランペット)",
+    57: "Trombone (トロンボーン)",
+    60: "French Horn (ホルン)",
+    61: "Brass Section (ブラス)",
+    64: "Soprano Sax (ソプラノサックス)",
+    65: "Alto Sax (アルトサックス)",
+    66: "Tenor Sax (テナーサックス)",
+    68: "Oboe (オーボエ)",
+    71: "Clarinet (クラリネット)",
+    73: "Flute (フルート)",
+    75: "Pan Flute (パンフルート)",
+    79: "Ocarina (オカリナ)",
+    80: "Lead 1 Square (シンセリード)",
+    81: "Lead 2 Sawtooth (シンセリード)",
+    88: "Pad 1 New Age (シンセパッド)",
+}
+
+
+def get_gm_instrument_name(program, is_drum=False):
+    if is_drum:
+        return "Percussion / Drums (ドラム)"
+    if program in GM_INSTRUMENT_NAMES:
+        return GM_INSTRUMENT_NAMES[program]
+    return f"GM Program #{program + 1}"
+
+
 class PlayableEvent:
-    def __init__(self, mido_msg, is_metronome=False, beat_in_measure=0, abs_tick=0):
+    def __init__(self, mido_msg, is_metronome=False, beat_in_measure=0, abs_tick=0, track_idx=-1):
         self.msg = mido_msg
         self.is_metronome = is_metronome
         self.beat_in_measure = beat_in_measure
         self.abs_tick = abs_tick
+        self.track_idx = track_idx
         self.time = 0
         self.time_sig_num = 4
         self.time_sig_den = 4
@@ -66,6 +117,13 @@ class MidiEngine:
         self.mido_file = None
         self.merged_messages = []
         self.ticks_per_beat = 480
+        
+        # マルチパート・主旋律トラック管理
+        self.tracks_info = []
+        self.main_track_index = 0
+        self.main_midi_channel = 0
+        self.force_main_harmonica = True
+        self.part_play_mode = "全パート再生"  # "全パート再生" / "主旋律ソロ" / "伴奏のみ(カラオケ)"
         
         self.playing_state = 'stopped'
         self.current_msg_index = 0
@@ -220,10 +278,11 @@ class MidiEngine:
         self.mido_file = mido.MidiFile(filepath)
         self.ticks_per_beat = self.mido_file.ticks_per_beat
         
-        raw_merged = list(mido.merge_tracks(self.mido_file.tracks))
-        self.total_ticks = sum(msg.time for msg in raw_merged)
+        raw_merged_with_track = self.analyze_tracks_and_merge()
+        raw_merged_msgs = [item[2] for item in raw_merged_with_track]
+        self.total_ticks = raw_merged_with_track[-1][0] if raw_merged_with_track else 0
         
-        self.compute_tempo_timeline(raw_merged)
+        self.compute_tempo_timeline(raw_merged_msgs)
         self.default_bpm = round(self.tempo_timeline[0]["bpm"]) if self.tempo_timeline else 120
         self.bpm = round(self.default_bpm * self.speed_ratio)
         
@@ -236,13 +295,211 @@ class MidiEngine:
             self.time_sig_num = 4
             self.time_sig_den = 4
             
-        self.generate_merged_messages_with_metronome(raw_merged)
+        self.generate_merged_messages_with_metronome(raw_merged_with_track)
         
         self.loop_a_index = None
         self.loop_b_index = None
         self.loop_b_target_tick = None 
         self.reset_playback_state()
         self.sync_midi_channel_states(0)
+
+    def analyze_tracks_and_merge(self):
+        """
+        全トラック（またはFormat 0の複数チャンネル）を解析して self.tracks_info を構築し、
+        主旋律パートの初期自動選択とイベントマージを行います。
+        """
+        playable_tracks = []
+        all_channels_in_single_track = set()
+
+        for t_idx, track in enumerate(self.mido_file.tracks):
+            t_name = ""
+            note_count = 0
+            in_range_count = 0
+            ch_counts = {}
+            prog_by_ch = {}
+            first_prog = None
+
+            for msg in track:
+                if msg.is_meta and msg.type == "track_name" and not t_name:
+                    t_name = msg.name.strip()
+                elif not msg.is_meta:
+                    if msg.type == "program_change":
+                        prog_by_ch[msg.channel] = msg.program
+                        if first_prog is None:
+                            first_prog = msg.program
+                    elif msg.type == "note_on" and msg.velocity > 0:
+                        note_count += 1
+                        ch_counts[msg.channel] = ch_counts.get(msg.channel, 0) + 1
+                        if msg.channel != 9 and 24 <= msg.note <= 98:
+                            in_range_count += 1
+
+            if note_count > 0:
+                primary_ch = max(ch_counts.items(), key=lambda x: x[1])[0]
+                primary_prog = prog_by_ch.get(primary_ch, first_prog if first_prog is not None else 0)
+                is_drum = (primary_ch == 9)
+                inst_name = get_gm_instrument_name(primary_prog, is_drum=is_drum)
+                playable_tracks.append({
+                    "track_idx": t_idx,
+                    "name": t_name if t_name else f"Track {t_idx + 1}",
+                    "channel": primary_ch,
+                    "program": primary_prog,
+                    "instrument_name": inst_name,
+                    "note_count": note_count,
+                    "in_range_count": in_range_count,
+                    "is_drum": is_drum,
+                    "channels_used": set(ch_counts.keys())
+                })
+                if len(ch_counts) > 1:
+                    all_channels_in_single_track = set(ch_counts.keys())
+
+        # Format 0 等で1つのトラック内に複数チャンネルが混在している場合はチャンネル単位でパート分割
+        split_by_channel = (len(playable_tracks) == 1 and len(all_channels_in_single_track) > 1)
+        if split_by_channel:
+            base_track = self.mido_file.tracks[playable_tracks[0]["track_idx"]]
+            ch_info_map = {}
+            prog_by_ch = {}
+            for msg in base_track:
+                if not msg.is_meta:
+                    if msg.type == "program_change":
+                        prog_by_ch[msg.channel] = msg.program
+                    elif msg.type == "note_on" and msg.velocity > 0:
+                        ch = msg.channel
+                        if ch not in ch_info_map:
+                            ch_info_map[ch] = {"note_count": 0, "in_range_count": 0}
+                        ch_info_map[ch]["note_count"] += 1
+                        if ch != 9 and 24 <= msg.note <= 98:
+                            ch_info_map[ch]["in_range_count"] += 1
+
+            self.tracks_info = []
+            for ch in sorted(ch_info_map.keys()):
+                prog = prog_by_ch.get(ch, 0)
+                is_drum = (ch == 9)
+                inst_name = get_gm_instrument_name(prog, is_drum=is_drum)
+                self.tracks_info.append({
+                    "track_idx": ch,
+                    "name": f"Channel {ch + 1}",
+                    "channel": ch,
+                    "program": prog,
+                    "instrument_name": inst_name,
+                    "note_count": ch_info_map[ch]["note_count"],
+                    "in_range_count": ch_info_map[ch]["in_range_count"],
+                    "is_drum": is_drum
+                })
+        else:
+            self.tracks_info = [
+                {k: v for k, v in info.items() if k != "channels_used"}
+                for info in playable_tracks
+            ]
+
+        if not self.tracks_info:
+            self.tracks_info = [{
+                "track_idx": 0,
+                "name": "Track 1",
+                "channel": 0,
+                "program": 22,
+                "instrument_name": get_gm_instrument_name(22),
+                "note_count": 0,
+                "in_range_count": 0,
+                "is_drum": False
+            }]
+
+        # 主旋律パートの自動推論（ハーモニカ音色・トラック名・音域内ノーツ数から最適パートを選択）
+        best_track_idx = self.tracks_info[0]["track_idx"]
+        best_score = -1
+        for order_i, info in enumerate(self.tracks_info):
+            if info["is_drum"] or info["in_range_count"] == 0:
+                score = 0
+            else:
+                score = 100
+                if info["program"] == 22:
+                    score += 500
+                elif info["program"] in (21, 23, 64, 65, 66, 68, 71, 73, 79, 80, 81):
+                    score += 150
+                low_name = info["name"].lower()
+                if any(k in low_name for k in ("harmonica", "melody", "vocal", "main", "lead", "solo", "メロディ", "主旋律", "ハーモニカ")):
+                    score += 400
+                # トラック順が若い非ドラムパートを優先
+                score += max(0, 50 - order_i * 5)
+            if score > best_score:
+                best_score = score
+                best_track_idx = info["track_idx"]
+
+        self.set_main_track(best_track_idx)
+
+        # 全トラックのイベントを絶対ティック＋パート識別子付きでマージ
+        collected = []
+        order_counter = 0
+        for t_idx, track in enumerate(self.mido_file.tracks):
+            abs_tick = 0
+            for msg in track:
+                abs_tick += msg.time
+                part_id = getattr(msg, "channel", t_idx) if split_by_channel else t_idx
+                collected.append((abs_tick, order_counter, part_id, msg))
+                order_counter += 1
+
+        collected.sort(key=lambda x: (x[0], x[1]))
+
+        raw_merged_with_track = []
+        prev_tick = 0
+        for abs_tick, _, part_id, msg in collected:
+            delta = abs_tick - prev_tick
+            cloned_msg = msg.copy(time=delta)
+            raw_merged_with_track.append((abs_tick, part_id, cloned_msg))
+            prev_tick = abs_tick
+
+        return raw_merged_with_track
+
+    def set_main_track(self, track_idx):
+        """主旋律パートを切り替え、伴奏とチャンネルが競合しないよう専用チャンネルルーティングを更新します。"""
+        self.main_track_index = track_idx
+        main_info = None
+        other_channels = set()
+        for info in self.tracks_info:
+            if info["track_idx"] == track_idx:
+                main_info = info
+            else:
+                other_channels.add(info["channel"])
+
+        orig_ch = main_info["channel"] if main_info else 0
+        if orig_ch == 9 or orig_ch in other_channels:
+            # 他の伴奏トラックとチャンネルが重なる（またはCh.10ドラム）場合は空きチャンネルを割り当て
+            chosen_ch = orig_ch
+            for candidate_ch in range(16):
+                if candidate_ch != 9 and candidate_ch not in other_channels:
+                    chosen_ch = candidate_ch
+                    break
+            self.main_midi_channel = chosen_ch
+        else:
+            self.main_midi_channel = orig_ch
+
+        if self.merged_messages:
+            self.all_notes_off()
+            self.sync_midi_channel_states(self.current_msg_index)
+
+    def get_main_track_info(self):
+        for info in self.tracks_info:
+            if info["track_idx"] == self.main_track_index:
+                return info
+        return self.tracks_info[0] if self.tracks_info else None
+
+    def is_track_audible(self, track_idx):
+        """現在のパート再生モードに応じて、指定トラックを発音させるべきか判定します。"""
+        if track_idx < 0:
+            return True
+        if self.part_play_mode == "主旋律ソロ":
+            return track_idx == self.main_track_index
+        elif self.part_play_mode == "伴奏のみ(カラオケ)":
+            return track_idx != self.main_track_index
+        return True
+
+    def transform_msg_for_routing(self, msg, track_idx):
+        """主旋律パートのチャンネル分離およびGMハーモニカ音色(Program 22)強制変換を行います。"""
+        if track_idx == self.main_track_index and hasattr(msg, "channel"):
+            if msg.type == "program_change" and self.force_main_harmonica:
+                return msg.copy(channel=self.main_midi_channel, program=22)
+            elif msg.channel != self.main_midi_channel:
+                return msg.copy(channel=self.main_midi_channel)
+        return msg
 
     def compute_tempo_timeline(self, raw_merged):
         """曲中のすべての set_tempo メタイベントを走査し、ティックと100%基準秒数のテンポタイムラインを構築します。"""
@@ -400,12 +657,18 @@ class MidiEngine:
         m = self.measures_timeline[-1]
         return m['measure_num'], m['num'], m['num'], m['den'], len(self.measures_timeline)
 
-    def generate_merged_messages_with_metronome(self, raw_merged):
+    def generate_merged_messages_with_metronome(self, raw_merged_with_track):
         absolute_events = []
         current_tick = 0
-        for msg in raw_merged:
-            current_tick += msg.time
-            absolute_events.append((current_tick, PlayableEvent(msg, is_metronome=False, abs_tick=current_tick)))
+        for item in raw_merged_with_track:
+            if isinstance(item, tuple) and len(item) == 3:
+                abs_tick, t_idx, msg = item
+                current_tick = abs_tick
+            else:
+                msg = item
+                t_idx = 0
+                current_tick += msg.time
+            absolute_events.append((current_tick, PlayableEvent(msg, is_metronome=False, abs_tick=current_tick, track_idx=t_idx)))
             
         metronome_events = []
         for m in self.measures_timeline:
@@ -421,7 +684,7 @@ class MidiEngine:
                 velocity = 110 if b == 0 else 80
                 
                 m_msg = mido.Message('note_on', channel=9, note=note, velocity=velocity, time=0)
-                event = PlayableEvent(m_msg, is_metronome=True, beat_in_measure=b, abs_tick=beat_tick)
+                event = PlayableEvent(m_msg, is_metronome=True, beat_in_measure=b, abs_tick=beat_tick, track_idx=-1)
                 event.time_sig_num = num
                 event.time_sig_den = den
                 
@@ -500,9 +763,9 @@ class MidiEngine:
 
     def sync_midi_channel_states(self, up_to_index=None):
         """
-        小節ジャンプ・シーク・ループ折り返し等で途中から再生した際にも、
+        小節ジャンプ・シーク・ループ折り返し・パート切替時にも、
         その時点までに設定されているべき楽器音色(program_change)と主要コントロール(音量・パン・表現等)を
-        漏れなくMIDIデバイスへ先行送信し、ピアノ音色へ戻ってしまう現象を防止します。
+        漏れなくMIDIデバイスへ先行送信し、主旋律パートのGMハーモニカ音色(Program 22)を確実に維持します。
         """
         if not self.merged_messages or not self.device_opened or not winmm:
             return
@@ -525,13 +788,20 @@ class MidiEngine:
                 break
             if event.is_metronome:
                 continue
-            msg = event.msg
-            if msg.is_meta:
+            raw_msg = event.msg
+            if raw_msg.is_meta:
                 continue
+            msg = self.transform_msg_for_routing(raw_msg, event.track_idx)
             if msg.type == "program_change":
                 latest_programs[msg.channel] = msg
             elif msg.type == "control_change" and msg.control in tracked_cc_nums:
                 latest_ccs[(msg.channel, msg.control)] = msg
+
+        # 主旋律パートのハーモニカ音色強制がONの場合は、MIDI内にprogram_changeが無い場合も確実にProgram 22(Harmonica)を設定
+        if self.force_main_harmonica:
+            latest_programs[self.main_midi_channel] = mido.Message(
+                'program_change', channel=self.main_midi_channel, program=22
+            )
 
         for (_, _), cc_msg in sorted(latest_ccs.items()):
             b = cc_msg.bytes()
@@ -581,7 +851,10 @@ class MidiEngine:
             if self.loop_a_index > self.loop_b_index:
                 self.loop_a_index, self.loop_b_index = self.loop_b_index, self.loop_a_index
 
-    def send_midi_msg(self, msg):
+    def send_midi_msg(self, msg, track_idx=-1):
+        if not self.is_track_audible(track_idx):
+            return
+        msg = self.transform_msg_for_routing(msg, track_idx)
         if not self.device_muted and not self.internal_synth_enabled and self.device_opened and winmm:
             b = msg.bytes()
             if len(b) > 0:
@@ -831,13 +1104,15 @@ class MidiEngine:
                     else:
                         msg = event.msg
                         if not msg.is_meta and msg.type != 'sysex':
-                            self.send_midi_msg(msg)
+                            self.send_midi_msg(msg, track_idx=event.track_idx)
                             
-                            if msg.type == "note_on" and msg.velocity > 0:
-                                self.currently_playing_notes.add(msg.note)
-                            elif (msg.type == "note_off") or (msg.type == "note_on" and msg.velocity == 0):
-                                if msg.note in self.currently_playing_notes:
-                                    self.currently_playing_notes.remove(msg.note)
+                            # 穴のLED発光(currently_playing_notes)は、常に選択中の主旋律パートのノーツのみに連動させる
+                            if event.track_idx < 0 or event.track_idx == self.main_track_index:
+                                if msg.type == "note_on" and msg.velocity > 0:
+                                    self.currently_playing_notes.add(msg.note)
+                                elif (msg.type == "note_off") or (msg.type == "note_on" and msg.velocity == 0):
+                                    if msg.note in self.currently_playing_notes:
+                                        self.currently_playing_notes.remove(msg.note)
                     
                     self.current_msg_index += 1
                     

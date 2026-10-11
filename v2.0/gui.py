@@ -55,59 +55,78 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         def create_sep(parent):
             return ctk.CTkLabel(parent, text="|", text_color="#3d3d3d", font=self.f_bold)
 
-        self.row1.grid_columnconfigure(2, weight=1) 
+        self.row1.grid_columnconfigure(5, weight=1) 
         
         # --- ■ 1行目：左側グループ（左詰め） ---
         self.file_btn = ctk.CTkButton(self.row1, text="MIDIを開く", width=95, font=self.f_jp_bold, command=self.controller.on_open_file)
-        self.file_btn.grid(row=0, column=0, padx=(0, 10), sticky="w")
+        self.file_btn.grid(row=0, column=0, padx=(0, 8), sticky="w")
 
         # ファイル名表示
         self.file_label = ctk.CTkLabel(self.row1, text="demo.mid", text_color="#1f538d", font=self.f_bold, anchor="w")
-        self.file_label.grid(row=0, column=1, padx=(0, 15), sticky="w")
+        self.file_label.grid(row=0, column=1, padx=(0, 10), sticky="w")
+
+        self.sep_r1_0 = create_sep(self.row1)
+        self.sep_r1_0.grid(row=0, column=2, padx=(2, 8), sticky="w")
+
+        # マルチパートMIDI：主旋律パート選択 ＆ パート再生モード
+        self.part_select_btn = ctk.CTkButton(
+            self.row1, text="🎼 パート選択", width=108, font=self.f_jp_bold,
+            fg_color="#2b5b84", hover_color="#1f4361",
+            command=self.controller.open_part_select_dialog
+        )
+        self.part_select_btn.grid(row=0, column=3, padx=(0, 6), sticky="w")
+
+        self.part_play_mode_menu = ctk.CTkOptionMenu(
+            self.row1, values=["全パート再生", "主旋律ソロ", "伴奏のみ(カラオケ)"],
+            width=152, font=self.f_jp_bold,
+            command=self.controller.on_part_play_mode_changed
+        )
+        self.part_play_mode_menu.set("全パート再生")
+        self.part_play_mode_menu.grid(row=0, column=4, padx=(0, 8), sticky="w")
 
         # --- ■ 1行目：右側グループ ---
-        self.audio_mode_menu = ctk.CTkOptionMenu(self.row1, values=["MIDI再生 (Windows標準音源)", "簡易再生 (内蔵軽量シンセ)", "ミュート"], width=200, font=self.f_jp_bold, command=self.controller.on_audio_mode_changed)
-        self.audio_mode_menu.grid(row=0, column=3, padx=2, sticky="e")
+        self.audio_mode_menu = ctk.CTkOptionMenu(self.row1, values=["MIDI再生 (Windows標準音源)", "簡易再生 (内蔵軽量シンセ)", "ミュート"], width=190, font=self.f_jp_bold, command=self.controller.on_audio_mode_changed)
+        self.audio_mode_menu.grid(row=0, column=6, padx=2, sticky="e")
 
         self.sep_r1_1 = create_sep(self.row1)
-        self.sep_r1_1.grid(row=0, column=4, padx=12, sticky="e")
+        self.sep_r1_1.grid(row=0, column=7, padx=10, sticky="e")
 
         # 小節ジャンプ
         self.jump_btn = ctk.CTkButton(self.row1, text="Go", width=30, font=self.f_bold, command=self.controller.on_jump_measure)
-        self.jump_btn.grid(row=0, column=8, padx=2, sticky="e")
+        self.jump_btn.grid(row=0, column=11, padx=2, sticky="e")
 
         self.jump_label = ctk.CTkLabel(self.row1, text=" / 1 小節", text_color="#aaaaaa", font=self.f_jp_bold)
-        self.jump_label.grid(row=0, column=7, padx=2, sticky="e")
+        self.jump_label.grid(row=0, column=10, padx=2, sticky="e")
 
         self.jump_entry = ctk.CTkEntry(self.row1, width=38, font=self.f_norm)
         self.jump_entry.insert(0, "1")
-        self.jump_entry.grid(row=0, column=6, padx=2, sticky="e")
+        self.jump_entry.grid(row=0, column=9, padx=2, sticky="e")
         self.jump_entry.bind("<Return>", lambda e: self.controller.on_jump_measure())
 
         self.jump_title_lbl = ctk.CTkLabel(self.row1, text="小節ジャンプ:", text_color="#aaaaaa", font=self.f_jp_bold)
-        self.jump_title_lbl.grid(row=0, column=5, padx=0, sticky="e")
+        self.jump_title_lbl.grid(row=0, column=8, padx=0, sticky="e")
 
         self.sep_r1_2 = create_sep(self.row1)
-        self.sep_r1_2.grid(row=0, column=9, padx=12, sticky="e")
+        self.sep_r1_2.grid(row=0, column=12, padx=10, sticky="e")
 
         # 再生速度(%)設定
         self.bpm_title_label = ctk.CTkLabel(self.row1, text="再生速度(%):", text_color="#aaaaaa", font=self.f_jp_bold)
-        self.bpm_title_label.grid(row=0, column=10, padx=2, sticky="e")
+        self.bpm_title_label.grid(row=0, column=13, padx=2, sticky="e")
 
         self.bpm_minus_btn = ctk.CTkButton(self.row1, text="-5%", width=36, font=self.f_bold, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.controller.step_speed_percent(-5))
-        self.bpm_minus_btn.grid(row=0, column=11, padx=1, sticky="e")
+        self.bpm_minus_btn.grid(row=0, column=14, padx=1, sticky="e")
 
         self.bpm_entry = ctk.CTkEntry(self.row1, width=45, font=self.f_norm, justify="center")
         self.bpm_entry.insert(0, "100")
-        self.bpm_entry.grid(row=0, column=12, padx=1, sticky="e")
+        self.bpm_entry.grid(row=0, column=15, padx=1, sticky="e")
         self.bpm_entry.bind("<Return>", lambda e: self.controller.apply_bpm())
         self.bpm_entry.bind("<FocusOut>", lambda e: self.controller.apply_bpm())
 
         self.bpm_plus_btn = ctk.CTkButton(self.row1, text="+5%", width=36, font=self.f_bold, fg_color="#3a3a3a", hover_color="#505050", command=lambda: self.controller.step_speed_percent(5))
-        self.bpm_plus_btn.grid(row=0, column=13, padx=1, sticky="e")
+        self.bpm_plus_btn.grid(row=0, column=16, padx=1, sticky="e")
 
         self.default_bpm_btn = ctk.CTkButton(self.row1, text="100%", width=46, font=self.f_norm, command=self.controller.reset_bpm)
-        self.default_bpm_btn.grid(row=0, column=14, padx=(4, 0), sticky="e")
+        self.default_bpm_btn.grid(row=0, column=17, padx=(4, 0), sticky="e")
 
 
         # --- ■ 2行目 (中段：トランスポート ➔ シークタイムライン ➔ LCDステータス液晶) ---
