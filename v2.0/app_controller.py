@@ -401,6 +401,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         # 連動リング表示スイッチのON/OFF状態を引き渡す
         use_ring = bool(self.gui.show_ring_switch.get())
         trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
+        show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
+        show_grid4 = bool(self.gui.show_grid4_switch.get()) if hasattr(self.gui, "show_grid4_switch") else True
 
         draw_harmonica_canvas(
             canvas=self.gui.canvas,
@@ -427,7 +429,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             scale=disp_scale,
             aspect_ratio=aspect_ratio,
             use_ring=use_ring,
-            trajectory_mode=trajectory_mode
+            trajectory_mode=trajectory_mode,
+            show_lookahead=show_lookahead,
+            show_grid4=show_grid4
         )
 
     def draw_harmonica_body_only(self, pitches):
@@ -592,6 +596,10 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.show_notes_switch.configure(state=state)
         self.gui.show_grid_switch.configure(state=state)
         self.gui.show_ring_switch.configure(state=state)  # 連動リングスイッチもロック
+        if hasattr(self.gui, "show_lookahead_switch"):
+            self.gui.show_lookahead_switch.configure(state=state)
+        if hasattr(self.gui, "show_grid4_switch"):
+            self.gui.show_grid4_switch.configure(state=state)
         self.gui.opacity_entry.configure(state=state)
         self.gui.bg_menu.configure(state=state)
         self.gui.res_menu.configure(state=state)
@@ -658,6 +666,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         is_notes_on = bool(self.gui.show_notes_switch.get())
         is_grid_on = bool(self.gui.show_grid_switch.get())
         is_glow_on = bool(self.gui.show_glow_switch.get())
+        show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
+        show_grid4 = bool(self.gui.show_grid4_switch.get()) if hasattr(self.gui, "show_grid4_switch") else True
         
         note_opacity = self.gui.opacity_entry.get()
         
@@ -697,7 +707,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             aspect_ratio=aspect_ratio,
             use_skin=use_skin,
             controller=self,
-            trajectory_mode=trajectory_mode
+            trajectory_mode=trajectory_mode,
+            show_lookahead=show_lookahead,
+            show_grid4=show_grid4
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック
@@ -743,6 +755,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         is_notes_on = bool(self.gui.show_notes_switch.get())
         is_grid_on = bool(self.gui.show_grid_switch.get())
         is_glow_on = bool(self.gui.show_glow_switch.get())
+        show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
+        show_grid4 = bool(self.gui.show_grid4_switch.get()) if hasattr(self.gui, "show_grid4_switch") else True
         
         note_opacity = self.gui.opacity_entry.get()
 
@@ -769,7 +783,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             color_draw_hex=self.color_draw_hex,
             aspect_ratio=aspect_ratio,
             use_skin=use_skin,
-            trajectory_mode=trajectory_mode
+            trajectory_mode=trajectory_mode,
+            show_lookahead=show_lookahead,
+            show_grid4=show_grid4
         )
 
     def destroy(self):

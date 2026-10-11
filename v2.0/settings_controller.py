@@ -97,6 +97,19 @@ class SettingsController:
         if hasattr(self.gui, "trajectory_menu"):
             self.gui.trajectory_menu.set(traj_mode)
 
+        # 直上音名予告・田の字4音表示の復元
+        if hasattr(self.gui, "show_lookahead_switch"):
+            if loaded.get("直上音名予告", "ON") == "ON":
+                self.gui.show_lookahead_switch.select()
+            else:
+                self.gui.show_lookahead_switch.deselect()
+
+        if hasattr(self.gui, "show_grid4_switch"):
+            if loaded.get("田の字4音表示", "ON") == "ON":
+                self.gui.show_grid4_switch.select()
+            else:
+                self.gui.show_grid4_switch.deselect()
+
     def save_user_settings_txt(self):
         """settings_managerへの設定自動保存"""
         settings_manager.save_settings(
@@ -120,7 +133,9 @@ class SettingsController:
             ratio=self.gui.ratio_menu.get(),
             use_skin="ON" if self.gui.use_skin_switch.get() else "OFF",
             ring="ON" if self.gui.show_ring_switch.get() else "OFF",
-            trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
+            trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)",
+            lookahead=("ON" if self.gui.show_lookahead_switch.get() else "OFF") if hasattr(self.gui, "show_lookahead_switch") else "ON",
+            grid4=("ON" if self.gui.show_grid4_switch.get() else "OFF") if hasattr(self.gui, "show_grid4_switch") else "ON",
         )
 
     def on_setting_changed(self, value=None):
@@ -136,6 +151,8 @@ class SettingsController:
             self.gui.canvas.delete("cached_led")
             self.gui.canvas.delete("cached_shadow")
             self.gui.canvas.delete("cached_body")
+            self.gui.canvas.delete("cached_grid4")
+            self.gui.canvas.delete("cached_lookahead")
             self.gui.canvas.delete("static_text")
             if hasattr(self.gui.canvas, "note_pool"):
                 # ノーツ表示ON/OFF・軌道切り替え時にオブジェクトプールを完全クリーンアップ

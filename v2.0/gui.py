@@ -500,7 +500,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.show_grid_switch.pack(side="right", expand=True, anchor="w")
 
         self.switch_frame_ring = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
-        self.switch_frame_ring.pack(fill="x", padx=15, pady=(4, 12))
+        self.switch_frame_ring.pack(fill="x", padx=15, pady=4)
 
         self.show_ring_switch = ctk.CTkSwitch(self.switch_frame_ring, text="レバーリング連動", font=self.f_jp_bold, command=self.controller.on_setting_changed)
         self.show_ring_switch.select()
@@ -508,6 +508,17 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         self.show_glow_switch = ctk.CTkSwitch(self.switch_frame_ring, text="着地発光", font=self.f_jp_bold, command=self.controller.on_setting_changed)
         self.show_glow_switch.pack(side="right", expand=True, anchor="w")
+
+        self.switch_frame_step5 = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
+        self.switch_frame_step5.pack(fill="x", padx=15, pady=(4, 12))
+
+        self.show_lookahead_switch = ctk.CTkSwitch(self.switch_frame_step5, text="直上音名予告", font=self.f_jp_bold, command=self.controller.on_setting_changed)
+        self.show_lookahead_switch.select()
+        self.show_lookahead_switch.pack(side="left", expand=True, anchor="w")
+
+        self.show_grid4_switch = ctk.CTkSwitch(self.switch_frame_step5, text="田の字4音表示", font=self.f_jp_bold, command=self.controller.on_setting_changed)
+        self.show_grid4_switch.select()
+        self.show_grid4_switch.pack(side="right", expand=True, anchor="w")
 
         # ======================================================================
         # 🎬 タブ3：【🎬 動画出力】 (アスペクト比・背景色・解像度・FPS・出力ボタン)

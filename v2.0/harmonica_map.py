@@ -301,3 +301,52 @@ def get_note_name(note, is_japanese=False):
         return names_jap[pitch_class]
     else:
         return f"{names_eng[pitch_class]}{octave}"
+
+
+def get_hole_4_notes(hole_abs, inst_type):
+    """
+    指定された絶対穴番号 (1〜16) と楽器タイプに対して、
+    教則本準拠の「田の字」4音（左上:吹OFF, 右上:吸OFF, 左下:吹ON, 右下:吸ON）の
+    MIDIノート番号辞書を返します。
+    """
+    oct_idx = (hole_abs - 1) // 4
+    rel = (hole_abs - 1) % 4
+    base_c = 48 + oct_idx * 12
+    if "バス" in str(inst_type):
+        base_c -= 36
+
+    if rel == 0:
+        return {
+            ("吹", "OFF"): base_c + 0,
+            ("吸", "OFF"): base_c + 2,
+            ("吹", "ON"):  base_c + 1,
+            ("吸", "ON"):  base_c + 3,
+        }
+    elif rel == 1:
+        return {
+            ("吹", "OFF"): base_c + 4,
+            ("吸", "OFF"): base_c + 5,
+            ("吹", "ON"):  base_c + 5,
+            ("吸", "ON"):  base_c + 6,
+        }
+    elif rel == 2:
+        return {
+            ("吹", "OFF"): base_c + 7,
+            ("吸", "OFF"): base_c + 9,
+            ("吹", "ON"):  base_c + 8,
+            ("吸", "ON"):  base_c + 10,
+        }
+    elif hole_abs == 16:
+        return {
+            ("吹", "OFF"): base_c + 12,
+            ("吸", "OFF"): base_c + 11,
+            ("吹", "ON"):  base_c + 13,
+            ("吸", "ON"):  base_c + 14,
+        }
+    else:
+        return {
+            ("吹", "OFF"): base_c + 12,
+            ("吸", "OFF"): base_c + 11,
+            ("吹", "ON"):  base_c + 13,
+            ("吸", "ON"):  base_c + 12,
+        }

@@ -48,7 +48,7 @@ from config import (
     get_layout_params, get_note_dest_x, hex_to_rgb
 )
 from harmonica_map import (
-    is_note_in_range, get_note_name, get_note_fingering_for_song
+    is_note_in_range, get_note_name, get_note_fingering_for_song, get_hole_4_notes
 )
 
 def resolve_resolution_and_scale(res_mode, aspect_ratio):
@@ -136,7 +136,8 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          note_opacity_value, midi_notes=None, current_time=0.0, current_bpm=120.0, 
                                          active_pitches=None, show_glow_effect=True,
                                          color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                         use_skin=True, trajectory_mode="3段階 (練習標準)"):
+                                         use_skin=True, trajectory_mode="3段階 (練習標準)",
+                                         show_lookahead=True, show_grid4=True):
     """
     オフライン書き出し専用：Pillowの高度なレイヤー合成をフル稼働させ、基本フレームパーツのみを描画。
     外部スキン（PNG）が指定されている場合は、透過アルファチャネルを100%美しくレイヤーブレンドします。
@@ -222,6 +223,8 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
 
     lever_pressed = False
     playing_holes_data = {}
+    playing_hole_cells = set()
+    playing_holes_note = {}
     
     currently_active_notes = []
     if midi_notes and active_pitches:
@@ -233,10 +236,33 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
 
     for note_data in currently_active_notes:
         fingering = note_data.get("fingering") 
+        if not fingering:
+            fingering = get_note_fingering_for_song(note_data.get("start_tick", 0), note_data["note"], inst_type)
         if fingering:
-            playing_holes_data[fingering["hole"]] = fingering["action"] 
+            h_num = fingering["hole"]
+            playing_holes_data[h_num] = fingering["action"] 
+            playing_hole_cells.add((h_num, fingering["action"], fingering["lever"]))
+            if h_num not in playing_holes_note:
+                playing_holes_note[h_num] = note_data["note"]
             if fingering["lever"] == "ON": 
                 lever_pressed = True
+
+    upcoming_hole_notes = {}
+    if show_lookahead and is_notes_on and midi_notes:
+        pixels_per_second = (220.0 * current_bpm) / 240.0
+        if pixels_per_second > 0:
+            max_lookahead_sec = 200.0 / pixels_per_second
+            for note_data in midi_notes:
+                start_t = note_data.get("start_time", 0.0)
+                dt = start_t - current_time
+                if 0 < dt <= max_lookahead_sec:
+                    fing = note_data.get("fingering")
+                    if not fing:
+                        fing = get_note_fingering_for_song(note_data.get("start_tick", 0), note_data["note"], inst_type)
+                    if fing and is_note_in_range(note_data["note"], inst_type):
+                        h_abs = fing["hole"]
+                        if h_abs not in upcoming_hole_notes or start_t < upcoming_hole_notes[h_abs][0]:
+                            upcoming_hole_notes[h_abs] = (start_t, note_data["note"], fing["action"])
 
     # 動画エクスポート側でもX軸の平行移動スライドを完全廃止(移動オフセット常にゼロ)！
     lever_x_offset = 0
@@ -311,25 +337,19 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
             has_lever_skin = False
             print(f"[警告] レバースキン合成に失敗しました: {ex}")
 
-    # 🚀【解決】：スキン不使用（use_skinオフ）のフォールバックレンダリング時でも、
-    # 赤・黄を完全に全廃し、美しいステンレスカラーで、16x36pxの比率を持つ美しい扁平縦長楕円のパラパラ沈み込み描画へ一本化！
-    # 軸の左端開始座標を「マウスピースプレートの真右端（隙間0）」にピタッと完全吸着させ、x1 >= x0 の逆転バグを物理的に完全根絶！
-    # さらに通常（OFF）時は隙間を 22px 離し、押し込み（ON）時は 3px まで限界密着させて 19px のダイナミックストロークをビデオ側でも完全同期！
     if not has_lever_skin:
         btn_w = int(16 * scale)
         btn_h = int(36 * scale)
         if lever_pressed:
-            # 🚀 押し込みON時：軸x0=プレート右端(隙間0)、軸x1=プレート右端+12*scale（逆転しない）、3Dステンレスボタン左寄せ（X=3*scaleに配置）
             draw_img.rounded_rectangle([lever_left, y_center_s - 12 * scale, lever_left + 12 * scale, y_center_s + 12 * scale], radius=int(4 * scale), fill=(58, 58, 58, 255))
             btn_img = draw_metallic_button_pil_flat_local(btn_w, btn_h, is_on=True)
             frame_img.paste(btn_img, (int(lever_left + 3 * scale), int(y_center_s - btn_h/2)), mask=btn_img)
         else:
-            # 🚀 OFF通常時：軸x0=プレート右端(隙間0)、軸x1=プレート右端+24*scale、3Dステンレスボタン右寄せ（X=22*scaleに配置）
             draw_img.rounded_rectangle([lever_left, y_center_s - 12 * scale, lever_left + 24 * scale, y_center_s + 12 * scale], radius=int(4 * scale), fill=(85, 85, 85, 255))
             btn_img = draw_metallic_button_pil_flat_local(btn_w, btn_h, is_on=False)
             frame_img.paste(btn_img, (int(lever_left + 22 * scale), int(y_center_s - btn_h/2)), mask=btn_img)
             
-        draw_img = ImageDraw.Draw(frame_img) # 再同期
+        draw_img = ImageDraw.Draw(frame_img)
 
     plate_w = int(total_width + 30 * scale)
     plate_h = int(90 * scale)
@@ -394,35 +414,60 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     frame_img = Image.alpha_composite(frame_img, glow_layer)
     draw_img = ImageDraw.Draw(frame_img) 
 
-    f_num = get_truetype_font("arial.ttf", 11 * scale)
-    f_note = get_truetype_font("meiryo.ttc", 11 * scale)
+    f_num = get_truetype_font("arial.ttf", max(6, int(11 * scale)))
+    f_note = get_truetype_font("meiryo.ttc", max(6, int(11 * scale)))
+    f_grid = get_truetype_font("meiryo.ttc", max(5, int(8 * scale)))
+    f_look = get_truetype_font("meiryo.ttc", max(6, int(9.5 * scale)))
+    is_jp = ("ドレミ" in lang_seg_value)
+
+    cell_order = [
+        ("吹", "OFF", 0, 0),  # 左上: 吹き（スライドなし）
+        ("吸", "OFF", 0, 1),  # 右上: 吸い（スライドなし）
+        ("吹", "ON", 1, 0),   # 左下: スライド有りの吹き
+        ("吸", "ON", 1, 1),   # 右下: スライド有りの吸い
+    ]
+    grid_top = y_center_s + 47 * scale
+    cell_w = 23 * scale
+    cell_h = 15 * scale
+    y_lookahead = y_center_s - 31 * scale
     
     for k, idx in enumerate(visible_indices):
         x_center = X_start_draw + k * W_pitch_s + (W_pitch_s / 2)
         hole_number = k + 1
+        visible_hole_number_absolute = visible_indices[k] + 1
+        is_active = visible_hole_number_absolute in playing_holes_data
         
         if is_hole_num_on:
             draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 24 * scale), str(hole_number), "#FFFFFF", f_num, border_width=2 * scale)
 
-        if lang_seg_value != "なし":
-            active_pitches_list = list(active_pitches)
-            current_note = None
-            for p in active_pitches_list:
-                note_start_tick = 0
-                if currently_active_notes:
-                    for note_data in currently_active_notes:
-                        if note_data["note"] == p:
-                            note_start_tick = note_data.get("start_tick", 0)
-                            break
-                            
-                fing = get_note_fingering_for_song(note_start_tick, p, inst_type)
-                visible_hole_number_absolute = visible_indices[k] + 1
-                if fing and fing["hole"] == visible_hole_number_absolute:
-                    current_note = p
-                    break
-            
+        # 穴の下側表示：田の字4音表示 ON / OFF
+        if show_grid4:
+            hole_4_map = get_hole_4_notes(visible_hole_number_absolute, inst_type)
+            grid_left = x_center - cell_w
+            for act, lev, r_idx, c_idx in cell_order:
+                cx0 = grid_left + c_idx * cell_w
+                cy0 = grid_top + r_idx * cell_h
+                cx1 = cx0 + cell_w
+                cy1 = cy0 + cell_h
+                cell_midi = hole_4_map.get((act, lev))
+                cell_text = get_note_name(cell_midi, is_japanese=is_jp) if (cell_midi is not None and lang_seg_value != "なし") else ""
+                is_cell_active = (visible_hole_number_absolute, act, lev) in playing_hole_cells
+                if is_cell_active:
+                    c_rgb = color_blow_rgb if act == "吹" else color_draw_rgb
+                    draw_img.rectangle([cx0, cy0, cx1, cy1], fill=(c_rgb[0], c_rgb[1], c_rgb[2], 255), outline=(255, 255, 255, 255), width=max(1, int(1 * scale)))
+                    if cell_text:
+                        draw_img.text(((cx0 + cx1) / 2.0, (cy0 + cy1) / 2.0), cell_text, fill=(0, 0, 0, 255), font=f_grid, anchor="mm")
+                else:
+                    c_fill = (24, 24, 24, 255) if r_idx == 0 else (16, 16, 16, 255)
+                    c_out = (56, 56, 56, 255) if r_idx == 0 else (44, 44, 44, 255)
+                    t_fill = (204, 204, 204, 255) if r_idx == 0 else (136, 136, 136, 255)
+                    draw_img.rectangle([cx0, cy0, cx1, cy1], fill=c_fill, outline=c_out, width=max(1, int(1 * scale)))
+                    if cell_text:
+                        draw_img.text(((cx0 + cx1) / 2.0, (cy0 + cy1) / 2.0), cell_text, fill=t_fill, font=f_grid, anchor="mm")
+        elif lang_seg_value != "なし":
+            current_note = playing_holes_note.get(visible_hole_number_absolute)
             if current_note is not None:
-                note_text = get_note_name(current_note, is_japanese=("ドレミ" in lang_seg_value))
+                note_text = get_note_name(current_note, is_japanese=is_jp)
                 text_color = "#FFFFFF"
             else:
                 blow_notes_midi = {
@@ -431,10 +476,30 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                     "12穴 バス": [24, 28, 31, 35, 36, 40, 43, 47, 48, 52, 55, 59]
                 }
                 mode_key = "16穴" if "16穴" in inst_type else ("12穴 標準" if "標準" in inst_type else "12穴 バス")
-                note_text = get_note_name(blow_notes_midi[mode_key][k], is_japanese=("ドレミ" in lang_seg_value))
+                note_text = get_note_name(blow_notes_midi[mode_key][k], is_japanese=is_jp)
                 text_color = "#000000" if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else "#AAAAAA"
                 
             draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 60 * scale), note_text, text_color, f_note, border_width=2 * scale)
+
+        # 穴の直上表示：直上音名予告 ON / OFF
+        if show_lookahead and lang_seg_value != "なし":
+            bx0 = x_center - 19 * scale
+            by0 = y_lookahead - 9 * scale
+            bx1 = x_center + 19 * scale
+            by1 = y_lookahead + 9 * scale
+            if is_active and visible_hole_number_absolute in playing_holes_note:
+                lh_note = playing_holes_note[visible_hole_number_absolute]
+                lh_act = playing_holes_data[visible_hole_number_absolute]
+                lh_rgb = color_blow_rgb if lh_act == "吹" else color_draw_rgb
+                lh_str = get_note_name(lh_note, is_japanese=is_jp)
+                draw_img.rectangle([bx0, by0, bx1, by1], fill=(lh_rgb[0], lh_rgb[1], lh_rgb[2], 255), outline=(255, 255, 255, 255), width=max(1, int(1.5 * scale)))
+                draw_img.text((x_center, y_lookahead), lh_str, fill=(0, 0, 0, 255), font=f_look, anchor="mm")
+            elif visible_hole_number_absolute in upcoming_hole_notes:
+                _, lh_note, lh_act = upcoming_hole_notes[visible_hole_number_absolute]
+                lh_rgb = color_blow_rgb if lh_act == "吹" else color_draw_rgb
+                lh_str = get_note_name(lh_note, is_japanese=is_jp)
+                draw_img.rectangle([bx0, by0, bx1, by1], fill=(20, 20, 20, 255), outline=(lh_rgb[0], lh_rgb[1], lh_rgb[2], 255), width=max(1, int(1.5 * scale)))
+                draw_img.text((x_center, y_lookahead), lh_str, fill=(lh_rgb[0], lh_rgb[1], lh_rgb[2], 255), font=f_look, anchor="mm")
 
     return frame_img
 
@@ -443,7 +508,8 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
                                  res_mode, inst_type, notation_mode, bg_color, 
                                  is_hole_num_on, is_legend_on, is_notes_on, is_grid_on, is_glow_on, note_opacity,
                                  parent_window, color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                 aspect_ratio="16:9", use_skin=True, trajectory_mode="3段階収束 (標準)"):
+                                 aspect_ratio="16:9", use_skin=True, trajectory_mode="3段階 (練習標準)",
+                                 show_lookahead=True, show_grid4=True):
     if not OPENCV_AVAILABLE:
         return
 
@@ -470,7 +536,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         lang_seg_value=notation_mode,
         is_hole_num_on=is_hole_num_on,               
         is_legend_on=is_legend_on,                   
-        is_notes_on=False,                           
+        is_notes_on=is_notes_on,                           
         is_grid_on=is_grid_on,                       
         note_opacity_value=opacity_val,
         midi_notes=midi_notes,
@@ -481,7 +547,9 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         color_blow_hex=color_blow_hex,                
         color_draw_hex=color_draw_hex,
         use_skin=use_skin,
-        trajectory_mode=trajectory_mode
+        trajectory_mode=trajectory_mode,
+        show_lookahead=show_lookahead,
+        show_grid4=show_grid4
     )
 
     if aspect_ratio == "9:16":
@@ -693,7 +761,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               ticks_per_beat=480, fps_mode="60 FPS",
                               color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                               aspect_ratio="16:9", use_skin=True, controller=None,
-                              trajectory_mode="3段階収束 (標準)"):
+                              trajectory_mode="3段階 (練習標準)",
+                              show_lookahead=True, show_grid4=True):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -784,7 +853,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     lang_seg_value=notation_mode,
                     is_hole_num_on=is_hole_num_on,
                     is_legend_on=is_legend_on,
-                    is_notes_on=False,                  
+                    is_notes_on=is_notes_on,                  
                     is_grid_on=is_grid_on,
                     note_opacity_value=opacity_val,
                     midi_notes=midi_notes,
@@ -795,7 +864,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     color_blow_hex=color_blow_hex,            
                     color_draw_hex=color_draw_hex,
                     use_skin=use_skin,
-                    trajectory_mode=trajectory_mode
+                    trajectory_mode=trajectory_mode,
+                    show_lookahead=show_lookahead,
+                    show_grid4=show_grid4
                 )
 
                 rgb_frame = pil_frame.convert("RGB")

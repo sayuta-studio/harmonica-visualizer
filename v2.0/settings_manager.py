@@ -41,7 +41,9 @@ DEFAULT_SETTINGS = {
     "アスペクト比": "16:9",
     "外部スキン使用": "ON",
     "レバーリング表示": "ON",
-    "ノーツ落下軌道": "3段階 (練習標準)"
+    "ノーツ落下軌道": "3段階 (練習標準)",
+    "直上音名予告": "ON",
+    "田の字4音表示": "ON"
 }
 
 
@@ -93,7 +95,8 @@ def save_settings_dict(settings_dict):
 def save_settings(inst, lang, hole, legend, notes, grid, glow, opacity, bg, res,
                   simplified="ON", theme="ノーマル", blow="#FF9900", draw="#00FFFF", fps="60 FPS",
                   audio_mode="MIDI再生 (Windows標準音源)", fingering_preset="スライド最小化",
-                  ratio="16:9", use_skin="ON", ring="ON", trajectory="3段階 (練習標準)", **extra):
+                  ratio="16:9", use_skin="ON", ring="ON", trajectory="3段階 (練習標準)",
+                  lookahead="ON", grid4="ON", **extra):
     """後方互換ラッパー：個別引数を辞書にまとめて save_settings_dict へ委譲します。"""
     data = {
         "楽器タイプ": inst,
@@ -117,6 +120,8 @@ def save_settings(inst, lang, hole, legend, notes, grid, glow, opacity, bg, res,
         "外部スキン使用": use_skin,
         "レバーリング表示": ring,
         "ノーツ落下軌道": trajectory,
+        "直上音名予告": lookahead,
+        "田の字4音表示": grid4,
     }
     data.update(extra)
     save_settings_dict(data)
