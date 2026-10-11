@@ -190,7 +190,6 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         canvas.led_objects = []
         canvas.text_shadow_objects = []  
         canvas.text_body_objects = []    
-        canvas.lookahead_objects = []
         canvas.grid4_objects = []
 
         cell_order = [
@@ -203,8 +202,6 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         cell_w = 23 * scale
         cell_h = 15 * scale
         f_grid_size = max(5, int(7 * scale))
-        f_look_size = max(6, int(9 * scale))
-        y_lookahead = y_center_s - 31 * scale
         
         for k, idx in enumerate(visible_indices):
             x_center = X_start_draw + k * W_PITCH * scale + (W_PITCH * scale / 2)
@@ -221,21 +218,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
             )
             canvas.led_objects.append(led_id)
 
-            # 穴直上の音名予告バッジ（初期状態は非表示）
-            lh_rect = canvas.create_rectangle(
-                x_center - 19 * scale, y_lookahead - 9 * scale,
-                x_center + 19 * scale, y_lookahead + 9 * scale,
-                fill="#141414", outline="#555555", width=max(1, int(1.5 * scale)),
-                state="hidden", tags="cached_lookahead"
-            )
-            lh_txt = canvas.create_text(
-                x_center, y_lookahead, text="", fill="#FFFFFF",
-                font=("Meiryo UI", f_look_size, "bold"),
-                state="hidden", tags="cached_lookahead"
-            )
-            canvas.lookahead_objects.append((lh_rect, lh_txt))
-
-            # 田の字4音表示オブジェクト構築
+            # 4音グリッド表示オブジェクト構築
             hole_cells = {}
             if show_grid4:
                 grid_left = x_center - cell_w
@@ -258,7 +241,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     hole_cells[(act, lev)] = (c_rect, c_txt, r_idx)
             canvas.grid4_objects.append(hole_cells)
 
-            # 従来の1音表示（田の字OFF時のフォールバック用）
+            # 従来の1音表示（1音表示選択時のフォールバック用）
             shadow_ids = []
             border_width = max(1.0, 1.5 * scale)
             f_size = max(6, int(11 * scale))
@@ -321,21 +304,6 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                 playing_holes_note[h_num] = note_data["note"]
             if fingering["lever"] == "ON": 
                 lever_pressed = True
-
-    # 穴直上200px以内に接近中の次ノーツを検出（直上音名予告用）
-    upcoming_hole_notes = {}
-    if show_lookahead and is_notes_on and midi_notes and ticks_per_beat > 0:
-        px_per_tick_look = 120.0 / ticks_per_beat
-        max_lookahead_ticks = 200.0 / px_per_tick_look
-        for note_data in midi_notes:
-            n_start = note_data.get("start_tick", 0)
-            dt = n_start - target_tick
-            if 0 < dt <= max_lookahead_ticks:
-                fing = note_data.get("fingering")
-                if fing and is_note_in_range(note_data["note"], inst_type):
-                    h_abs = fing["hole"]
-                    if h_abs not in upcoming_hole_notes or n_start < upcoming_hole_notes[h_abs][0]:
-                        upcoming_hole_notes[h_abs] = (n_start, note_data["note"], fing["action"])
 
     # ON/OFF切り替え時に横揺れ（平行移動）する計算を完全に廃止（移動オフセット常にゼロ）！
     lever_x_offset = 0
@@ -410,7 +378,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         else:
             canvas.itemconfig(canvas.led_objects[k], fill="#080808")
 
-        # 穴の下側表示：田の字4音表示 ON / OFF
+        # 穴の下側表示：4音グリッド表示 / 1音表示 (従来)
         if show_grid4 and hasattr(canvas, "grid4_objects") and k < len(canvas.grid4_objects) and canvas.grid4_objects[k]:
             for s_id in canvas.text_shadow_objects[k]:
                 canvas.itemconfig(s_id, text="")
@@ -450,30 +418,6 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     canvas.itemconfig(s_id, text=display_text)
                 canvas.itemconfig(canvas.text_body_objects[k], text=display_text, fill=default_text_color)
 
-        # 穴の直上表示：直上音名予告 ON / OFF
-        if hasattr(canvas, "lookahead_objects") and k < len(canvas.lookahead_objects):
-            lh_rect, lh_txt = canvas.lookahead_objects[k]
-            if show_lookahead and lang_seg_value != "なし":
-                if is_led_active and visible_hole_number_absolute in playing_holes_note:
-                    lh_note = playing_holes_note[visible_hole_number_absolute]
-                    lh_act = playing_holes_data[visible_hole_number_absolute]
-                    lh_col = color_blow_hex if lh_act == "吹" else color_draw_hex
-                    lh_str = get_note_name(lh_note, is_japanese=is_jp)
-                    canvas.itemconfig(lh_rect, state="normal", fill=lh_col, outline="#FFFFFF")
-                    canvas.itemconfig(lh_txt, state="normal", text=lh_str, fill="#000000")
-                elif visible_hole_number_absolute in upcoming_hole_notes:
-                    _, lh_note, lh_act = upcoming_hole_notes[visible_hole_number_absolute]
-                    lh_col = color_blow_hex if lh_act == "吹" else color_draw_hex
-                    lh_str = get_note_name(lh_note, is_japanese=is_jp)
-                    canvas.itemconfig(lh_rect, state="normal", fill="#141414", outline=lh_col)
-                    canvas.itemconfig(lh_txt, state="normal", text=lh_str, fill=lh_col)
-                else:
-                    canvas.itemconfig(lh_rect, state="hidden")
-                    canvas.itemconfig(lh_txt, state="hidden")
-            else:
-                canvas.itemconfig(lh_rect, state="hidden")
-                canvas.itemconfig(lh_txt, state="hidden")
-
     if not hasattr(canvas, "note_pool"):
         canvas.note_pool = {}  
 
@@ -481,6 +425,8 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         if is_notes_on and midi_notes:
             px_per_tick = 120.0 / ticks_per_beat
             visible_keys = set()
+            f_lbl_size = max(6, int(8.5 * scale))
+            lbl_bw = max(1.0, 1.5 * scale)
             
             for note_data in midi_notes:
                 note_start = note_data["start_tick"]
@@ -521,10 +467,14 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     note_in_range = is_note_in_range(note_val, inst_type)
                     
                     if key not in canvas.note_pool:
-                        canvas.note_pool[key] = {"rect_id": None, "poly_id": None, "lower_rect_id": None}
+                        canvas.note_pool[key] = {
+                            "rect_id": None, "poly_id": None, "lower_rect_id": None,
+                            "lbl_s1_id": None, "lbl_s2_id": None, "lbl_txt_id": None
+                        }
                     pool_item = canvas.note_pool[key]
-                    if "lower_rect_id" not in pool_item:
-                        pool_item["lower_rect_id"] = None
+                    for k_pool in ("lower_rect_id", "lbl_s1_id", "lbl_s2_id", "lbl_txt_id"):
+                        if k_pool not in pool_item:
+                            pool_item[k_pool] = None
                     
                     tag_list = ["note"]
                     if edit_tag: tag_list.append(edit_tag)
@@ -560,7 +510,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                                     canvas.delete(pool_item["lower_rect_id"])
                                     pool_item["lower_rect_id"] = None
                     else:
-                        # 3段階収束 (標準) モード：
+                        # 3段階収束 (練習標準) / 2段階 (ビジュアル) モード：
                         # [第1段階] 上部60音等幅垂直レーン (0 <= y <= y_collide_s)
                         v_top = max(0.0, y_top)
                         v_bottom = min(y_collide_s, y_bottom)
@@ -635,6 +585,55 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                             if pool_item["lower_rect_id"] is not None:
                                 canvas.delete(pool_item["lower_rect_id"])
                                 pool_item["lower_rect_id"] = None
+
+                    # 案A：落下ノーツ追従音名ラベル（ノーツ自体に音名を乗せて一緒に降らせる）
+                    y_limit_bot = y_hole_line_s if note_in_range else y_collide_s
+                    y_vis_top = max(0.0, y_top)
+                    y_vis_bot = min(y_limit_bot, y_bottom)
+                    show_note_label = bool(
+                        show_lookahead and lang_seg_value != "なし"
+                        and (not is_straight_mode or note_in_range)
+                        and (y_vis_bot - y_vis_top >= 6.0 * scale)
+                        and y_vis_bot >= 8.0 * scale
+                    )
+                    if show_note_label:
+                        label_y = y_vis_bot - 8.5 * scale if (y_vis_bot - y_vis_top >= 17.0 * scale) else (y_vis_top + y_vis_bot) / 2.0
+                        lane_cx = (lane_x_left + lane_x_right) / 2.0
+                        if is_straight_mode or label_y >= y_straight_s:
+                            label_x = dest_x_center
+                        elif label_y <= y_collide_s or not note_in_range:
+                            label_x = lane_cx
+                        else:
+                            ratio_lbl = (label_y - y_collide_s) / height_diag_s if height_diag_s > 0 else 1.0
+                            label_x = lane_cx + (dest_x_center - lane_cx) * ratio_lbl
+
+                        lbl_str = get_note_name(note_val, is_japanese=is_jp)
+                        lbl_tags = ("note_label", edit_tag) if edit_tag else ("note_label",)
+                        if pool_item["lbl_s1_id"] is None:
+                            pool_item["lbl_s1_id"] = canvas.create_text(
+                                label_x - lbl_bw, label_y - lbl_bw, text=lbl_str, fill="#000000",
+                                font=("Meiryo UI", f_lbl_size, "bold"), tags=lbl_tags
+                            )
+                            pool_item["lbl_s2_id"] = canvas.create_text(
+                                label_x + lbl_bw, label_y + lbl_bw, text=lbl_str, fill="#000000",
+                                font=("Meiryo UI", f_lbl_size, "bold"), tags=lbl_tags
+                            )
+                            pool_item["lbl_txt_id"] = canvas.create_text(
+                                label_x, label_y, text=lbl_str, fill="#FFFFFF",
+                                font=("Meiryo UI", f_lbl_size, "bold"), tags=lbl_tags
+                            )
+                        else:
+                            canvas.coords(pool_item["lbl_s1_id"], label_x - lbl_bw, label_y - lbl_bw)
+                            canvas.itemconfig(pool_item["lbl_s1_id"], text=lbl_str, tags=lbl_tags)
+                            canvas.coords(pool_item["lbl_s2_id"], label_x + lbl_bw, label_y + lbl_bw)
+                            canvas.itemconfig(pool_item["lbl_s2_id"], text=lbl_str, tags=lbl_tags)
+                            canvas.coords(pool_item["lbl_txt_id"], label_x, label_y)
+                            canvas.itemconfig(pool_item["lbl_txt_id"], text=lbl_str, tags=lbl_tags)
+                    else:
+                        for lk in ("lbl_s1_id", "lbl_s2_id", "lbl_txt_id"):
+                            if pool_item[lk] is not None:
+                                canvas.delete(pool_item[lk])
+                                pool_item[lk] = None
             
             for old_key in list(canvas.note_pool.keys()):
                 if old_key not in visible_keys:
@@ -695,8 +694,8 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
     canvas.tag_raise("cached_led")
     canvas.tag_raise("dynamic_lever_ring")  
     canvas.tag_raise("note")              
+    canvas.tag_raise("note_label")
     canvas.tag_raise("cached_grid4")
-    canvas.tag_raise("cached_lookahead")
     canvas.tag_raise("cached_shadow")
     canvas.tag_raise("cached_body")
     canvas.tag_raise("static_text")

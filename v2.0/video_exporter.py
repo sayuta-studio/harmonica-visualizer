@@ -247,23 +247,6 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
             if fingering["lever"] == "ON": 
                 lever_pressed = True
 
-    upcoming_hole_notes = {}
-    if show_lookahead and is_notes_on and midi_notes:
-        pixels_per_second = (220.0 * current_bpm) / 240.0
-        if pixels_per_second > 0:
-            max_lookahead_sec = 200.0 / pixels_per_second
-            for note_data in midi_notes:
-                start_t = note_data.get("start_time", 0.0)
-                dt = start_t - current_time
-                if 0 < dt <= max_lookahead_sec:
-                    fing = note_data.get("fingering")
-                    if not fing:
-                        fing = get_note_fingering_for_song(note_data.get("start_tick", 0), note_data["note"], inst_type)
-                    if fing and is_note_in_range(note_data["note"], inst_type):
-                        h_abs = fing["hole"]
-                        if h_abs not in upcoming_hole_notes or start_t < upcoming_hole_notes[h_abs][0]:
-                            upcoming_hole_notes[h_abs] = (start_t, note_data["note"], fing["action"])
-
     # 動画エクスポート側でもX軸の平行移動スライドを完全廃止(移動オフセット常にゼロ)！
     lever_x_offset = 0
     # 🚀【解決】：不自然な +15px の隙間（軸離れ・ボタン浮き）を完全廃止！
@@ -417,7 +400,6 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     f_num = get_truetype_font("arial.ttf", max(6, int(11 * scale)))
     f_note = get_truetype_font("meiryo.ttc", max(6, int(11 * scale)))
     f_grid = get_truetype_font("meiryo.ttc", max(5, int(8 * scale)))
-    f_look = get_truetype_font("meiryo.ttc", max(6, int(9.5 * scale)))
     is_jp = ("ドレミ" in lang_seg_value)
 
     cell_order = [
@@ -429,18 +411,16 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     grid_top = y_center_s + 47 * scale
     cell_w = 23 * scale
     cell_h = 15 * scale
-    y_lookahead = y_center_s - 31 * scale
     
     for k, idx in enumerate(visible_indices):
         x_center = X_start_draw + k * W_pitch_s + (W_pitch_s / 2)
         hole_number = k + 1
         visible_hole_number_absolute = visible_indices[k] + 1
-        is_active = visible_hole_number_absolute in playing_holes_data
         
         if is_hole_num_on:
             draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 24 * scale), str(hole_number), "#FFFFFF", f_num, border_width=2 * scale)
 
-        # 穴の下側表示：田の字4音表示 ON / OFF
+        # 穴の下側表示：4音グリッド表示 / 1音表示 (従来)
         if show_grid4:
             hole_4_map = get_hole_4_notes(visible_hole_number_absolute, inst_type)
             grid_left = x_center - cell_w
@@ -480,26 +460,6 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                 text_color = "#000000" if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else "#AAAAAA"
                 
             draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 60 * scale), note_text, text_color, f_note, border_width=2 * scale)
-
-        # 穴の直上表示：直上音名予告 ON / OFF
-        if show_lookahead and lang_seg_value != "なし":
-            bx0 = x_center - 19 * scale
-            by0 = y_lookahead - 9 * scale
-            bx1 = x_center + 19 * scale
-            by1 = y_lookahead + 9 * scale
-            if is_active and visible_hole_number_absolute in playing_holes_note:
-                lh_note = playing_holes_note[visible_hole_number_absolute]
-                lh_act = playing_holes_data[visible_hole_number_absolute]
-                lh_rgb = color_blow_rgb if lh_act == "吹" else color_draw_rgb
-                lh_str = get_note_name(lh_note, is_japanese=is_jp)
-                draw_img.rectangle([bx0, by0, bx1, by1], fill=(lh_rgb[0], lh_rgb[1], lh_rgb[2], 255), outline=(255, 255, 255, 255), width=max(1, int(1.5 * scale)))
-                draw_img.text((x_center, y_lookahead), lh_str, fill=(0, 0, 0, 255), font=f_look, anchor="mm")
-            elif visible_hole_number_absolute in upcoming_hole_notes:
-                _, lh_note, lh_act = upcoming_hole_notes[visible_hole_number_absolute]
-                lh_rgb = color_blow_rgb if lh_act == "吹" else color_draw_rgb
-                lh_str = get_note_name(lh_note, is_japanese=is_jp)
-                draw_img.rectangle([bx0, by0, bx1, by1], fill=(20, 20, 20, 255), outline=(lh_rgb[0], lh_rgb[1], lh_rgb[2], 255), width=max(1, int(1.5 * scale)))
-                draw_img.text((x_center, y_lookahead), lh_str, fill=(lh_rgb[0], lh_rgb[1], lh_rgb[2], 255), font=f_look, anchor="mm")
 
     return frame_img
 
@@ -585,7 +545,9 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
             color_blow_hex=color_blow_hex,
             color_draw_hex=color_draw_hex,
             aspect_ratio=aspect_ratio,
-            trajectory_mode=trajectory_mode
+            trajectory_mode=trajectory_mode,
+            lang_seg_value=notation_mode,
+            show_lookahead=show_lookahead
         )
     
     preview_canvas.paste(Image.fromarray(cv2.cvtColor(bgr_notes_part, cv2.COLOR_BGR2RGB)), ((960 - preview_w)//2, (540 - preview_h)//2))
@@ -614,7 +576,8 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
 def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, midi_notes, 
                                    current_time, current_bpm, active_pitches, note_opacity_value,
                                    color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                   aspect_ratio="16:9", trajectory_mode="3段階 (練習標準)"):
+                                   aspect_ratio="16:9", trajectory_mode="3段階 (練習標準)",
+                                   lang_seg_value="CDE", show_lookahead=True):
     """
     OpenCVの LINE_AA を用いて、斜め面取りされたソリッドでシャープな幾何学多角形ノーツを合成描画。
     「3段階 (練習標準)」「垂直落下 (穴直上)」「2段階 (ビジュアル)」の3モードすべてに対応。
@@ -638,6 +601,8 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
 
     _, _, _, X_shift_notes = get_layout_params(inst_type, scale)
     pixels_per_second = (220.0 * current_bpm) / 240.0
+    note_labels_to_draw = []
+    is_jp = ("ドレミ" in str(lang_seg_value))
 
     for note_data in midi_notes:
         start_t = note_data["start_time"]
@@ -746,11 +711,34 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 cv2.fillPoly(notes_overlay, [pts], col_bgr, lineType=cv2.LINE_AA)
                 cv2.fillPoly(notes_mask, [pts], 255, lineType=cv2.LINE_AA)
 
+            # 案A：落下ノーツ追従音名ラベルの座標収集
+            if show_lookahead and lang_seg_value != "なし" and (y_vis_bot - y_vis_top >= 6.0 * scale) and y_vis_bot >= 8.0 * scale:
+                label_y = y_vis_bot - 8.5 * scale if (y_vis_bot - y_vis_top >= 17.0 * scale) else (y_vis_top + y_vis_bot) / 2.0
+                lane_cx = (lane_x_left + lane_x_right) / 2.0
+                if is_straight_mode or label_y >= y_straight_s:
+                    label_x = dest_x_center
+                elif label_y <= y_collide_s or not note_in_range:
+                    label_x = lane_cx
+                else:
+                    ratio_lbl = (label_y - y_collide_s) / height_diag_s if height_diag_s > 0 else 1.0
+                    label_x = lane_cx + (dest_x_center - lane_cx) * ratio_lbl
+                note_labels_to_draw.append((label_x, label_y, get_note_name(note_data["note"], is_japanese=is_jp)))
+
     mask_normalized = notes_mask.astype(float) / 255.0
     mask_normalized = np.expand_dims(mask_normalized, axis=2) 
 
     alpha_channel = mask_normalized * note_opacity_value
     bgr_frame = (bgr_frame * (1.0 - alpha_channel) + notes_overlay * alpha_channel).astype(np.uint8)
+
+    if note_labels_to_draw:
+        rgb_pil = Image.fromarray(cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB))
+        draw_pil = ImageDraw.Draw(rgb_pil)
+        f_lbl = get_truetype_font("meiryo.ttc", max(6, int(9 * scale)))
+        bw = max(1, int(1.5 * scale))
+        for lx, ly, l_str in note_labels_to_draw:
+            draw_bordered_text_pillow(draw_pil, (lx, ly), l_str, "#FFFFFF", f_lbl, border_width=bw)
+        bgr_frame = cv2.cvtColor(np.array(rgb_pil), cv2.COLOR_RGB2BGR)
+
     return bgr_frame
 
 
@@ -888,7 +876,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         color_blow_hex=color_blow_hex,
                         color_draw_hex=color_draw_hex,
                         aspect_ratio=aspect_ratio,
-                        trajectory_mode=trajectory_mode
+                        trajectory_mode=trajectory_mode,
+                        lang_seg_value=notation_mode,
+                        show_lookahead=show_lookahead
                     )
                 
                 video_writer.write(bgr_frame)

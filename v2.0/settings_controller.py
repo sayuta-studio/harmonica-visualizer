@@ -97,18 +97,19 @@ class SettingsController:
         if hasattr(self.gui, "trajectory_menu"):
             self.gui.trajectory_menu.set(traj_mode)
 
-        # 直上音名予告・田の字4音表示の復元
+        # ノーツ音名表示・4音グリッド表示の復元
         if hasattr(self.gui, "show_lookahead_switch"):
             if loaded.get("直上音名予告", "ON") == "ON":
                 self.gui.show_lookahead_switch.select()
             else:
                 self.gui.show_lookahead_switch.deselect()
 
-        if hasattr(self.gui, "show_grid4_switch"):
-            if loaded.get("田の字4音表示", "ON") == "ON":
-                self.gui.show_grid4_switch.select()
+        if hasattr(self.gui, "grid4_menu"):
+            grid4_val = loaded.get("田の字4音表示", "ON")
+            if grid4_val in ("OFF", "1音表示 (従来)"):
+                self.gui.grid4_menu.set("1音表示 (従来)")
             else:
-                self.gui.show_grid4_switch.deselect()
+                self.gui.grid4_menu.set("4音グリッド表示")
 
     def save_user_settings_txt(self):
         """settings_managerへの設定自動保存"""
@@ -135,7 +136,7 @@ class SettingsController:
             ring="ON" if self.gui.show_ring_switch.get() else "OFF",
             trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)",
             lookahead=("ON" if self.gui.show_lookahead_switch.get() else "OFF") if hasattr(self.gui, "show_lookahead_switch") else "ON",
-            grid4=("ON" if self.gui.show_grid4_switch.get() else "OFF") if hasattr(self.gui, "show_grid4_switch") else "ON",
+            grid4=("ON" if "4音グリッド" in self.gui.grid4_menu.get() else "OFF") if hasattr(self.gui, "grid4_menu") else "ON",
         )
 
     def on_setting_changed(self, value=None):
@@ -322,4 +323,4 @@ class SettingsController:
         self.sync_canvas_size_to_active_ratio()
         self.apply_bpm()
         self.draw_harmonica_static()
-        self.save_user_settings_txt()
+        self.save_user_settings_txt()

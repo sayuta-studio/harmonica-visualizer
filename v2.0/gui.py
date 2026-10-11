@@ -290,7 +290,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.practice_group = ctk.CTkFrame(self.tab_practice_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
         self.practice_group.pack(fill="x", padx=12, pady=(4, 5))
 
-        inst_menu_label = ctk.CTkLabel(self.practice_group, text="🎛️ 楽器・音名・軌道設定:", font=self.f_jp_bold)
+        inst_menu_label = ctk.CTkLabel(self.practice_group, text="🎛️ 楽器・ノーツ軌道設定:", font=self.f_jp_bold)
         inst_menu_label.pack(anchor="w", padx=15, pady=(8, 3))
 
         inst_row = ctk.CTkFrame(self.practice_group, fg_color="transparent")
@@ -304,19 +304,6 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             command=self.controller.on_setting_changed
         )
         self.inst_menu.pack(side="right", fill="x", expand=True)
-
-        lang_row = ctk.CTkFrame(self.practice_group, fg_color="transparent")
-        lang_row.pack(fill="x", padx=15, pady=2)
-        ctk.CTkLabel(lang_row, text="音名表記:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
-        self.lang_menu = ctk.CTkOptionMenu(
-            lang_row,
-            values=["CDE", "ドレミ", "なし"],
-            font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm,
-            command=self.controller.on_setting_changed
-        )
-        self.lang_menu.set("CDE")
-        self.lang_menu.pack(side="right", fill="x", expand=True)
 
         traj_row = ctk.CTkFrame(self.practice_group, fg_color="transparent")
         traj_row.pack(fill="x", padx=15, pady=(2, 8))
@@ -470,15 +457,41 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         )
         self.opacity_lbl.pack(side="right", padx=(0, 4))
 
-        # --- 👁️ 表示パーツ・エフェクト切替 ---
+        # --- 👁️ 音名・表示パーツ・エフェクト切替 ---
         self.design_parts_group = ctk.CTkFrame(self.tab_design_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
         self.design_parts_group.pack(fill="x", padx=12, pady=6)
 
-        parts_title_lbl = ctk.CTkLabel(self.design_parts_group, text="👁️ 表示パーツ・エフェクト切替:", font=self.f_jp_bold)
-        parts_title_lbl.pack(anchor="w", padx=15, pady=(10, 6))
+        parts_title_lbl = ctk.CTkLabel(self.design_parts_group, text="👁️ 音名・表示パーツ切替:", font=self.f_jp_bold)
+        parts_title_lbl.pack(anchor="w", padx=15, pady=(10, 4))
+
+        lang_row = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
+        lang_row.pack(fill="x", padx=15, pady=2)
+        ctk.CTkLabel(lang_row, text="音名表記:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
+        self.lang_menu = ctk.CTkOptionMenu(
+            lang_row,
+            values=["CDE", "ドレミ", "なし"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.lang_menu.set("CDE")
+        self.lang_menu.pack(side="right", fill="x", expand=True)
+
+        grid4_row = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
+        grid4_row.pack(fill="x", padx=15, pady=(2, 6))
+        ctk.CTkLabel(grid4_row, text="穴下の音名:", font=self.f_jp_bold, text_color="#aaaaaa", width=95, anchor="w").pack(side="left")
+        self.grid4_menu = ctk.CTkOptionMenu(
+            grid4_row,
+            values=["4音グリッド表示", "1音表示 (従来)"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.grid4_menu.set("4音グリッド表示")
+        self.grid4_menu.pack(side="right", fill="x", expand=True)
 
         self.switch_frame_1 = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
-        self.switch_frame_1.pack(fill="x", padx=15, pady=4)
+        self.switch_frame_1.pack(fill="x", padx=15, pady=3)
 
         self.hole_num_switch = ctk.CTkSwitch(self.switch_frame_1, text="穴番号", font=self.f_jp_bold, command=self.controller.on_setting_changed)
         self.hole_num_switch.select()
@@ -489,7 +502,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.show_legend_switch.pack(side="right", expand=True, anchor="w")
 
         self.switch_frame_2 = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
-        self.switch_frame_2.pack(fill="x", padx=15, pady=4)
+        self.switch_frame_2.pack(fill="x", padx=15, pady=3)
 
         self.show_notes_switch = ctk.CTkSwitch(self.switch_frame_2, text="ノーツ表示", font=self.f_jp_bold, command=self.controller.on_setting_changed)
         self.show_notes_switch.select()
@@ -500,7 +513,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.show_grid_switch.pack(side="right", expand=True, anchor="w")
 
         self.switch_frame_ring = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
-        self.switch_frame_ring.pack(fill="x", padx=15, pady=4)
+        self.switch_frame_ring.pack(fill="x", padx=15, pady=3)
 
         self.show_ring_switch = ctk.CTkSwitch(self.switch_frame_ring, text="レバーリング連動", font=self.f_jp_bold, command=self.controller.on_setting_changed)
         self.show_ring_switch.select()
@@ -510,15 +523,11 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.show_glow_switch.pack(side="right", expand=True, anchor="w")
 
         self.switch_frame_step5 = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
-        self.switch_frame_step5.pack(fill="x", padx=15, pady=(4, 12))
+        self.switch_frame_step5.pack(fill="x", padx=15, pady=(3, 10))
 
-        self.show_lookahead_switch = ctk.CTkSwitch(self.switch_frame_step5, text="直上音名予告", font=self.f_jp_bold, command=self.controller.on_setting_changed)
+        self.show_lookahead_switch = ctk.CTkSwitch(self.switch_frame_step5, text="ノーツ音名表示", font=self.f_jp_bold, command=self.controller.on_setting_changed)
         self.show_lookahead_switch.select()
         self.show_lookahead_switch.pack(side="left", expand=True, anchor="w")
-
-        self.show_grid4_switch = ctk.CTkSwitch(self.switch_frame_step5, text="田の字4音表示", font=self.f_jp_bold, command=self.controller.on_setting_changed)
-        self.show_grid4_switch.select()
-        self.show_grid4_switch.pack(side="right", expand=True, anchor="w")
 
         # ======================================================================
         # 🎬 タブ3：【🎬 動画出力】 (アスペクト比・背景色・解像度・FPS・出力ボタン)

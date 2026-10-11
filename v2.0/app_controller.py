@@ -402,7 +402,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         use_ring = bool(self.gui.show_ring_switch.get())
         trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
         show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
-        show_grid4 = bool(self.gui.show_grid4_switch.get()) if hasattr(self.gui, "show_grid4_switch") else True
+        show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
 
         draw_harmonica_canvas(
             canvas=self.gui.canvas,
@@ -598,8 +598,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.show_ring_switch.configure(state=state)  # 連動リングスイッチもロック
         if hasattr(self.gui, "show_lookahead_switch"):
             self.gui.show_lookahead_switch.configure(state=state)
-        if hasattr(self.gui, "show_grid4_switch"):
-            self.gui.show_grid4_switch.configure(state=state)
+        if hasattr(self.gui, "grid4_menu"):
+            self.gui.grid4_menu.configure(state=state)
         self.gui.opacity_entry.configure(state=state)
         self.gui.bg_menu.configure(state=state)
         self.gui.res_menu.configure(state=state)
@@ -667,7 +667,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         is_grid_on = bool(self.gui.show_grid_switch.get())
         is_glow_on = bool(self.gui.show_glow_switch.get())
         show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
-        show_grid4 = bool(self.gui.show_grid4_switch.get()) if hasattr(self.gui, "show_grid4_switch") else True
+        show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
         
         note_opacity = self.gui.opacity_entry.get()
         
@@ -756,7 +756,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         is_grid_on = bool(self.gui.show_grid_switch.get())
         is_glow_on = bool(self.gui.show_glow_switch.get())
         show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
-        show_grid4 = bool(self.gui.show_grid4_switch.get()) if hasattr(self.gui, "show_grid4_switch") else True
+        show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
         
         note_opacity = self.gui.opacity_entry.get()
 
