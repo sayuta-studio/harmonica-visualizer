@@ -33,10 +33,39 @@ except ImportError:
     OPENCV_AVAILABLE = False
     print("[警告] opencv-python, pillow または customtkinter が見つかりません。")
 
+import bisect
+
 _CACHE = {
     "key": None,          
     "base_image": None,   
 }
+_FONT_CACHE = {}
+_LABEL_STAMP_CACHE = {}
+_EXP_NOTES_INDEX_CACHE = {
+    "list_id": None,
+    "len": 0,
+    "first_start_t": None,
+    "start_times": [],
+    "max_dur": 0.0,
+}
+
+def _get_exporter_notes_index(midi_notes):
+    if not midi_notes:
+        return [], 0.0
+    lid = id(midi_notes)
+    n_len = len(midi_notes)
+    first_st = midi_notes[0].get("start_time", 0.0)
+    if (
+        _EXP_NOTES_INDEX_CACHE["list_id"] != lid
+        or _EXP_NOTES_INDEX_CACHE["len"] != n_len
+        or _EXP_NOTES_INDEX_CACHE["first_start_t"] != first_st
+    ):
+        _EXP_NOTES_INDEX_CACHE["list_id"] = lid
+        _EXP_NOTES_INDEX_CACHE["len"] = n_len
+        _EXP_NOTES_INDEX_CACHE["first_start_t"] = first_st
+        _EXP_NOTES_INDEX_CACHE["start_times"] = [n.get("start_time", 0.0) for n in midi_notes]
+        _EXP_NOTES_INDEX_CACHE["max_dur"] = max((n.get("duration", 0.0) for n in midi_notes), default=0.0)
+    return _EXP_NOTES_INDEX_CACHE["start_times"], _EXP_NOTES_INDEX_CACHE["max_dur"]
 
 from audio_engine import synthesize_midi_to_wav
 from config import (
@@ -81,16 +110,25 @@ def resolve_resolution_and_scale(res_mode, aspect_ratio):
     return width, height, scale
 
 
-
 def get_truetype_font(font_name, size):
+    key = (font_name, int(size))
+    cached = _FONT_CACHE.get(key)
+    if cached is not None:
+        return cached
     try:
         if os.name == 'nt':
             font_path = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "Fonts", font_name)
             if os.path.exists(font_path):
-                return ImageFont.truetype(font_path, int(size))
-        return ImageFont.truetype("arial.ttf", int(size))
+                f = ImageFont.truetype(font_path, int(size))
+                _FONT_CACHE[key] = f
+                return f
+        f = ImageFont.truetype("arial.ttf", int(size))
+        _FONT_CACHE[key] = f
+        return f
     except Exception:
-        return ImageFont.load_default()
+        f = ImageFont.load_default()
+        _FONT_CACHE[key] = f
+        return f
 
 
 def generate_metallic_texture(width, height):
@@ -131,6 +169,49 @@ def draw_bordered_text_pillow(draw, position, text, text_color, font, border_wid
     draw.text((x, y), text, fill=text_color, font=font, anchor="mm")
 
 
+def _draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False):
+    img = Image.new("RGBA", (btn_w, btn_h), (0, 0, 0, 0))
+    rx = btn_w / 2.0
+    ry = btn_h / 2.0
+    cx, cy = rx, ry
+    pixels = img.load()
+    for y_idx in range(btn_h):
+        for x_idx in range(btn_w):
+            dx = x_idx - cx
+            dy = y_idx - cy
+            dist_sq = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry)
+            if dist_sq <= 1.0:
+                dz = math.sqrt(max(0.0, 1.0 - dist_sq))
+                nx, ny, nz = dx / rx, dy / ry, dz
+                n_len = math.sqrt(nx * nx + ny * ny + nz * nz)
+                if n_len > 0:
+                    nx, ny, nz = nx / n_len, ny / n_len, nz / n_len
+
+                lx, ly, lz = -0.5, -0.5, 0.707
+                l_len = math.sqrt(lx * lx + ly * ly + lz * lz)
+                lx, ly, lz = lx / l_len, ly / l_len, lz / l_len
+
+                dot = nx * lx + ny * ly + nz * lz
+                diff = max(0.0, dot)
+
+                r_z = 2.0 * dot * nz - lz
+                spec = max(0.0, r_z)
+                spec_power = math.pow(spec, 8)
+
+                ambient = 60 if not is_on else 45
+                diff_factor = 110 if not is_on else 90
+                base_color = ambient + diff * diff_factor + spec_power * 80
+                val = min(255, int(base_color))
+
+                edge_dist = 1.0 - math.sqrt(dist_sq)
+                alpha = 255
+                if edge_dist < 0.1:
+                    alpha = int(255 * (edge_dist / 0.1))
+
+                pixels[x_idx, y_idx] = (val, val, val, alpha)
+    return img
+
+
 def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, inst_type, lang_seg_value, 
                                          is_hole_num_on, is_legend_on, is_notes_on, is_grid_on,
                                          note_opacity_value, midi_notes=None, current_time=0.0, current_bpm=120.0, 
@@ -139,8 +220,8 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          use_skin=True, trajectory_mode="3段階 (練習標準)",
                                          show_lookahead=True, show_grid4=True, measures_timeline=None):
     """
-    オフライン書き出し専用：Pillowの高度なレイヤー合成をフル稼働させ、基本フレームパーツのみを描画。
-    外部スキン（PNG）が指定されている場合は、透過アルファチャネルを100%美しくレイヤーブレンドします。
+    オフライン書き出し専用：静止パーツ（背景グリッド・カバープレート・4音グリッド64マス・レバー2状態）と
+    発光スタンプを事前キャッシュし、毎フレームは差分（小節線・発音中の穴の発光＆セル点灯）のみを高速合成します。
     """
     if active_pitches is None: active_pitches = set()
     if midi_notes is None: midi_notes = []
@@ -164,11 +245,31 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     color_blow_rgb = hex_to_rgb(color_blow_hex)
     color_draw_rgb = hex_to_rgb(color_draw_hex)
 
+    f_num = get_truetype_font("arial.ttf", max(6, int(11 * scale)))
+    f_note = get_truetype_font("meiryo.ttc", max(6, int(11 * scale)))
+    f_grid = get_truetype_font("meiryo.ttc", max(5, int(8 * scale)))
+    is_jp = ("ドレミ" in lang_seg_value)
 
-    cache_key = f"{inst_type}_{canvas_bg_color}_{is_notes_on}_{is_grid_on}_{trajectory_mode}_{width}_{height}"
+    cell_order = [
+        ("吹", "OFF", 0, 0),  # 左上: 吹き（スライドなし）
+        ("吸", "OFF", 0, 1),  # 右上: 吸い（スライドなし）
+        ("吹", "ON", 1, 0),   # 左下: スライド有りの吹き
+        ("吸", "ON", 1, 1),   # 右下: スライド有りの吸い
+    ]
+    grid_top = y_center_s + 47 * scale
+    cell_w = 23 * scale
+    cell_h = 15 * scale
+
+    cache_key = (
+        inst_type, canvas_bg_color, lang_seg_value,
+        is_hole_num_on, is_legend_on, is_notes_on, is_grid_on,
+        color_blow_hex, color_draw_hex,
+        use_skin, trajectory_mode, show_grid4,
+        width, height, round(scale, 5)
+    )
 
     global _CACHE
-    if _CACHE["key"] != cache_key or _CACHE["base_image"] is None:
+    if _CACHE.get("key") != cache_key or _CACHE.get("full_static_off") is None:
         base_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         base_draw = ImageDraw.Draw(base_img)
 
@@ -181,7 +282,6 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         else:
             base_draw.rectangle([0, 0, width, height], fill=(13, 13, 13, 255))
 
-        # Pillow（エクスポート映像）のベース背景でも、ガイド線トグルがONであれば、軌道モードに応じたグリッドを描画！
         if is_grid_on:
             is_bright_bg = (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
             grid_alpha = 15 if is_bright_bg else 25
@@ -215,35 +315,181 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                         base_draw.line([(hx, y_straight_s), (hx, y_hole_line_s)], fill=grid_line_color, width=line_w)
                     base_draw.line([(X_start_draw + total_width, y_straight_s), (X_start_draw + total_width, y_hole_line_s)], fill=grid_line_color, width=line_w)
 
+        lever_left = (X_start_draw + total_width)
+        skins_dir = get_portable_path("skins")
+        lever_off_path = os.path.join(skins_dir, "レバーオフ.png")
+        lever_on_path = os.path.join(skins_dir, "レバーオン.png")
+        face_path = os.path.join(skins_dir, "マウスピース.png")
+
+        has_lever_skin = use_skin and os.path.exists(lever_off_path) and os.path.exists(lever_on_path)
+        has_face_skin = use_skin and os.path.exists(face_path)
+
+        # 透明ボディオーバーレイ（OFF / ON）の構築
+        body_overlay_off = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        body_overlay_on = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+
+        if has_lever_skin:
+            try:
+                lever_w = int(LEVER_WIDTH_DEFAULT * scale)
+                lever_h = int(LEVER_HEIGHT_DEFAULT * scale)
+                lever_y = int(y_center_s - lever_h / 2)
+                lever_x = int(lever_left + 15 * scale)
+                pil_l_off = Image.open(lever_off_path).convert("RGBA").resize((lever_w, lever_h), Image.Resampling.LANCZOS)
+                pil_l_on = Image.open(lever_on_path).convert("RGBA").resize((lever_w, lever_h), Image.Resampling.LANCZOS)
+                body_overlay_off.paste(pil_l_off, (lever_x, lever_y), mask=pil_l_off)
+                body_overlay_on.paste(pil_l_on, (lever_x, lever_y), mask=pil_l_on)
+            except Exception as ex:
+                has_lever_skin = False
+                print(f"[警告] レバースキン合成に失敗しました: {ex}")
+
+        if not has_lever_skin:
+            btn_w = max(1, int(16 * scale))
+            btn_h = max(1, int(36 * scale))
+            d_off = ImageDraw.Draw(body_overlay_off)
+            d_off.rounded_rectangle([lever_left, y_center_s - 12 * scale, lever_left + 24 * scale, y_center_s + 12 * scale], radius=int(4 * scale), fill=(85, 85, 85, 255))
+            btn_img_off = _draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False)
+            body_overlay_off.paste(btn_img_off, (int(lever_left + 22 * scale), int(y_center_s - btn_h / 2)), mask=btn_img_off)
+
+            d_on = ImageDraw.Draw(body_overlay_on)
+            d_on.rounded_rectangle([lever_left, y_center_s - 12 * scale, lever_left + 12 * scale, y_center_s + 12 * scale], radius=int(4 * scale), fill=(58, 58, 58, 255))
+            btn_img_on = _draw_metallic_button_pil_flat(btn_w, btn_h, is_on=True)
+            body_overlay_on.paste(btn_img_on, (int(lever_left + 3 * scale), int(y_center_s - btn_h / 2)), mask=btn_img_on)
+
+        plate_w = int(total_width + 30 * scale)
+        plate_h = int(90 * scale)
+        plate_pos = (int(X_start_draw - 15 * scale), int(y_center_s - 45 * scale))
+        plate_img = None
+
+        if has_face_skin:
+            try:
+                plate_img = Image.open(face_path).convert("RGBA").resize((plate_w, plate_h), Image.Resampling.LANCZOS)
+            except Exception as ex:
+                has_face_skin = False
+                print(f"[警告] カバープレートスキン合成に失敗しました: {ex}")
+
+        if not has_face_skin or plate_img is None:
+            metallic_plate_img = generate_metallic_texture(plate_w, plate_h)
+            plate_mask = Image.new("L", (plate_w, plate_h), 0)
+            plate_mask_draw = ImageDraw.Draw(plate_mask)
+            plate_mask_draw.rounded_rectangle([0, 0, plate_w, plate_h], radius=int(15 * scale), fill=255)
+            plate_img = Image.new("RGBA", (plate_w, plate_h))
+            plate_img.paste(metallic_plate_img, (0, 0), mask=plate_mask)
+
+        for ov in (body_overlay_off, body_overlay_on):
+            ov.paste(plate_img, plate_pos, mask=plate_img)
+            d_ov = ImageDraw.Draw(ov)
+            for k, idx in enumerate(visible_indices):
+                x_center = X_start_draw + k * W_pitch_s + (W_pitch_s / 2)
+                d_ov.ellipse(
+                    [x_center - (D_hole_s / 2), y_center_s - (D_hole_s / 2),
+                     x_center + (D_hole_s / 2), y_center_s + (D_hole_s / 2)],
+                    fill="#080808", outline="#333333", width=1
+                )
+
+        # 小節横線がカバープレート上部（y_center_s - 45*scale 〜 y_hole_line_s）と重なった際に上書き復元するストリップ
+        strip_y0 = max(0, int(y_center_s - 46 * scale))
+        strip_y1 = min(height, int(y_hole_line_s + 3 * scale))
+        top_strip_off = body_overlay_off.crop((0, strip_y0, width, strip_y1))
+        top_strip_on = body_overlay_on.crop((0, strip_y0, width, strip_y1))
+
+        full_off = Image.alpha_composite(base_img, body_overlay_off)
+        full_on = Image.alpha_composite(base_img, body_overlay_on)
+
+        # 1音表示モード時、発音中の穴だけ白文字に差し替えるための背景帯バックアップ
+        note_band_y0 = max(0, int(y_center_s + 44 * scale))
+        note_band_y1 = min(height, int(y_center_s + 76 * scale))
+        clean_note_band = full_off.crop((0, note_band_y0, width, note_band_y1))
+
+        hole_4_maps = {}
+        blow_notes_midi = {
+            "16穴": [48, 52, 55, 60, 60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96],
+            "12穴 標準": [60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96],
+            "12穴 バス": [24, 28, 31, 35, 36, 40, 43, 47, 48, 52, 55, 59]
+        }
+        mode_key = "16穴" if "16穴" in inst_type else ("12穴 標準" if "標準" in inst_type else "12穴 バス")
+
+        for full_img in (full_off, full_on):
+            d_full = ImageDraw.Draw(full_img)
+            if is_legend_on:
+                legend_x_start = 770 * scale
+                d_full.rectangle([legend_x_start, 30 * scale, legend_x_start + 140 * scale, 75 * scale], fill=(28, 28, 28, 255), outline=(0, 0, 0, 255), width=int(2 * scale))
+                d_full.ellipse([legend_x_start + 12 * scale, 40 * scale, legend_x_start + 22 * scale, 50 * scale], fill=color_blow_rgb)
+                d_full.ellipse([legend_x_start + 12 * scale, 55 * scale, legend_x_start + 22 * scale, 65 * scale], fill=color_draw_rgb)
+                draw_bordered_text_pillow(d_full, (legend_x_start + 80 * scale, 45 * scale), "吹", "#FFFFFF", get_truetype_font("msgothic.ttc", 10 * scale), border_width=1.5 * scale)
+                draw_bordered_text_pillow(d_full, (legend_x_start + 80 * scale, 60 * scale), "吸", "#FFFFFF", get_truetype_font("msgothic.ttc", 10 * scale), border_width=1.5 * scale)
+
+            for k, idx in enumerate(visible_indices):
+                x_center = X_start_draw + k * W_pitch_s + (W_pitch_s / 2)
+                hole_number = k + 1
+                visible_hole_number_absolute = visible_indices[k] + 1
+                if is_hole_num_on:
+                    draw_bordered_text_pillow(d_full, (x_center, y_center_s + 24 * scale), str(hole_number), "#FFFFFF", f_num, border_width=2 * scale)
+
+                if show_grid4:
+                    h4 = get_hole_4_notes(visible_hole_number_absolute, inst_type)
+                    hole_4_maps[visible_hole_number_absolute] = h4
+                    grid_left = x_center - cell_w
+                    for act, lev, r_idx, c_idx in cell_order:
+                        cx0 = grid_left + c_idx * cell_w
+                        cy0 = grid_top + r_idx * cell_h
+                        cx1 = cx0 + cell_w
+                        cy1 = cy0 + cell_h
+                        cell_midi = h4.get((act, lev))
+                        cell_text = get_note_name(cell_midi, is_japanese=is_jp) if (cell_midi is not None and lang_seg_value != "なし") else ""
+                        c_fill = (24, 24, 24, 255) if r_idx == 0 else (16, 16, 16, 255)
+                        c_out = (56, 56, 56, 255) if r_idx == 0 else (44, 44, 44, 255)
+                        t_fill = (204, 204, 204, 255) if r_idx == 0 else (136, 136, 136, 255)
+                        d_full.rectangle([cx0, cy0, cx1, cy1], fill=c_fill, outline=c_out, width=max(1, int(1 * scale)))
+                        if cell_text:
+                            d_full.text(((cx0 + cx1) / 2.0, (cy0 + cy1) / 2.0), cell_text, fill=t_fill, font=f_grid, anchor="mm")
+                elif lang_seg_value != "なし":
+                    note_text = get_note_name(blow_notes_midi[mode_key][k], is_japanese=is_jp)
+                    text_color = "#000000" if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else "#AAAAAA"
+                    draw_bordered_text_pillow(d_full, (x_center, y_center_s + 60 * scale), note_text, text_color, f_note, border_width=2 * scale)
+
+        legend_patch = None
+        legend_pos = (0, 0)
+        if is_legend_on:
+            lx0 = max(0, int(766 * scale))
+            ly0 = max(0, int(26 * scale))
+            lx1 = min(width, int(914 * scale))
+            ly1 = min(height, int(79 * scale))
+            legend_patch = full_off.crop((lx0, ly0, lx1, ly1))
+            legend_pos = (lx0, ly0)
+
+        # 発光スタンプ（Blowリング / Drawリング / 上部扇形）の事前生成
+        r_ring = max(2, int(22 * scale))
+        ring_pad = r_ring + 2
+        ring_size = ring_pad * 2
+        glow_ring_blow = Image.new("RGBA", (ring_size, ring_size), (0, 0, 0, 0))
+        draw_glow_ring(ImageDraw.Draw(glow_ring_blow), ring_pad, ring_pad, r_ring, color_blow_rgb, max_alpha=245)
+        glow_ring_draw = Image.new("RGBA", (ring_size, ring_size), (0, 0, 0, 0))
+        draw_glow_ring(ImageDraw.Draw(glow_ring_draw), ring_pad, ring_pad, r_ring, color_draw_rgb, max_alpha=245)
+
+        r_pie = max(2, int(32 * scale))
+        pie_pad = r_pie + 2
+        pie_size = pie_pad * 2
+        glow_pie = Image.new("RGBA", (pie_size, pie_size), (0, 0, 0, 0))
+        draw_glow_pieslice(ImageDraw.Draw(glow_pie), pie_pad, pie_pad, r_pie, (255, 255, 255), max_alpha=210)
+
         _CACHE["key"] = cache_key
         _CACHE["base_image"] = base_img
-
-    frame_img = _CACHE["base_image"].copy()
-    draw_img = ImageDraw.Draw(frame_img)
-
-    # 小節ごとの薄い横線＋左端小節番号の落下描画（ガイド線ON時）
-    if is_grid_on and measures_timeline:
-        is_bright_bg = (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
-        m_line_color = (0, 51, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((50, 0, 50, 255) if is_bright_bg else (46, 46, 46, 255))
-        m_txt_color = (0, 85, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((80, 0, 80, 255) if is_bright_bg else (85, 85, 85, 255))
-        f_m = get_truetype_font("arial.ttf", max(6, int(8 * scale)))
-        line_w = max(1, int(1 * scale))
-        pixels_per_second = (220.0 * current_bpm) / 240.0
-        if is_straight_mode:
-            x_l = X_start_draw
-            x_r = X_start_draw + total_width
-        else:
-            x_l = 24.0 * scale
-            x_r = 936.0 * scale
-
-        for m in measures_timeline:
-            m_start_t = m.get("start_time", 0.0)
-            y_m = y_hole_line_s - (m_start_t - current_time) * pixels_per_second * scale
-            if y_m < 0.0:
-                break
-            if y_m <= y_hole_line_s:
-                draw_img.line([(x_l, y_m), (x_r, y_m)], fill=m_line_color, width=line_w)
-                draw_img.text((x_l + 4 * scale, y_m - 2 * scale), str(m["measure_num"]), fill=m_txt_color, font=f_m, anchor="lb")
+        _CACHE["full_static_off"] = full_off
+        _CACHE["full_static_on"] = full_on
+        _CACHE["top_strip_off"] = top_strip_off
+        _CACHE["top_strip_on"] = top_strip_on
+        _CACHE["strip_y0"] = strip_y0
+        _CACHE["strip_y1"] = strip_y1
+        _CACHE["legend_patch"] = legend_patch
+        _CACHE["legend_pos"] = legend_pos
+        _CACHE["clean_note_band"] = clean_note_band
+        _CACHE["note_band_y0"] = note_band_y0
+        _CACHE["hole_4_maps"] = hole_4_maps
+        _CACHE["glow_ring_blow"] = glow_ring_blow
+        _CACHE["glow_ring_draw"] = glow_ring_draw
+        _CACHE["ring_pad"] = ring_pad
+        _CACHE["glow_pie"] = glow_pie
+        _CACHE["pie_pad"] = pie_pad
 
     lever_pressed = False
     playing_holes_data = {}
@@ -252,8 +498,14 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     
     currently_active_notes = []
     if midi_notes and active_pitches:
-        for note_data in midi_notes:
+        start_times, max_dur = _get_exporter_notes_index(midi_notes)
+        idx_start = bisect.bisect_left(start_times, current_time - max_dur - 0.05)
+        n_total = len(midi_notes)
+        for i in range(idx_start, n_total):
+            note_data = midi_notes[i]
             n_start_time = note_data.get("start_time", 0.0)
+            if n_start_time > current_time:
+                break
             n_dur_time = note_data.get("duration", 0.0)
             if note_data["note"] in active_pitches and n_start_time <= current_time < (n_start_time + n_dur_time):
                 currently_active_notes.append(note_data)
@@ -271,219 +523,98 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
             if fingering["lever"] == "ON": 
                 lever_pressed = True
 
-    # 動画エクスポート側でもX軸の平行移動スライドを完全廃止(移動オフセット常にゼロ)！
-    lever_x_offset = 0
-    # 🚀【解決】：不自然な +15px の隙間（軸離れ・ボタン浮き）を完全廃止！
-    # 軸の左端（開始点）はプレートの真右端（X_start_draw + total_width）へピタッと完全吸着させます。
-    lever_left = (X_start_draw + total_width)
-    
-    skins_dir = get_portable_path("skins")
-    lever_off_path = os.path.join(skins_dir, "レバーオフ.png")
-    lever_on_path = os.path.join(skins_dir, "レバーオン.png")
-    face_path = os.path.join(skins_dir, "マウスピース.png")  
+    frame_img = (_CACHE["full_static_on"] if lever_pressed else _CACHE["full_static_off"]).copy()
+    draw_img = ImageDraw.Draw(frame_img)
 
-    has_lever_skin = use_skin and os.path.exists(lever_off_path) and os.path.exists(lever_on_path)
-
-    # 🚀 扁平な縦長ステンレスクロームボタンをPillow上でリアルタイムに3D光源物理レンダリングする関数
-    def draw_metallic_button_pil_flat_local(btn_w, btn_h, is_on=False):
-        img = Image.new("RGBA", (btn_w, btn_h), (0,0,0,0))
-        rx = btn_w / 2.0
-        ry = btn_h / 2.0
-        cx, cy = rx, ry
-        pixels = img.load()
-        for y_idx in range(btn_h):
-            for x_idx in range(btn_w):
-                dx = x_idx - cx
-                dy = y_idx - cy
-                dist_sq = (dx*dx)/(rx*rx) + (dy*dy)/(ry*ry)
-                if dist_sq <= 1.0:
-                    dz = math.sqrt(max(0.0, 1.0 - dist_sq))
-                    nx, ny, nz = dx / rx, dy / ry, dz
-                    n_len = math.sqrt(nx*nx + ny*ny + nz*nz)
-                    if n_len > 0:
-                        nx, ny, nz = nx/n_len, ny/n_len, nz/n_len
-                    
-                    lx, ly, lz = -0.5, -0.5, 0.707
-                    l_len = math.sqrt(lx*lx + ly*ly + lz*lz)
-                    lx, ly, lz = lx/l_len, ly/l_len, lz/l_len
-                    
-                    dot = nx*lx + ny*ly + nz*lz
-                    diff = max(0.0, dot)
-                    
-                    r_x = 2.0 * dot * nx - lx
-                    r_y = 2.0 * dot * ny - ly
-                    r_z = 2.0 * dot * nz - lz
-                    spec = max(0.0, r_z)
-                    spec_power = math.pow(spec, 8)
-                    
-                    ambient = 60 if not is_on else 45
-                    diff_factor = 110 if not is_on else 90
-                    base_color = ambient + diff * diff_factor + spec_power * 80
-                    val = min(255, int(base_color))
-                    
-                    edge_dist = 1.0 - math.sqrt(dist_sq)
-                    alpha = 255
-                    if edge_dist < 0.1:
-                        alpha = int(255 * (edge_dist / 0.1))
-                    
-                    pixels[x_idx, y_idx] = (val, val, val, alpha)
-        return img
-
-    if has_lever_skin:
-        try:
-            target_path = lever_on_path if lever_pressed else lever_off_path
-            pil_lever = Image.open(target_path).convert("RGBA")
-            lever_w = int(LEVER_WIDTH_DEFAULT * scale)
-            lever_h = int(LEVER_HEIGHT_DEFAULT * scale)
-            pil_lever_resized = pil_lever.resize((lever_w, lever_h), Image.Resampling.LANCZOS)
-            
-            lever_y = int(y_center_s - lever_h / 2)
-            # スキン画像ペースト時は、プレート右端から +15px（マージン）の位置で変わらず完全にピッタリ重ね合わされます。
-            frame_img.paste(pil_lever_resized, (int(lever_left + 15 * scale), lever_y), mask=pil_lever_resized)
-        except Exception as ex:
-            has_lever_skin = False
-            print(f"[警告] レバースキン合成に失敗しました: {ex}")
-
-    if not has_lever_skin:
-        btn_w = int(16 * scale)
-        btn_h = int(36 * scale)
-        if lever_pressed:
-            draw_img.rounded_rectangle([lever_left, y_center_s - 12 * scale, lever_left + 12 * scale, y_center_s + 12 * scale], radius=int(4 * scale), fill=(58, 58, 58, 255))
-            btn_img = draw_metallic_button_pil_flat_local(btn_w, btn_h, is_on=True)
-            frame_img.paste(btn_img, (int(lever_left + 3 * scale), int(y_center_s - btn_h/2)), mask=btn_img)
+    # 小節ごとの薄い横線＋左端小節番号の落下描画（ガイド線ON時）
+    if is_grid_on and measures_timeline:
+        is_bright_bg = (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
+        m_line_color = (0, 51, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((50, 0, 50, 255) if is_bright_bg else (46, 46, 46, 255))
+        m_txt_color = (0, 85, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((80, 0, 80, 255) if is_bright_bg else (85, 85, 85, 255))
+        f_m = get_truetype_font("arial.ttf", max(6, int(8 * scale)))
+        line_w = max(1, int(1 * scale))
+        pixels_per_second = (220.0 * current_bpm) / 240.0
+        if is_straight_mode:
+            x_l = X_start_draw
+            x_r = X_start_draw + total_width
         else:
-            draw_img.rounded_rectangle([lever_left, y_center_s - 12 * scale, lever_left + 24 * scale, y_center_s + 12 * scale], radius=int(4 * scale), fill=(85, 85, 85, 255))
-            btn_img = draw_metallic_button_pil_flat_local(btn_w, btn_h, is_on=False)
-            frame_img.paste(btn_img, (int(lever_left + 22 * scale), int(y_center_s - btn_h/2)), mask=btn_img)
-            
-        draw_img = ImageDraw.Draw(frame_img)
+            x_l = 24.0 * scale
+            x_r = 936.0 * scale
 
-    plate_w = int(total_width + 30 * scale)
-    plate_h = int(90 * scale)
-    has_face_skin = use_skin and os.path.exists(face_path)
+        strip_y0 = _CACHE["strip_y0"]
+        overlapped_plate = False
+        overlapped_legend = False
+        leg_y0 = int(26 * scale)
+        leg_y1 = int(79 * scale)
 
-    if has_face_skin:
-        try:
-            pil_face = Image.open(face_path).convert("RGBA")
-            pil_face_resized = pil_face.resize((plate_w, plate_h), Image.Resampling.LANCZOS)
-            frame_img.paste(pil_face_resized, (int(X_start_draw - 15 * scale), int(y_center_s - 45 * scale)), mask=pil_face_resized)
-            draw_img = ImageDraw.Draw(frame_img)
-        except Exception as ex:
-            has_face_skin = False
-            print(f"[警告] カバープレートスキン合成に失敗しました: {ex}")
+        for m in measures_timeline:
+            m_start_t = m.get("start_time", 0.0)
+            y_m = y_hole_line_s - (m_start_t - current_time) * pixels_per_second * scale
+            if y_m < 0.0:
+                break
+            if y_m <= y_hole_line_s:
+                draw_img.line([(x_l, y_m), (x_r, y_m)], fill=m_line_color, width=line_w)
+                draw_img.text((x_l + 4 * scale, y_m - 2 * scale), str(m["measure_num"]), fill=m_txt_color, font=f_m, anchor="lb")
+                if y_m >= strip_y0 - 2:
+                    overlapped_plate = True
+                if is_legend_on and (leg_y0 <= y_m <= leg_y1):
+                    overlapped_legend = True
 
-    if not has_face_skin:
-        metallic_plate_img = generate_metallic_texture(plate_w, plate_h)
-        plate_mask = Image.new("L", (plate_w, plate_h), 0)
-        plate_mask_draw = ImageDraw.Draw(plate_mask)
-        plate_mask_draw.rounded_rectangle([0, 0, plate_w, plate_h], radius=int(15 * scale), fill=255)
+        if overlapped_plate:
+            top_strip = _CACHE["top_strip_on"] if lever_pressed else _CACHE["top_strip_off"]
+            frame_img.alpha_composite(top_strip, (0, strip_y0))
+        if overlapped_legend and _CACHE["legend_patch"] is not None:
+            frame_img.paste(_CACHE["legend_patch"], _CACHE["legend_pos"])
 
-        metallic_plate = Image.new("RGBA", (plate_w, plate_h))
-        metallic_plate.paste(metallic_plate_img, (0, 0), mask=plate_mask)
-        
-        frame_img.paste(metallic_plate, (int(X_start_draw - 15 * scale), int(y_center_s - 45 * scale)), mask=metallic_plate)
-        draw_img = ImageDraw.Draw(frame_img)
+    # 発音中の穴のみ発光スタンプ＆4音グリッド強調セルを差分合成
+    if playing_holes_data:
+        ring_pad = _CACHE["ring_pad"]
+        pie_pad = _CACHE["pie_pad"]
+        glow_pie = _CACHE["glow_pie"]
+        hole_4_maps = _CACHE["hole_4_maps"]
+        clean_note_band = _CACHE["clean_note_band"]
+        note_band_y0 = _CACHE["note_band_y0"]
 
-    for k, idx in enumerate(visible_indices):
-        x_center = X_start_draw + k * W_pitch_s + (W_pitch_s / 2)
-        draw_img.ellipse(
-            [x_center - (D_hole_s/2), y_center_s - (D_hole_s/2),
-             x_center + (D_hole_s/2), y_center_s + (D_hole_s/2)],
-            fill="#080808", outline="#333333", width=1
-        )
+        for k, idx in enumerate(visible_indices):
+            visible_hole_number_absolute = visible_indices[k] + 1
+            if visible_hole_number_absolute not in playing_holes_data:
+                continue
 
-    if is_legend_on:
-        legend_x_start = 770 * scale
-        draw_img.rectangle([legend_x_start, 30 * scale, legend_x_start + 140 * scale, 75 * scale], fill=(28, 28, 28, 255), outline=(0, 0, 0, 255), width=int(2 * scale))
-        draw_img.ellipse([legend_x_start + 12 * scale, 40 * scale, legend_x_start + 22 * scale, 50 * scale], fill=color_blow_rgb)
-        draw_img.ellipse([legend_x_start + 12 * scale, 55 * scale, legend_x_start + 22 * scale, 65 * scale], fill=color_draw_rgb)
-        
-        draw_bordered_text_pillow(draw_img, (legend_x_start + 80 * scale, 45 * scale), "吹", "#FFFFFF", get_truetype_font("msgothic.ttc", 10 * scale), border_width=1.5 * scale)
-        draw_bordered_text_pillow(draw_img, (legend_x_start + 80 * scale, 60 * scale), "吸", "#FFFFFF", get_truetype_font("msgothic.ttc", 10 * scale), border_width=1.5 * scale)
-
-    glow_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    glow_draw = ImageDraw.Draw(glow_layer)
-    
-    for k, idx in enumerate(visible_indices):
-        x_center = X_start_draw + k * W_pitch_s + (W_pitch_s / 2)
-        
-        visible_hole_number_absolute = visible_indices[k] + 1
-        is_active = visible_hole_number_absolute in playing_holes_data
-
-        if is_active:
+            x_center = X_start_draw + k * W_pitch_s + (W_pitch_s / 2)
             action = playing_holes_data[visible_hole_number_absolute]
-            glow_color = color_blow_rgb if action == "吹" else color_draw_rgb
-            draw_glow_ring(glow_draw, x_center, y_center_s, r_max=int(22 * scale), color_rgb=glow_color, max_alpha=245)
-            
+            ring_stamp = _CACHE["glow_ring_blow"] if action == "吹" else _CACHE["glow_ring_draw"]
+            frame_img.alpha_composite(ring_stamp, (int(round(x_center)) - ring_pad, int(round(y_center_s)) - ring_pad))
+
             if show_glow_effect:
-                draw_glow_pieslice(glow_draw, x_center, y_hole_line_s, r_max=int(32 * scale), color_rgb=(255, 255, 255), max_alpha=210)
+                frame_img.alpha_composite(glow_pie, (int(round(x_center)) - pie_pad, int(round(y_hole_line_s)) - pie_pad))
 
-    frame_img = Image.alpha_composite(frame_img, glow_layer)
-    draw_img = ImageDraw.Draw(frame_img) 
+            if is_hole_num_on:
+                draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 24 * scale), str(k + 1), "#FFFFFF", f_num, border_width=2 * scale)
 
-    f_num = get_truetype_font("arial.ttf", max(6, int(11 * scale)))
-    f_note = get_truetype_font("meiryo.ttc", max(6, int(11 * scale)))
-    f_grid = get_truetype_font("meiryo.ttc", max(5, int(8 * scale)))
-    is_jp = ("ドレミ" in lang_seg_value)
-
-    cell_order = [
-        ("吹", "OFF", 0, 0),  # 左上: 吹き（スライドなし）
-        ("吸", "OFF", 0, 1),  # 右上: 吸い（スライドなし）
-        ("吹", "ON", 1, 0),   # 左下: スライド有りの吹き
-        ("吸", "ON", 1, 1),   # 右下: スライド有りの吸い
-    ]
-    grid_top = y_center_s + 47 * scale
-    cell_w = 23 * scale
-    cell_h = 15 * scale
-    
-    for k, idx in enumerate(visible_indices):
-        x_center = X_start_draw + k * W_pitch_s + (W_pitch_s / 2)
-        hole_number = k + 1
-        visible_hole_number_absolute = visible_indices[k] + 1
-        
-        if is_hole_num_on:
-            draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 24 * scale), str(hole_number), "#FFFFFF", f_num, border_width=2 * scale)
-
-        # 穴の下側表示：4音グリッド表示 / 1音表示 (従来)
-        if show_grid4:
-            hole_4_map = get_hole_4_notes(visible_hole_number_absolute, inst_type)
-            grid_left = x_center - cell_w
-            for act, lev, r_idx, c_idx in cell_order:
-                cx0 = grid_left + c_idx * cell_w
-                cy0 = grid_top + r_idx * cell_h
-                cx1 = cx0 + cell_w
-                cy1 = cy0 + cell_h
-                cell_midi = hole_4_map.get((act, lev))
-                cell_text = get_note_name(cell_midi, is_japanese=is_jp) if (cell_midi is not None and lang_seg_value != "なし") else ""
-                is_cell_active = (visible_hole_number_absolute, act, lev) in playing_hole_cells
-                if is_cell_active:
-                    c_rgb = color_blow_rgb if act == "吹" else color_draw_rgb
-                    draw_img.rectangle([cx0, cy0, cx1, cy1], fill=(c_rgb[0], c_rgb[1], c_rgb[2], 255), outline=(255, 255, 255, 255), width=max(1, int(1 * scale)))
-                    if cell_text:
-                        draw_img.text(((cx0 + cx1) / 2.0, (cy0 + cy1) / 2.0), cell_text, fill=(0, 0, 0, 255), font=f_grid, anchor="mm")
-                else:
-                    c_fill = (24, 24, 24, 255) if r_idx == 0 else (16, 16, 16, 255)
-                    c_out = (56, 56, 56, 255) if r_idx == 0 else (44, 44, 44, 255)
-                    t_fill = (204, 204, 204, 255) if r_idx == 0 else (136, 136, 136, 255)
-                    draw_img.rectangle([cx0, cy0, cx1, cy1], fill=c_fill, outline=c_out, width=max(1, int(1 * scale)))
-                    if cell_text:
-                        draw_img.text(((cx0 + cx1) / 2.0, (cy0 + cy1) / 2.0), cell_text, fill=t_fill, font=f_grid, anchor="mm")
-        elif lang_seg_value != "なし":
-            current_note = playing_holes_note.get(visible_hole_number_absolute)
-            if current_note is not None:
-                note_text = get_note_name(current_note, is_japanese=is_jp)
-                text_color = "#FFFFFF"
-            else:
-                blow_notes_midi = {
-                    "16穴": [48, 52, 55, 60, 60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96],
-                    "12穴 標準": [60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96], 
-                    "12穴 バス": [24, 28, 31, 35, 36, 40, 43, 47, 48, 52, 55, 59]
-                }
-                mode_key = "16穴" if "16穴" in inst_type else ("12穴 標準" if "標準" in inst_type else "12穴 バス")
-                note_text = get_note_name(blow_notes_midi[mode_key][k], is_japanese=is_jp)
-                text_color = "#000000" if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else "#AAAAAA"
-                
-            draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 60 * scale), note_text, text_color, f_note, border_width=2 * scale)
+            if show_grid4:
+                hole_4_map = hole_4_maps.get(visible_hole_number_absolute) or get_hole_4_notes(visible_hole_number_absolute, inst_type)
+                grid_left = x_center - cell_w
+                for act, lev, r_idx, c_idx in cell_order:
+                    if (visible_hole_number_absolute, act, lev) in playing_hole_cells:
+                        cx0 = grid_left + c_idx * cell_w
+                        cy0 = grid_top + r_idx * cell_h
+                        cx1 = cx0 + cell_w
+                        cy1 = cy0 + cell_h
+                        cell_midi = hole_4_map.get((act, lev))
+                        cell_text = get_note_name(cell_midi, is_japanese=is_jp) if (cell_midi is not None and lang_seg_value != "なし") else ""
+                        c_rgb = color_blow_rgb if act == "吹" else color_draw_rgb
+                        draw_img.rectangle([cx0, cy0, cx1, cy1], fill=(c_rgb[0], c_rgb[1], c_rgb[2], 255), outline=(255, 255, 255, 255), width=max(1, int(1 * scale)))
+                        if cell_text:
+                            draw_img.text(((cx0 + cx1) / 2.0, (cy0 + cy1) / 2.0), cell_text, fill=(0, 0, 0, 255), font=f_grid, anchor="mm")
+            elif lang_seg_value != "なし":
+                current_note = playing_holes_note.get(visible_hole_number_absolute)
+                if current_note is not None:
+                    patch_x0 = max(0, int(x_center - W_pitch_s / 2))
+                    patch_x1 = min(width, int(x_center + W_pitch_s / 2))
+                    sub_bg = clean_note_band.crop((patch_x0, 0, patch_x1, clean_note_band.height))
+                    frame_img.paste(sub_bg, (patch_x0, note_band_y0))
+                    note_text = get_note_name(current_note, is_japanese=is_jp)
+                    draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 60 * scale), note_text, "#FFFFFF", f_note, border_width=2 * scale)
 
     return frame_img
 
@@ -505,11 +636,16 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         opacity_val = 0.5
 
     active_pitches = set()
-    for note_data in midi_notes:
-        start_t = note_data["start_time"]
-        end_t = start_t + note_data["duration"]
-        if start_t <= current_time < end_t:
-            active_pitches.add(note_data["note"])
+    if midi_notes:
+        start_times, max_dur = _get_exporter_notes_index(midi_notes)
+        idx_s = bisect.bisect_left(start_times, current_time - max_dur - 0.05)
+        for i in range(idx_s, len(midi_notes)):
+            note_data = midi_notes[i]
+            start_t = note_data["start_time"]
+            if start_t > current_time:
+                break
+            if start_t <= current_time < start_t + note_data["duration"]:
+                active_pitches.add(note_data["note"])
 
     pil_frame = draw_harmonica_pillow_frame_exporter(
         width=width,
@@ -598,6 +734,33 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
     btn_close.pack(pady=(0, 10))
 
 
+def _get_note_label_stamp(text_str, font_size, bw):
+    key = (text_str, font_size, bw)
+    cached = _LABEL_STAMP_CACHE.get(key)
+    if cached is not None:
+        return cached
+    f_lbl = get_truetype_font("meiryo.ttc", font_size)
+    pad_w = max(24, int(font_size * max(2, len(text_str)) + bw * 4 + 12))
+    pad_h = max(20, int(font_size * 2.2 + bw * 4 + 12))
+    cx = pad_w // 2
+    cy = pad_h // 2
+    img = Image.new("RGBA", (pad_w, pad_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw_bordered_text_pillow(draw, (cx, cy), text_str, "#FFFFFF", f_lbl, border_width=bw)
+    bbox = img.getbbox()
+    if not bbox:
+        res = (None, None, 0, 0)
+        _LABEL_STAMP_CACHE[key] = res
+        return res
+    bx0, by0, bx1, by1 = bbox
+    cropped = np.asarray(img.crop(bbox))
+    bgr_stamp = cropped[:, :, 2::-1].astype(np.float32)
+    alpha_stamp = (cropped[:, :, 3:4].astype(np.float32)) / 255.0
+    res = (bgr_stamp, alpha_stamp, cx - bx0, cy - by0)
+    _LABEL_STAMP_CACHE[key] = res
+    return res
+
+
 def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, midi_notes, 
                                    current_time, current_bpm, active_pitches, note_opacity_value,
                                    color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
@@ -606,15 +769,13 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     """
     OpenCVの LINE_AA を用いて、斜め面取りされたソリッドでシャープな幾何学多角形ノーツを合成描画。
     「3段階 (練習標準)」「垂直落下 (穴直上)」「2段階 (ビジュアル)」の3モードすべてに対応。
+    二分探索ウィンドウ抽出・ROI部分ブレンド・音名ラベルスタンプキャッシュにより高速化。
     """
     if not midi_notes:
         return bgr_frame
 
     color_blow_bgr = hex_to_rgb(color_blow_hex)[::-1]
     color_draw_bgr = hex_to_rgb(color_draw_hex)[::-1]
-
-    notes_overlay = np.zeros_like(bgr_frame)
-    notes_mask = np.zeros((height, width), dtype=np.uint8)
 
     y_center_full, y_collide_full, y_straight_full, y_hole_line_full, height_diag_full, height_straight_full = get_y_trajectory_params(height / scale, trajectory_mode)
     y_collide_s = y_collide_full * scale
@@ -626,19 +787,35 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
 
     _, _, _, X_shift_notes = get_layout_params(inst_type, scale)
     pixels_per_second = (220.0 * current_bpm) / 240.0
+    px_per_sec_s = pixels_per_second * scale
     note_labels_to_draw = []
     is_jp = ("ドレミ" in str(lang_seg_value))
 
-    for note_data in midi_notes:
+    start_times, max_dur = _get_exporter_notes_index(midi_notes)
+    idx_start = bisect.bisect_left(start_times, current_time - max_dur - 0.05)
+    max_visible_time = current_time + (y_hole_line_s / px_per_sec_s) + 0.1 if px_per_sec_s > 0 else current_time + 20.0
+    n_total = len(midi_notes)
+
+    zone_h = min(height, int(math.ceil(y_hole_line_s)) + 2)
+    notes_overlay = None
+    notes_mask = None
+    min_x, min_y = width, zone_h
+    max_x, max_y = 0, 0
+
+    for i in range(idx_start, n_total):
+        note_data = midi_notes[i]
         start_t = note_data["start_time"]
+        if start_t > max_visible_time:
+            break
         end_t = start_t + note_data["duration"]
         
-        y_bottom = y_hole_line_s - (start_t - current_time) * pixels_per_second * scale
-        y_top = y_hole_line_s - (end_t - current_time) * pixels_per_second * scale
+        y_bottom = y_hole_line_s - (start_t - current_time) * px_per_sec_s
+        y_top = y_hole_line_s - (end_t - current_time) * px_per_sec_s
         
         if y_bottom >= 0 and y_top <= y_hole_line_s:
             start_tick = note_data.get("start_tick", 0)
-            fing = get_note_fingering_for_song(start_tick, note_data["note"], inst_type)
+            bound_ok = (note_data.get("_bound_inst") == inst_type)
+            fing = note_data.get("fingering") if bound_ok else get_note_fingering_for_song(start_tick, note_data["note"], inst_type)
             if not fing: 
                 continue
             
@@ -652,11 +829,11 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
             lane_x_left = (72.0 + lane_idx * 16.0) * scale - X_shift_notes
             lane_x_right = lane_x_left + 16.0 * scale
             
-            note_in_range = is_note_in_range(note_data["note"], inst_type)
+            note_in_range = note_data["in_range"] if bound_ok else is_note_in_range(note_data["note"], inst_type)
             if not note_in_range and is_straight_mode:
                 continue
 
-            dest_x_center = get_note_dest_x(note_data["note"], inst_type, scale, start_tick=start_tick)
+            dest_x_center = (note_data["dest_x_base"] * scale) if bound_ok else get_note_dest_x(note_data["note"], inst_type, scale, start_tick=start_tick)
             dest_left = dest_x_center - 6.0 * scale
             dest_right = dest_x_center + 6.0 * scale
 
@@ -732,9 +909,20 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 pts_accum.append([int(round(x_left_at(y_r_start))), int(round(y_r_start))])
 
             if len(pts_accum) >= 3:
+                if notes_overlay is None:
+                    notes_overlay = np.zeros((zone_h, width, 3), dtype=np.uint8)
+                    notes_mask = np.zeros((zone_h, width), dtype=np.uint8)
                 pts = np.array(pts_accum, dtype=np.int32)
                 cv2.fillPoly(notes_overlay, [pts], col_bgr, lineType=cv2.LINE_AA)
                 cv2.fillPoly(notes_mask, [pts], 255, lineType=cv2.LINE_AA)
+                px_min = int(pts[:, 0].min()) - 2
+                px_max = int(pts[:, 0].max()) + 3
+                py_min = int(pts[:, 1].min()) - 2
+                py_max = int(pts[:, 1].max()) + 3
+                if px_min < min_x: min_x = px_min
+                if px_max > max_x: max_x = px_max
+                if py_min < min_y: min_y = py_min
+                if py_max > max_y: max_y = py_max
 
             # 案A：落下ノーツ追従音名ラベルの座標収集
             if show_lookahead and lang_seg_value != "なし" and (y_vis_bot - y_vis_top >= 6.0 * scale) and y_vis_bot >= 8.0 * scale:
@@ -747,22 +935,46 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 else:
                     ratio_lbl = (label_y - y_collide_s) / height_diag_s if height_diag_s > 0 else 1.0
                     label_x = lane_cx + (dest_x_center - lane_cx) * ratio_lbl
-                note_labels_to_draw.append((label_x, label_y, get_note_name(note_data["note"], is_japanese=is_jp)))
+                n_str = (note_data["name_jp"] if is_jp else note_data["name_cde"]) if bound_ok else get_note_name(note_data["note"], is_japanese=is_jp)
+                note_labels_to_draw.append((label_x, label_y, n_str))
 
-    mask_normalized = notes_mask.astype(float) / 255.0
-    mask_normalized = np.expand_dims(mask_normalized, axis=2) 
-
-    alpha_channel = mask_normalized * note_opacity_value
-    bgr_frame = (bgr_frame * (1.0 - alpha_channel) + notes_overlay * alpha_channel).astype(np.uint8)
+    if notes_overlay is not None and max_x > min_x and max_y > min_y:
+        rx0 = max(0, min_x)
+        rx1 = min(width, max_x)
+        ry0 = max(0, min_y)
+        ry1 = min(zone_h, max_y)
+        if rx1 > rx0 and ry1 > ry0:
+            roi_mask = notes_mask[ry0:ry1, rx0:rx1]
+            alpha_roi = (roi_mask.astype(np.float32) * (float(note_opacity_value) / 255.0))[:, :, np.newaxis]
+            roi_bg = bgr_frame[ry0:ry1, rx0:rx1].astype(np.float32)
+            roi_ov = notes_overlay[ry0:ry1, rx0:rx1].astype(np.float32)
+            bgr_frame[ry0:ry1, rx0:rx1] = (roi_bg * (1.0 - alpha_roi) + roi_ov * alpha_roi).astype(np.uint8)
 
     if note_labels_to_draw:
-        rgb_pil = Image.fromarray(cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB))
-        draw_pil = ImageDraw.Draw(rgb_pil)
-        f_lbl = get_truetype_font("meiryo.ttc", max(6, int(9 * scale)))
+        f_size = max(6, int(9 * scale))
         bw = max(1, int(1.5 * scale))
         for lx, ly, l_str in note_labels_to_draw:
-            draw_bordered_text_pillow(draw_pil, (lx, ly), l_str, "#FFFFFF", f_lbl, border_width=bw)
-        bgr_frame = cv2.cvtColor(np.array(rgb_pil), cv2.COLOR_RGB2BGR)
+            bgr_stamp, alpha_stamp, cx_off, cy_off = _get_note_label_stamp(l_str, f_size, bw)
+            if bgr_stamp is None:
+                continue
+            sh, sw = bgr_stamp.shape[:2]
+            x0 = int(round(lx)) - cx_off
+            y0 = int(round(ly)) - cy_off
+            x1 = x0 + sw
+            y1 = y0 + sh
+            sx0 = max(0, -x0)
+            sy0 = max(0, -y0)
+            dx0 = max(0, x0)
+            dy0 = max(0, y0)
+            dx1 = min(width, x1)
+            dy1 = min(height, y1)
+            if dx1 > dx0 and dy1 > dy0:
+                sx1 = sx0 + (dx1 - dx0)
+                sy1 = sy0 + (dy1 - dy0)
+                sub_bg = bgr_frame[dy0:dy1, dx0:dx1].astype(np.float32)
+                sub_st = bgr_stamp[sy0:sy1, sx0:sx1]
+                sub_al = alpha_stamp[sy0:sy1, sx0:sx1]
+                bgr_frame[dy0:dy1, dx0:dx1] = (sub_bg * (1.0 - sub_al) + sub_st * sub_al).astype(np.uint8)
 
     return bgr_frame
 
@@ -837,6 +1049,10 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
 
             print(f"[Export] OpenCV高解像度ベクトル描画レンダリング開始: {width}x{height} (Scale: {scale}, FPS: {fps}), 総フレーム: {total_frames}")
 
+            start_times, max_dur = _get_exporter_notes_index(midi_notes)
+            n_total = len(midi_notes)
+            last_percent = -1
+
             for frame_idx in range(total_frames):
                 try:
                     if ctrl and getattr(ctrl, "video_export_cancelled", False):
@@ -851,11 +1067,15 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 current_time_sec = frame_idx / fps
                 
                 active_pitches = set()
-                for note_data in midi_notes:
-                    start_t = note_data["start_time"]
-                    end_t = start_t + note_data["duration"]
-                    if start_t <= current_time_sec < end_t:
-                        active_pitches.add(note_data["note"])
+                if midi_notes:
+                    idx_s = bisect.bisect_left(start_times, current_time_sec - max_dur - 0.05)
+                    for i in range(idx_s, n_total):
+                        note_data = midi_notes[i]
+                        start_t = note_data["start_time"]
+                        if start_t > current_time_sec:
+                            break
+                        if start_t <= current_time_sec < start_t + note_data["duration"]:
+                            active_pitches.add(note_data["note"])
 
                 pil_frame = draw_harmonica_pillow_frame_exporter(
                     width=width,
@@ -883,9 +1103,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     measures_timeline=measures_timeline
                 )
 
-                rgb_frame = pil_frame.convert("RGB")
-                frame_np = np.array(rgb_frame)
-                bgr_frame = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                bgr_frame = cv2.cvtColor(np.asarray(pil_frame), cv2.COLOR_RGBA2BGR)
                 
                 if is_notes_on:
                     bgr_frame = apply_opencv_vector_notes_draw(
@@ -910,9 +1128,11 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 video_writer.write(bgr_frame)
 
                 percent = int((frame_idx + 1) / total_frames * 100)
-                root_after(0, lambda p=percent: status_label.configure(
-                    text=f"🎬 映像レンダリング中... {p}%", text_color="#ffcc00"
-                ))
+                if percent != last_percent:
+                    last_percent = percent
+                    root_after(0, lambda p=percent: status_label.configure(
+                        text=f"🎬 映像レンダリング中... {p}%", text_color="#ffcc00"
+                    ))
 
             video_writer.release()
             print("[Export] 無音動画の生成が完了。続いて高音質WAV物理合成を開始します。")
