@@ -754,4 +754,4 @@ class PlaybackController:
             self.last_update_time = time.time()
             self.current_tick = self.midi_engine.accumulated_ticks
             self.update_clock()
-            print("[System] 再生ストリームの物理発音を検知 ➔ UIタイマーループ点火")
+            print("[System] 再生ストリームの物理発音を検知 ➔ UIタイマーループ点火")

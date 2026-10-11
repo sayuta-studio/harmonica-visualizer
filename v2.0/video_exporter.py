@@ -204,9 +204,13 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                 base_draw.line([(936 * scale, 0), (936 * scale, y_collide_s)], fill=grid_line_color, width=line_w)
 
                 base_draw.line([(X_start_draw, y_straight_s), (X_start_draw + total_width, y_straight_s)], fill=grid_color, width=line_w)
-                for k in range(N_visible + 1):
+                for k in range(N_visible):
                     hx = X_start_draw + k * W_pitch_s
+                    for sub in (1, 2, 3):
+                        sx = hx + sub * 12 * scale
+                        base_draw.line([(sx, y_straight_s), (sx, y_hole_line_s)], fill=grid_color, width=line_w)
                     base_draw.line([(hx, y_straight_s), (hx, y_hole_line_s)], fill=grid_line_color, width=line_w)
+                base_draw.line([(X_start_draw + total_width, y_straight_s), (X_start_draw + total_width, y_hole_line_s)], fill=grid_line_color, width=line_w)
 
         _CACHE["key"] = cache_key
         _CACHE["base_image"] = base_img

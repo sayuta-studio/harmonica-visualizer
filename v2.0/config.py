@@ -53,9 +53,9 @@ def get_y_layout_params(canvas_height):
     y_offset = canvas_height - 540
     
     y_center = 460 + y_offset        # 420から40px下げ
-    y_collide_line = 260 + y_offset  # 衝突終点引き下げに伴い、収束高さをキープするため 275 から 260 へ自動補正
+    y_collide_line = 235 + y_offset  # 斜め収束開始ライン（斜め105px＋直上垂直105pxの1:1配分）
     y_hole_line = 445 + y_offset     # 衝突終点をホールの最上端（入り口のフチ、穴の真上）へ同期設定！
-    height_converge = 185            # 収束高さ（445 - 260 = 185）はタイミング不変
+    height_converge = 210            # 収束＋直上垂直の合計高さ（445 - 235 = 210）
     
     return y_center, y_collide_line, y_hole_line, height_converge
 
@@ -64,14 +64,15 @@ def get_y_trajectory_params(canvas_height):
     """
     3段階収束（上部60音垂直 ➔ 斜め収束 ➔ 穴直上垂直）および垂直落下モード用の
     Y軸座標パラメータを一元計算して返します。
+    斜め収束区間 (105px) と穴直上の垂直落下区間 (105px) を1:1の同等の長さで確保します。
     """
     y_offset = canvas_height - 540
     y_center = 460 + y_offset
-    y_collide_line = 260 + y_offset
+    y_collide_line = 235 + y_offset
     y_hole_line = 445 + y_offset
     height_straight = HEIGHT_STRAIGHT_ABOVE_HOLE
-    y_straight_line = y_hole_line - height_straight  # 385 + y_offset (カバー上端415の30px上、穴上端445の60px上)
-    height_diag = y_straight_line - y_collide_line   # 125
+    y_straight_line = y_hole_line - height_straight  # 340 + y_offset (斜め235〜340: 105px / 垂直340〜445: 105px)
+    height_diag = y_straight_line - y_collide_line   # 105
     return y_center, y_collide_line, y_straight_line, y_hole_line, height_diag, height_straight
 
 
@@ -114,12 +115,12 @@ CANVAS_HEIGHT = 540             # Canvas of 縦幅 (※デフォルト16:9)
 X_SHIFT_12HOLE = 96.0           
 
 # 衝突終点および収束境界スライドライントラック（穴の真上へ吸着）
-Y_COLLIDE_LINE = 260            # 等速下落と収束の境界
-HEIGHT_STRAIGHT_ABOVE_HOLE = 60 # 穴直上の垂直落下区間高さ (60px = 半拍分)
-Y_STRAIGHT_LINE = 385           # 斜め収束終了・穴直上垂直開始ライン (445 - 60 = 385)
+Y_COLLIDE_LINE = 235            # 等速下落と斜め収束の境界 (0〜235: 上部垂直235px)
+HEIGHT_STRAIGHT_ABOVE_HOLE = 105 # 穴直上の垂直落下区間高さ (340〜445: 105px)
+Y_STRAIGHT_LINE = 340           # 斜め収束終了・穴直上垂直開始ライン (445 - 105 = 340)
 Y_HOLE_LINE = 445               # 物理穴の衝突終点（ホールの最上フチに完全同期）
-HEIGHT_CONVERGE = 185           # 収束領域合計高さ (445 - 260 = 185)
-HEIGHT_DIAG_CONVERGE = 125      # 斜め収束区間高さ (385 - 260 = 125)
+HEIGHT_CONVERGE = 210           # 収束領域合計高さ (445 - 235 = 210)
+HEIGHT_DIAG_CONVERGE = 105      # 斜め収束区間高さ (340 - 235 = 105、直上垂直区間と1:1)
 PIXELS_PER_BEAT = 120           # 1拍あたりの等速下落ピクセル数
 
 # 🚀【解決】：扁平な縦長メタル楕円（16x36）表示のための最大画像キャンバスサイズ

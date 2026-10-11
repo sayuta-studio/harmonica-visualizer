@@ -160,11 +160,15 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                 canvas.create_line(24 * scale, 0, 24 * scale, y_collide_s, fill=grid_line_color, tags="static_grid_border")
                 canvas.create_line(936 * scale, 0, 936 * scale, y_collide_s, fill=grid_line_color, tags="static_grid_border")
 
-                # 穴直上の垂直落下区間 (y_straight_s 〜 y_hole_line_s) の穴境界ガイド
+                # 穴直上の垂直落下区間 (y_straight_s 〜 y_hole_line_s) の穴境界＋穴内4分割ガイド
                 canvas.create_line(X_start_draw, y_straight_s, X_start_draw + total_width, y_straight_s, fill=guide_color, tags="static_grid")
-                for k in range(N_visible + 1):
+                for k in range(N_visible):
                     hx = X_start_draw + k * W_PITCH * scale
+                    for sub in (1, 2, 3):
+                        sx = hx + sub * 12 * scale
+                        canvas.create_line(sx, y_straight_s, sx, y_hole_line_s, fill=guide_color, tags="static_grid")
                     canvas.create_line(hx, y_straight_s, hx, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
+                canvas.create_line(X_start_draw + total_width, y_straight_s, X_start_draw + total_width, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
 
         # マウスピース外部スキン貼り付け合成
         if use_skin and canvas.skin_cache.get("face"):
