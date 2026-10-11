@@ -230,20 +230,43 @@ class SettingsController:
             
         self.draw_harmonica_static()
 
+    def get_effective_canvas_ratio(self):
+        """
+        練習タブ（🎵 練習）選択時は常に最大横幅の 16:9 で見やすく表示し、
+        デザイン・動画出力タブ選択時は設定された出力アスペクト比をプレビュー反映します。
+        """
+        if not hasattr(self, "gui"):
+            return "16:9"
+        if hasattr(self.gui, "sidebar_mode_seg") and self.gui.sidebar_mode_seg.get() == "🎵 練習":
+            return "16:9"
+        return self.gui.ratio_menu.get()
+
+    def sync_canvas_size_to_active_ratio(self):
+        """現在の実効アスペクト比に合わせて表示用Canvasのサイズとキャッシュを同期します。"""
+        if not hasattr(self, "gui") or not self.gui.canvas:
+            return
+        effective_ratio = self.get_effective_canvas_ratio()
+        w, h, _ = get_visualizer_layout_params(effective_ratio)
+        self.gui.canvas.configure(width=w, height=h)
+        self.gui.canvas.place(relx=0.5, rely=0.5, anchor="center")
+
+        if hasattr(self.gui.canvas, "skin_cache"):
+            self.gui.canvas.skin_cache.clear()
+        self.gui.canvas.delete("static_plate")
+
+
+    def on_sidebar_tab_changed(self, tab_name):
+        """右サイドバーのタブ切替時にCanvasの表示比率・描画を即時同期します。"""
+        self.sync_canvas_size_to_active_ratio()
+        self.draw_harmonica_static()
+
     # アスペクト比変更イベントフック
     def on_ratio_changed(self, value):
         """
         アスペクト比プルダウン（16:9/9:16/4:3）の変更を検知した瞬間、
         表示用Canvasの物理サイズを拡大縮小し、最大960x540の親枠内の中央に綺麗にフィット（レターボックス）配置します。
         """
-        w, h, scale = get_visualizer_layout_params(value)
-        self.gui.canvas.configure(width=w, height=h)
-        # 親フレームの中央に配置して、縦長であっても絶対にウィンドウ外へはみ出さないようにスケーリング配置！
-        self.gui.canvas.place(relx=0.5, rely=0.5, anchor="center")  
-        
-        if hasattr(self.gui.canvas, "skin_cache"):
-            self.gui.canvas.skin_cache.clear()
-
+        self.sync_canvas_size_to_active_ratio()
         self.apply_bpm()
         self.draw_harmonica_static()
-        self.save_user_settings_txt()
+        self.save_user_settings_txt()

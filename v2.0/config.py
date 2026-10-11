@@ -190,4 +190,4 @@ def get_note_dest_x(note, inst_type, scale=1.0, start_tick=0):
         offset = 0.0
 
     dest_x = center_x_absolute + offset - X_shift
-    return dest_x
+    return dest_x

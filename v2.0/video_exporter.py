@@ -933,4 +933,4 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 root_after(0, lambda e=error_details: ctrl.on_export_finished_or_cancelled("failed", e))
 
     t = threading.Thread(target=render_worker, daemon=True)
-    t.start()
+    t.start()

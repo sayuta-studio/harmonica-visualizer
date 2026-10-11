@@ -375,7 +375,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         use_skin = bool(self.gui.use_skin_switch.get())
         
-        aspect_ratio = self.gui.ratio_menu.get()
+        aspect_ratio = self.get_effective_canvas_ratio()
         _, _, disp_scale = get_visualizer_layout_params(aspect_ratio)
 
         # 連動リング表示スイッチのON/OFF状態を引き渡す
@@ -521,6 +521,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         # export_btn の自立活性化。中止を待ち受けるため常に normal を死守！
         self.gui.export_btn.configure(state="normal")
         
+        if hasattr(self.gui, "sidebar_mode_seg"):
+            self.gui.sidebar_mode_seg.configure(state=state)
+        
         # ロック漏れしていた音声選択(audio_mode_menu)をリストへ補完
         self.gui.audio_mode_menu.configure(state=state)
         self.gui.file_btn.configure(state=state)
@@ -564,6 +567,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         
         self.gui.ratio_menu.configure(state=state)
         self.gui.use_skin_switch.configure(state=state)
+
 
     def execute_video_export(self):
         """高画質動画書き出しコアと画面コンソールボタンを完全に結合！"""

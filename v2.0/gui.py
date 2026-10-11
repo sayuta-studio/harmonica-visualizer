@@ -249,51 +249,110 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.canvas = tk.Canvas(self.canvas_frame, width=960, height=540, bg=self.canvas_bg_color, highlightthickness=0)
         self.canvas.place(relx=0.5, rely=0.5, anchor="center")
 
-        # 右下：映像・出力サイドバー (幅360px固定 ➔ グループフレームによる極限デトックス構成！)
+        # 右下：3タブ切替サイドバー (幅360px固定：「🎵 練習」「🎨 デザイン」「🎬 動画出力」)
         self.right_frame = ctk.CTkFrame(self.main_lower_frame, width=360, corner_radius=10)
         self.right_frame.pack(side="right", fill="y", padx=(5, 0))
         self.right_frame.pack_propagate(False)
 
-        # ----------------------------------------------------------------------
-        # 🚀【グループ 1/3】：🎛️ 練習設定 (Practice Settings Frame)
-        # ----------------------------------------------------------------------
-        self.practice_group = ctk.CTkFrame(self.right_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.practice_group.pack(fill="x", padx=12, pady=(10, 4))
+        # 最上部：モード切替セグメントボタン
+        self.sidebar_mode_seg = ctk.CTkSegmentedButton(
+            self.right_frame,
+            values=["🎵 練習", "🎨 デザイン", "🎬 動画出力"],
+            font=self.f_jp_bold,
+            height=34,
+            command=self.switch_sidebar_tab
+        )
+        self.sidebar_mode_seg.set("🎵 練習")
+        self.sidebar_mode_seg.pack(fill="x", padx=12, pady=(12, 6))
 
-        inst_menu_label = ctk.CTkLabel(self.practice_group, text="🎛️ 練習設定:", font=self.f_jp_bold)
-        inst_menu_label.pack(anchor="w", padx=15, pady=(8, 1))  
-        
-        self.inst_lang_frame = ctk.CTkFrame(self.practice_group, fg_color="transparent")
-        self.inst_lang_frame.pack(fill="x", padx=15, pady=(0, 4)) 
-        
+        # 最下部：ステータスラベル（全タブ共通で常時表示）
+        self.status_label = ctk.CTkLabel(self.right_frame, text="待機中...", font=self.f_jp_bold, text_color="#777777")
+        self.status_label.pack(side="bottom", fill="x", pady=(4, 8))
+
+        # 各タブ用のコンテナフレーム
+        self.tab_practice_frame = ctk.CTkFrame(self.right_frame, fg_color="transparent")
+        self.tab_design_frame = ctk.CTkFrame(self.right_frame, fg_color="transparent")
+        self.tab_export_frame = ctk.CTkFrame(self.right_frame, fg_color="transparent")
+
+        # ======================================================================
+        # 🟢 タブ1：【🎵 練習】 (楽器・パート・練習ガイド・運指エディタ)
+        # ======================================================================
+        self.practice_group = ctk.CTkFrame(self.tab_practice_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.practice_group.pack(fill="x", padx=12, pady=(6, 8))
+
+        inst_menu_label = ctk.CTkLabel(self.practice_group, text="🎛️ 楽器・音名表記設定:", font=self.f_jp_bold)
+        inst_menu_label.pack(anchor="w", padx=15, pady=(10, 4))
+
+        inst_sub_lbl = ctk.CTkLabel(self.practice_group, text="使用ハーモニカ:", font=self.f_jp_bold, text_color="#aaaaaa")
+        inst_sub_lbl.pack(anchor="w", padx=15, pady=(2, 1))
+
         self.inst_menu = ctk.CTkOptionMenu(
-            self.inst_lang_frame, 
-            values=["16穴 (C3-D7)", "12穴 標準 (C4-D7)", "12穴 バス (C1-D4)"], 
-            width=145, 
+            self.practice_group,
+            values=["16穴 (C3-D7)", "12穴 標準 (C4-D7)", "12穴 バス (C1-D4)"],
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
             command=self.controller.on_setting_changed
         )
-        self.inst_menu.pack(side="left", fill="x", expand=True, padx=(0, 3))
-        
+        self.inst_menu.pack(fill="x", padx=15, pady=(0, 8))
+
+        lang_sub_lbl = ctk.CTkLabel(self.practice_group, text="音名表記スタイル:", font=self.f_jp_bold, text_color="#aaaaaa")
+        lang_sub_lbl.pack(anchor="w", padx=15, pady=(2, 1))
+
         self.lang_menu = ctk.CTkOptionMenu(
-            self.inst_lang_frame, 
-            values=["CDE", "ドレミ", "なし"], 
-            width=100, 
+            self.practice_group,
+            values=["CDE", "ドレミ", "なし"],
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
             command=self.controller.on_setting_changed
         )
         self.lang_menu.set("CDE")
-        self.lang_menu.pack(side="right", fill="x", expand=True, padx=(3, 0))
+        self.lang_menu.pack(fill="x", padx=15, pady=(0, 12))
 
-        # 🚀【改善】：見出しラベルを明記して視認性を確保
-        theme_title_lbl = ctk.CTkLabel(self.practice_group, text="ノーツカラーテーマ:", font=self.f_jp_bold, text_color="#aaaaaa")
-        theme_title_lbl.pack(anchor="w", padx=15, pady=(2, 0))
+        # --- 🎯 運指エディタ ---
+        self.editor_group = ctk.CTkFrame(self.tab_practice_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.editor_group.pack(fill="x", padx=12, pady=6)
 
-        # カラーテーマ ＆ カスタムピッカー
-        self.theme_color_frame = ctk.CTkFrame(self.practice_group, fg_color="transparent")
-        self.theme_color_frame.pack(fill="x", padx=15, pady=(0, 4))
+        editor_lbl_title = ctk.CTkLabel(self.editor_group, text="🎯 運指エディタ (変え指設定):", font=self.f_jp_bold)
+        editor_lbl_title.pack(anchor="w", padx=15, pady=(10, 4))
+
+        preset_sub_lbl = ctk.CTkLabel(self.editor_group, text="曲別ベース運指プリセット:", font=self.f_jp_bold, text_color="#aaaaaa")
+        preset_sub_lbl.pack(anchor="w", padx=15, pady=(2, 1))
+
+        self.alt_fingering_menu = ctk.CTkOptionMenu(
+            self.editor_group,
+            values=["スライド最小化", "スライド優先"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_fingering_preset_changed
+        )
+        self.alt_fingering_menu.pack(fill="x", padx=15, pady=(0, 8))
+
+        self.switch_frame_edit = ctk.CTkFrame(self.editor_group, fg_color="transparent")
+        self.switch_frame_edit.pack(fill="x", padx=15, pady=(4, 12))
+
+        self.fingering_edit_switch = ctk.CTkSwitch(
+            self.switch_frame_edit,
+            text="運指変更モード (クリック循環)",
+            font=self.f_jp_bold,
+            command=self.controller.on_fingering_edit_toggle
+        )
+        self.fingering_edit_switch.deselect()
+        self.fingering_edit_switch.pack(side="left", expand=True, anchor="w")
+
+        # ======================================================================
+        # 🎨 タブ2：【🎨 デザイン】 (カラーテーマ・外部スキン・表示パーツON/OFF)
+        # ======================================================================
+        self.design_color_group = ctk.CTkFrame(self.tab_design_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.design_color_group.pack(fill="x", padx=12, pady=(6, 8))
+
+        design_title_lbl = ctk.CTkLabel(self.design_color_group, text="🎨 カラー・スキン設定:", font=self.f_jp_bold)
+        design_title_lbl.pack(anchor="w", padx=15, pady=(10, 4))
+
+        theme_title_lbl = ctk.CTkLabel(self.design_color_group, text="ノーツカラーテーマ:", font=self.f_jp_bold, text_color="#aaaaaa")
+        theme_title_lbl.pack(anchor="w", padx=15, pady=(2, 1))
+
+        self.theme_color_frame = ctk.CTkFrame(self.design_color_group, fg_color="transparent")
+        self.theme_color_frame.pack(fill="x", padx=15, pady=(0, 8))
 
         self.theme_menu = ctk.CTkOptionMenu(
             self.theme_color_frame,
@@ -306,27 +365,58 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.theme_menu.pack(side="left", fill="x", expand=True, padx=(0, 3))
 
         self.btn_color_blow = ctk.CTkButton(
-            self.theme_color_frame, 
-            text="吹色..", 
-            width=65, 
-            font=self.f_jp_bold, 
+            self.theme_color_frame,
+            text="吹色..",
+            width=65,
+            font=self.f_jp_bold,
             command=self.controller.choose_color_blow
         )
         self.btn_color_blow.pack(side="left", padx=2)
 
         self.btn_color_draw = ctk.CTkButton(
-            self.theme_color_frame, 
-            text="吸色..", 
-            width=65, 
-            font=self.f_jp_bold, 
+            self.theme_color_frame,
+            text="吸色..",
+            width=65,
+            font=self.f_jp_bold,
             command=self.controller.choose_color_draw
         )
         self.btn_color_draw.pack(side="right", padx=(2, 0))
 
-        # スイッチ配置
-        self.switch_frame_1 = ctk.CTkFrame(self.practice_group, fg_color="transparent")
-        self.switch_frame_1.pack(fill="x", padx=15, pady=1)
-        
+        self.skin_opacity_frame = ctk.CTkFrame(self.design_color_group, fg_color="transparent")
+        self.skin_opacity_frame.pack(fill="x", padx=15, pady=(4, 12))
+
+        self.use_skin_switch = ctk.CTkSwitch(
+            self.skin_opacity_frame,
+            text="外部スキン",
+            font=self.f_jp_bold,
+            command=self.controller.on_setting_changed
+        )
+        self.use_skin_switch.select()
+        self.use_skin_switch.pack(side="left", expand=True, anchor="w")
+
+        self.opacity_entry = ctk.CTkEntry(self.skin_opacity_frame, width=42, font=self.f_norm)
+        self.opacity_entry.insert(0, "50")
+        self.opacity_entry.pack(side="right", padx=1)
+
+        self.opacity_btn = ctk.CTkButton(
+            self.skin_opacity_frame,
+            text="ノーツ不透過度%",
+            width=80,
+            font=self.f_jp_bold,
+            command=self.controller.on_setting_changed
+        )
+        self.opacity_btn.pack(side="right", padx=(0, 3))
+
+        # --- 👁️ 表示パーツ・エフェクト切替 ---
+        self.design_parts_group = ctk.CTkFrame(self.tab_design_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.design_parts_group.pack(fill="x", padx=12, pady=6)
+
+        parts_title_lbl = ctk.CTkLabel(self.design_parts_group, text="👁️ 表示パーツ・エフェクト切替:", font=self.f_jp_bold)
+        parts_title_lbl.pack(anchor="w", padx=15, pady=(10, 6))
+
+        self.switch_frame_1 = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
+        self.switch_frame_1.pack(fill="x", padx=15, pady=4)
+
         self.hole_num_switch = ctk.CTkSwitch(self.switch_frame_1, text="穴番号", font=self.f_jp_bold, command=self.controller.on_setting_changed)
         self.hole_num_switch.select()
         self.hole_num_switch.pack(side="left", expand=True, anchor="w")
@@ -335,8 +425,8 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.show_legend_switch.select()
         self.show_legend_switch.pack(side="right", expand=True, anchor="w")
 
-        self.switch_frame_2 = ctk.CTkFrame(self.practice_group, fg_color="transparent")
-        self.switch_frame_2.pack(fill="x", padx=15, pady=1)
+        self.switch_frame_2 = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
+        self.switch_frame_2.pack(fill="x", padx=15, pady=4)
 
         self.show_notes_switch = ctk.CTkSwitch(self.switch_frame_2, text="ノーツ表示", font=self.f_jp_bold, command=self.controller.on_setting_changed)
         self.show_notes_switch.select()
@@ -346,113 +436,59 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.show_grid_switch.select()
         self.show_grid_switch.pack(side="right", expand=True, anchor="w")
 
-        # 🚀【新設】：レバー連動「レバーリング」ON/OFFトグルのスイッチ配置
-        self.switch_frame_ring = ctk.CTkFrame(self.practice_group, fg_color="transparent")
-        self.switch_frame_ring.pack(fill="x", padx=15, pady=(1, 4))
-        
+        self.switch_frame_ring = ctk.CTkFrame(self.design_parts_group, fg_color="transparent")
+        self.switch_frame_ring.pack(fill="x", padx=15, pady=(4, 12))
+
         self.show_ring_switch = ctk.CTkSwitch(self.switch_frame_ring, text="レバーリング連動", font=self.f_jp_bold, command=self.controller.on_setting_changed)
         self.show_ring_switch.select()
         self.show_ring_switch.pack(side="left", expand=True, anchor="w")
 
-        # 🚀【改善】：アスペクト比に見出しラベルを明記
-        ratio_title_lbl = ctk.CTkLabel(self.practice_group, text="表示アスペクト比:", font=self.f_jp_bold, text_color="#aaaaaa")
-        ratio_title_lbl.pack(anchor="w", padx=15, pady=(2, 0))
+        self.show_glow_switch = ctk.CTkSwitch(self.switch_frame_ring, text="着地発光", font=self.f_jp_bold, command=self.controller.on_setting_changed)
+        self.show_glow_switch.pack(side="right", expand=True, anchor="w")
 
-        # アスペクト比選択 ＆ 外部スキン適用
-        self.ratio_skin_frame = ctk.CTkFrame(self.practice_group, fg_color="transparent")
-        self.ratio_skin_frame.pack(fill="x", padx=15, pady=(0, 10))
+        # ======================================================================
+        # 🎬 タブ3：【🎬 動画出力】 (アスペクト比・背景色・解像度・FPS・出力ボタン)
+        # ======================================================================
+        self.export_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.export_group.pack(fill="x", padx=12, pady=(6, 8))
+
+        bg_label = ctk.CTkLabel(self.export_group, text="🎬 動画フォーマット・背景設定:", font=self.f_jp_bold)
+        bg_label.pack(anchor="w", padx=15, pady=(10, 4))
+
+        ratio_title_lbl = ctk.CTkLabel(self.export_group, text="出力アスペクト比:", font=self.f_jp_bold, text_color="#aaaaaa")
+        ratio_title_lbl.pack(anchor="w", padx=15, pady=(2, 1))
 
         self.ratio_menu = ctk.CTkOptionMenu(
-            self.ratio_skin_frame,
+            self.export_group,
             values=["16:9", "9:16", "4:3"],
-            width=110,
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
-            command=self.controller.on_ratio_changed 
+            command=self.controller.on_ratio_changed
         )
         self.ratio_menu.set("16:9")
-        self.ratio_menu.pack(side="left", padx=(0, 5))
+        self.ratio_menu.pack(fill="x", padx=15, pady=(0, 8))
 
-        self.use_skin_switch = ctk.CTkSwitch(
-            self.ratio_skin_frame,
-            text="外部スキン",
-            font=self.f_jp_bold,
-            command=self.controller.on_setting_changed
-        )
-        self.use_skin_switch.select()
-        self.use_skin_switch.pack(side="right", expand=True, anchor="w")
+        bg_sub_lbl = ctk.CTkLabel(self.export_group, text="動画背景色 (クロマキー対応):", font=self.f_jp_bold, text_color="#aaaaaa")
+        bg_sub_lbl.pack(anchor="w", padx=15, pady=(2, 1))
 
-        # ----------------------------------------------------------------------
-        # 🚀【グループ 2/3】：🎯 運指エディタ (Fingering Editor Frame)
-        # ----------------------------------------------------------------------
-        self.editor_group = ctk.CTkFrame(self.right_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.editor_group.pack(fill="x", padx=12, pady=4)
-
-        editor_lbl_title = ctk.CTkLabel(self.editor_group, text="🎯 運指エディタ:", font=self.f_jp_bold)
-        editor_lbl_title.pack(anchor="w", padx=15, pady=(8, 1))
-
-        self.alt_fingering_menu = ctk.CTkOptionMenu(
-            self.editor_group,
-            values=["スライド最小化", "スライド優先"],
+        self.bg_menu = ctk.CTkOptionMenu(
+            self.export_group,
+            values=["ノーマル（黒）", "グリーンバック", "ブルーバック", "マゼンタ（ピンク）"],
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
-            command=self.controller.on_fingering_preset_changed 
-        )
-        self.alt_fingering_menu.pack(fill="x", padx=15, pady=(0, 4))
-
-        self.switch_frame_edit = ctk.CTkFrame(self.editor_group, fg_color="transparent")
-        self.switch_frame_edit.pack(fill="x", padx=15, pady=(1, 10))
-        
-        self.fingering_edit_switch = ctk.CTkSwitch(
-            self.switch_frame_edit, 
-            text="運指変更モード (クリック循環)", 
-            font=self.f_jp_bold, 
-            command=self.controller.on_fingering_edit_toggle
-        )
-        self.fingering_edit_switch.deselect()
-        self.fingering_edit_switch.pack(side="left", expand=True, anchor="w")
-
-        # ----------------------------------------------------------------------
-        # 🚀【グループ 3/3】：🎬 動画出力設定 (Export Settings Frame)
-        # ----------------------------------------------------------------------
-        self.export_group = ctk.CTkFrame(self.right_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.export_group.pack(fill="x", padx=12, pady=4)
-
-        bg_label = ctk.CTkLabel(self.export_group, text="🎬 動画出力設定:", font=self.f_jp_bold)
-        bg_label.pack(anchor="w", padx=15, pady=(8, 1))
-
-        # 背景色（マゼンタ追加済み）
-        self.bg_menu = ctk.CTkOptionMenu(
-            self.export_group, 
-            values=["ノーマル（黒）", "グリーンバック", "ブルーバック", "マゼンタ（ピンク）"], 
-            font=self.f_jp_bold, 
-            dropdown_font=self.f_jp_norm, 
             command=self.controller.on_bg_change
         )
-        self.bg_menu.pack(fill="x", padx=15, pady=(0, 4))
+        self.bg_menu.pack(fill="x", padx=15, pady=(0, 8))
 
-        # 不透明度・発光
-        self.opacity_glow_frame = ctk.CTkFrame(self.export_group, fg_color="transparent")
-        self.opacity_glow_frame.pack(fill="x", padx=15, pady=(1, 4))
+        res_sub_lbl = ctk.CTkLabel(self.export_group, text="解像度 ＆ フレームレート:", font=self.f_jp_bold, text_color="#aaaaaa")
+        res_sub_lbl.pack(anchor="w", padx=15, pady=(2, 1))
 
-        self.show_glow_switch = ctk.CTkSwitch(self.opacity_glow_frame, text="着地発光", font=self.f_jp_bold, command=self.controller.on_setting_changed)
-        self.show_glow_switch.pack(side="left", expand=True, anchor="w")
-
-        # 🚀【改善】：ノーツ不透過度の設定としてテキストとボタンを親切リネーム
-        self.opacity_entry = ctk.CTkEntry(self.opacity_glow_frame, width=42, font=self.f_norm)
-        self.opacity_entry.insert(0, "50")
-        self.opacity_entry.pack(side="right", padx=1)
-        
-        self.opacity_btn = ctk.CTkButton(self.opacity_glow_frame, text="ノーツ不透過度%", width=80, font=self.f_jp_bold, command=self.controller.on_setting_changed)
-        self.opacity_btn.pack(side="right", padx=(0, 3))
-
-        # 解像度 & FPS の1行横並び
         self.res_fps_frame = ctk.CTkFrame(self.export_group, fg_color="transparent")
-        self.res_fps_frame.pack(fill="x", padx=15, pady=(1, 4))
+        self.res_fps_frame.pack(fill="x", padx=15, pady=(0, 12))
 
         self.res_menu = ctk.CTkOptionMenu(
-            self.res_fps_frame, 
-            values=["4K (3840x2160)", "Full HD (1920x1080)", "HD (1280x720)", "SD (960x540)"], 
+            self.res_fps_frame,
+            values=["4K (3840x2160)", "Full HD (1920x1080)", "HD (1280x720)", "SD (960x540)"],
             width=135,
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
@@ -472,34 +508,54 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.fps_menu.set("60 FPS")
         self.fps_menu.pack(side="right", padx=(3, 0))
 
-        # アクションボタン
-        self.action_btn_frame = ctk.CTkFrame(self.export_group, fg_color="transparent")
-        self.action_btn_frame.pack(fill="x", padx=15, pady=(4, 10))
+        # --- 🚀 レンダリング・出力アクション ---
+        self.export_action_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.export_action_group.pack(fill="x", padx=12, pady=6)
+
+        act_lbl = ctk.CTkLabel(self.export_action_group, text="🚀 レンダリング・出力:", font=self.f_jp_bold)
+        act_lbl.pack(anchor="w", padx=15, pady=(10, 4))
+
+        self.action_btn_frame = ctk.CTkFrame(self.export_action_group, fg_color="transparent")
+        self.action_btn_frame.pack(fill="x", padx=15, pady=(2, 12))
 
         self.preview_btn = ctk.CTkButton(
-            self.action_btn_frame, 
-            text="📸 プレビュー", 
-            fg_color="#1f538d", 
-            hover_color="#143963", 
-            font=self.f_jp_bold, 
-            height=32, 
+            self.action_btn_frame,
+            text="📸 プレビュー",
+            fg_color="#1f538d",
+            hover_color="#143963",
+            font=self.f_jp_bold,
+            height=34,
             command=self.controller.execute_single_frame_preview
         )
         self.preview_btn.pack(side="left", fill="x", expand=True, padx=(0, 3))
 
         self.export_btn = ctk.CTkButton(
-            self.action_btn_frame, 
-            text="🎬 書き出し", 
-            fg_color="#2b8c54", 
-            hover_color="#1f6b3e", 
-            font=self.f_jp_bold, 
-            height=32, 
+            self.action_btn_frame,
+            text="🎬 書き出し",
+            fg_color="#2b8c54",
+            hover_color="#1f6b3e",
+            font=self.f_jp_bold,
+            height=34,
             command=self.controller.execute_video_export
         )
         self.export_btn.pack(side="right", fill="x", expand=True, padx=(3, 0))
 
-        # ----------------------------------------------------------------------
-        # セクション9： 出力完了ステータスラベル (一番下)
-        # ----------------------------------------------------------------------
-        self.status_label = ctk.CTkLabel(self.right_frame, text="待機中...", font=self.f_jp_bold, text_color="#777777")
-        self.status_label.pack(side="bottom", fill="x", pady=(2, 6))
+        # 初期表示タブを「🎵 練習」に設定
+        self.tab_practice_frame.pack(fill="both", expand=True)
+
+    def switch_sidebar_tab(self, tab_name):
+        """右サイドバーの表示タブを切り替えます。"""
+        self.tab_practice_frame.pack_forget()
+        self.tab_design_frame.pack_forget()
+        self.tab_export_frame.pack_forget()
+
+        if tab_name == "🎵 練習":
+            self.tab_practice_frame.pack(fill="both", expand=True)
+        elif tab_name == "🎨 デザイン":
+            self.tab_design_frame.pack(fill="both", expand=True)
+        elif tab_name == "🎬 動画出力":
+            self.tab_export_frame.pack(fill="both", expand=True)
+
+        if hasattr(self.controller, "gui") and hasattr(self.controller, "on_sidebar_tab_changed"):
+            self.controller.on_sidebar_tab_changed(tab_name)
+

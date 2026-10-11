@@ -117,4 +117,4 @@ def save_settings(inst, lang, hole, legend, notes, grid, glow, opacity, bg, res,
         "レバーリング表示": ring,
     }
     data.update(extra)
-    save_settings_dict(data)
+    save_settings_dict(data)
