@@ -300,7 +300,8 @@ class PlaybackController:
         self.gui.show_ring_switch.configure(state=state)
         self.gui.show_glow_switch.configure(state=state)
         self.gui.opacity_entry.configure(state=state)
-        self.gui.opacity_btn.configure(state=state)
+        if hasattr(self.gui, "reset_fingering_btn"):
+            self.gui.reset_fingering_btn.configure(state=state)
         self.gui.bg_menu.configure(state=state)
         self.gui.res_menu.configure(state=state)
         

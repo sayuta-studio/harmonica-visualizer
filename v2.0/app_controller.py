@@ -550,6 +550,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.lang_menu.configure(state=state)
         self.gui.alt_fingering_menu.configure(state=state)
         self.gui.fingering_edit_switch.configure(state=state)
+        if hasattr(self.gui, "reset_fingering_btn"):
+            self.gui.reset_fingering_btn.configure(state=state)
         self.gui.theme_menu.configure(state=state)
         self.gui.btn_color_blow.configure(state=state)
         self.gui.btn_color_draw.configure(state=state)
@@ -559,7 +561,6 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.show_grid_switch.configure(state=state)
         self.gui.show_ring_switch.configure(state=state)  # 連動リングスイッチもロック
         self.gui.opacity_entry.configure(state=state)
-        self.gui.opacity_btn.configure(state=state)
         self.gui.bg_menu.configure(state=state)
         self.gui.res_menu.configure(state=state)
         self.gui.preview_btn.configure(state=state)

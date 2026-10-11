@@ -230,6 +230,30 @@ class SettingsController:
             
         self.draw_harmonica_static()
 
+    def on_reset_song_fingering(self):
+        """現在の曲でクリック変更した個別運指データをすべて初期化（リセット）します。"""
+        from tkinter import messagebox
+        ans = messagebox.askyesno(
+            "運指データの初期化確認",
+            "現在の曲で変更した運指設定ファイルを初期化（リセット）し、\nベース運指プリセットの初期状態へ戻しますか？",
+            parent=self
+        )
+        if not ans:
+            return
+
+        harmonica_map.reset_song_fingering(self.current_midi_path)
+        self.last_edited_note_name = None
+        self.last_edited_fingering = None
+
+        self.rebind_all_notes_fingerings()
+        self.draw_harmonica_static()
+
+        self.gui.status_label.configure(
+            text="🔄 曲別の運指データを初期状態にリセットしました",
+            text_color="#2ecc71"
+        )
+
+
     def get_effective_canvas_ratio(self):
         """
         練習タブ（🎵 練習）選択時は常に最大横幅の 16:9 で見やすく表示し、

@@ -328,7 +328,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.alt_fingering_menu.pack(fill="x", padx=15, pady=(0, 8))
 
         self.switch_frame_edit = ctk.CTkFrame(self.editor_group, fg_color="transparent")
-        self.switch_frame_edit.pack(fill="x", padx=15, pady=(4, 12))
+        self.switch_frame_edit.pack(fill="x", padx=15, pady=(4, 6))
 
         self.fingering_edit_switch = ctk.CTkSwitch(
             self.switch_frame_edit,
@@ -338,6 +338,17 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         )
         self.fingering_edit_switch.deselect()
         self.fingering_edit_switch.pack(side="left", expand=True, anchor="w")
+
+        self.reset_fingering_btn = ctk.CTkButton(
+            self.editor_group,
+            text="🔄 曲別の運指データを初期化 (リセット)",
+            font=self.f_jp_bold,
+            height=28,
+            fg_color="#6b3030",
+            hover_color="#8a3d3d",
+            command=self.controller.on_reset_song_fingering
+        )
+        self.reset_fingering_btn.pack(fill="x", padx=15, pady=(2, 12))
 
         # ======================================================================
         # 🎨 タブ2：【🎨 デザイン】 (カラーテーマ・外部スキン・表示パーツON/OFF)
@@ -394,18 +405,20 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.use_skin_switch.select()
         self.use_skin_switch.pack(side="left", expand=True, anchor="w")
 
-        self.opacity_entry = ctk.CTkEntry(self.skin_opacity_frame, width=42, font=self.f_norm)
+        self.opacity_entry = ctk.CTkEntry(self.skin_opacity_frame, width=46, font=self.f_norm, justify="center")
         self.opacity_entry.insert(0, "50")
         self.opacity_entry.pack(side="right", padx=1)
+        self.opacity_entry.bind("<Return>", lambda e: self.controller.on_setting_changed())
+        self.opacity_entry.bind("<FocusOut>", lambda e: self.controller.on_setting_changed())
+        self.opacity_entry.bind("<KeyRelease>", lambda e: self.controller.save_user_settings_txt())
 
-        self.opacity_btn = ctk.CTkButton(
+        self.opacity_lbl = ctk.CTkLabel(
             self.skin_opacity_frame,
-            text="ノーツ不透過度%",
-            width=80,
+            text="ノーツ不透過度(%):",
             font=self.f_jp_bold,
-            command=self.controller.on_setting_changed
+            text_color="#cccccc"
         )
-        self.opacity_btn.pack(side="right", padx=(0, 3))
+        self.opacity_lbl.pack(side="right", padx=(0, 4))
 
         # --- 👁️ 表示パーツ・エフェクト切替 ---
         self.design_parts_group = ctk.CTkFrame(self.tab_design_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")

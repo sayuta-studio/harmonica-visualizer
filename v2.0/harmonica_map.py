@@ -202,6 +202,21 @@ def save_song_fingering(midi_path):
         print(f"[警告] 曲別運指ファイルの自動セーブに失敗しました: {e}")
 
 
+def reset_song_fingering(midi_path):
+    """現在の曲の個別カスタム運指データ（オーバーライド）をすべてクリアし、設定ファイルも初期状態へリセットします。"""
+    global SONG_FINGERING_OVERRIDES
+    SONG_FINGERING_OVERRIDES.clear()
+    path = get_song_fingering_path(midi_path)
+    if path and os.path.exists(path):
+        try:
+            os.remove(path)
+            print(f"[システム] 曲別運指ファイルを削除・初期化しました: {os.path.basename(path)}")
+        except Exception as e:
+            print(f"[警告] 曲別運指ファイルの初期化に失敗しました: {e}")
+            save_song_fingering(midi_path)
+
+
+
 def apply_fingering_preset(preset_name, user_custom_overrides=None):
     global ACTIVE_HARMONICA_MAP
     temp_map = DEFAULT_HARMONICA_MAP.copy()
