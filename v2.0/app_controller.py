@@ -319,43 +319,34 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             widget.configure(text=new_text)
 
     def update_clock(self):
-        """完全自立パッシブ等速時間軸タイマー"""
+        """完全自立パッシブ等速時間軸タイマー（カウントイン＆ABループ折り返し完全連続追従）"""
         if self.play_state != "playing": return
 
         ticks_per_beat = self.midi_engine.ticks_per_beat
         count_in_duration = self.get_count_in_duration()
 
         now = time.time()
-        self.current_time = now - self.play_start_time
-
         is_count_in_active = (self.midi_engine.playing_state == "count_in")
-        
-        if self.current_time < count_in_duration:
-            self.current_tick = 0.0
+        self.current_tick = self.midi_engine.get_smooth_current_tick()
+
+        if self.current_tick < 0:
+            song_sec = -self.midi_engine.tick_to_sec(-self.current_tick)
         else:
-            elapsed_main = self.current_time - count_in_duration
-            self.current_tick = self.midi_engine.sec_to_tick(elapsed_main)
+            song_sec = self.midi_engine.tick_to_sec(self.current_tick)
 
-            if not is_count_in_active:
-                eng_sec = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks)
-                diff_sec = abs(elapsed_main - eng_sec)
-                if diff_sec > 0.15:
-                    self.current_tick = self.midi_engine.accumulated_ticks
-                    self.play_start_time = now - (eng_sec + count_in_duration)
-                    self.current_time = now - self.play_start_time
-
+        self.current_time = count_in_duration + song_sec
         if self.current_time > self.max_duration:
             self.current_time = self.max_duration
 
         if self.gui.seek_slider and self.max_duration > 0:
-            if self.current_time < count_in_duration:
+            if self.current_tick <= 0:
                 if getattr(self, "_last_slider_pct", -1.0) != 0.0:
                     self._last_slider_pct = 0.0
                     self._last_slider_time = now
                     self.gui.seek_slider.set(0)
             else:
                 denom = self.max_duration - count_in_duration
-                pct = ((self.current_time - count_in_duration) / denom) * 100 if denom > 0 else 0.0
+                pct = max(0.0, min(100.0, (song_sec / denom) * 100)) if denom > 0 else 0.0
                 if (now - getattr(self, "_last_slider_time", 0.0) >= 0.08) and (abs(pct - getattr(self, "_last_slider_pct", -1.0)) >= 0.15):
                     self._last_slider_pct = pct
                     self._last_slider_time = now
@@ -363,8 +354,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             
         self.update_time_label()
 
-        measure, beat, num, den, total_measures = self.midi_engine.get_measure_and_beat(self.current_tick)
-        self.current_bpm = self.midi_engine.get_bpm_at_tick(self.current_tick)
+        safe_tick = max(0, self.current_tick)
+        measure, beat, num, den, total_measures = self.midi_engine.get_measure_and_beat(safe_tick)
+        self.current_bpm = self.midi_engine.get_bpm_at_tick(safe_tick)
         
         status_state = self.midi_engine.playing_state
         status_map = {
@@ -377,7 +369,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         
         self._set_label_if_changed(self.gui.lbl_lcd_status, "lcd_status", f"状態：{status_ja[:6].ljust(6)}")
         
-        if is_count_in_active or self.current_time < count_in_duration:
+        if is_count_in_active:
             pos_str = "位置：前奏カウント中..."
         else:
             pos_str = f"位置：{measure:03d}小節 . {beat:02d}拍"
@@ -447,7 +439,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             use_ring=use_ring,
             trajectory_mode=trajectory_mode,
             show_lookahead=show_lookahead,
-            show_grid4=show_grid4
+            show_grid4=show_grid4,
+            measures_timeline=self.midi_engine.measures_timeline
         )
 
     def draw_harmonica_body_only(self, pitches):

@@ -129,6 +129,10 @@ class MidiEngine:
         self.current_msg_index = 0
         self.accumulated_ticks = 0
         self.total_ticks = 0
+        self._interp_base_tick = 0.0
+        self._interp_max_tick = 0.0
+        self._interp_start_perf = 0.0
+        self._interp_ticks_per_sec = 0.0
         
         self.play_thread = None
         
@@ -707,6 +711,10 @@ class MidiEngine:
             self.accumulated_ticks = self.merged_messages[self.current_msg_index].abs_tick
         else:
             self.accumulated_ticks = 0
+        self._interp_base_tick = float(self.accumulated_ticks)
+        self._interp_max_tick = float(self.accumulated_ticks)
+        self._interp_start_perf = 0.0
+        self._interp_ticks_per_sec = 0.0
         self.currently_playing_notes.clear()
 
     def seek(self, pct):
@@ -742,6 +750,9 @@ class MidiEngine:
             self.accumulated_ticks = self.merged_messages[self.current_msg_index].abs_tick
         else:
             self.accumulated_ticks = int(target_tick)
+        self._interp_base_tick = float(self.accumulated_ticks)
+        self._interp_max_tick = float(self.accumulated_ticks)
+        self._interp_start_perf = time.perf_counter()
             
         self.sync_midi_channel_states(self.current_msg_index)
             
@@ -905,13 +916,51 @@ class MidiEngine:
                 except Exception:
                     pass
 
+    def _get_count_in_origin_tick(self, start_tick):
+        if self.count_in_measures <= 0:
+            return start_tick
+        _, _, active_num, active_den, _ = self.get_measure_and_beat(max(0, start_tick))
+        ticks_per_beat_val = int(self.ticks_per_beat * (4.0 / active_den))
+        return start_tick - (self.count_in_measures * active_num * ticks_per_beat_val)
+
+    def get_smooth_current_tick(self):
+        """60FPS描画タイマー向けに、現在再生中（カウントイン含む）の連続ティック位置を高精度補間して返します。"""
+        if self.playing_state not in ('playing', 'count_in'):
+            return float(self.accumulated_ticks)
+        if self._interp_ticks_per_sec <= 0.0 or self._interp_start_perf <= 0.0:
+            return float(self.accumulated_ticks)
+        elapsed = time.perf_counter() - self._interp_start_perf
+        if elapsed <= 0.0:
+            return float(self._interp_base_tick)
+        tick = self._interp_base_tick + elapsed * self._interp_ticks_per_sec
+        return float(min(self._interp_max_tick, tick))
+
     def play(self):
         if not self.mido_file:
             return
         if self.playing_state in ['playing', 'count_in']:
             return
-            
-        self.playing_state = 'playing' if self.current_msg_index > 0 else 'count_in'
+
+        was_stopped = (self.playing_state == 'stopped')
+        if self.loop_enabled and self.loop_a_index is not None:
+            a_tick = self.merged_messages[self.loop_a_index].abs_tick if self.loop_a_index < len(self.merged_messages) else 0
+            b_tick = self.loop_b_target_tick if self.loop_b_target_tick is not None else self.total_ticks
+            if was_stopped or self.accumulated_ticks < a_tick or self.accumulated_ticks >= b_tick:
+                self.current_msg_index = self.loop_a_index
+                self.accumulated_ticks = a_tick
+
+        start_tick = self.merged_messages[self.current_msg_index].abs_tick if self.current_msg_index < len(self.merged_messages) else 0
+        if self.count_in_measures > 0:
+            self.playing_state = 'count_in'
+            init_tick = self._get_count_in_origin_tick(start_tick)
+        else:
+            self.playing_state = 'playing'
+            init_tick = start_tick
+
+        self.accumulated_ticks = init_tick
+        self._interp_base_tick = float(init_tick)
+        self._interp_max_tick = float(init_tick)
+        self._interp_start_perf = time.perf_counter()
         self.play_thread = threading.Thread(target=self._playback_worker, daemon=True)
         self.play_thread.start()
 
@@ -920,7 +969,7 @@ class MidiEngine:
             self.playing_state = 'paused'
             self.all_notes_off()
             if self.status_callback:
-                measure, beat, num, den, total_measures = self.get_measure_and_beat(self.accumulated_ticks)
+                measure, beat, num, den, total_measures = self.get_measure_and_beat(max(0, self.accumulated_ticks))
                 self.status_callback(f"Paused (M: {measure} | B: {beat} / {num} | {num}/{den}拍子)")
 
     def stop(self):
@@ -933,7 +982,7 @@ class MidiEngine:
             pct = (self.accumulated_ticks / self.total_ticks) * 100 if self.total_ticks > 0 else 0.0
             self.progress_callback(pct)
             
-        measure, beat, num, den, total_measures = self.get_measure_and_beat(self.accumulated_ticks)
+        measure, beat, num, den, total_measures = self.get_measure_and_beat(max(0, self.accumulated_ticks))
         if self.measure_beat_callback:
             self.measure_beat_callback(measure, beat, num, den, total_measures)
 
@@ -973,10 +1022,16 @@ class MidiEngine:
                     active_num = self.time_sig_num
                     active_den = self.time_sig_den
                 
-                # 1. カウントイン
+                # 1. カウントイン（A地点・開始小節の start_tick からカウントイン分だけ手前を起点に等速進行）
                 if self.playing_state == 'count_in' and self.count_in_measures > 0:
+                    ticks_per_beat_val = int(self.ticks_per_beat * (4.0 / active_den))
                     total_beats = self.count_in_measures * active_num
-                    total_count_in_ticks = self.count_in_measures * active_num * int(self.ticks_per_beat * (4.0 / active_den))
+                    total_count_in_ticks = total_beats * ticks_per_beat_val
+                    count_in_origin_tick = start_tick - total_count_in_ticks
+                    self.accumulated_ticks = count_in_origin_tick
+                    self._interp_base_tick = float(count_in_origin_tick)
+                    self._interp_max_tick = float(count_in_origin_tick)
+                    self._interp_start_perf = time.perf_counter()
                     
                     for beat in range(total_beats):
                         if self.playing_state != 'count_in':
@@ -993,24 +1048,25 @@ class MidiEngine:
                         
                         self.play_metronome_tick(beat_in_measure, force_standard=True)
                         
-                        active_bpm = max(1.0, self.get_bpm_at_tick(start_tick))
-                        self.bpm = round(active_bpm)
-                        beat_dur = (60.0 / active_bpm) * (4.0 / active_den)
                         start_wait = time.perf_counter()
-                        
-                        ticks_per_beat_val = int(self.ticks_per_beat * (4.0 / active_den))
-                        beat_start_tick = -total_count_in_ticks + (beat * ticks_per_beat_val)
+                        beat_start_tick = count_in_origin_tick + (beat * ticks_per_beat_val)
+                        beat_end_tick = beat_start_tick + ticks_per_beat_val
+                        self._interp_base_tick = float(beat_start_tick)
+                        self._interp_max_tick = float(beat_end_tick)
+                        self._interp_start_perf = start_wait
                         
                         while True:
                             if self.playing_state != 'count_in':
                                 break
                             
-                            elapsed = time.perf_counter() - start_wait
-                            
+                            active_bpm = max(1.0, self.get_bpm_at_tick(max(0, start_tick)))
+                            self.bpm = round(active_bpm)
+                            beat_dur = (60.0 / active_bpm) * (4.0 / active_den)
                             ticks_per_sec = (active_bpm * self.ticks_per_beat) / 60.0
-                            self.accumulated_ticks = beat_start_tick + int(elapsed * ticks_per_sec)
-                            if self.accumulated_ticks > 0:
-                                self.accumulated_ticks = 0
+                            self._interp_ticks_per_sec = ticks_per_sec
+                            
+                            elapsed = time.perf_counter() - start_wait
+                            self.accumulated_ticks = min(beat_end_tick, beat_start_tick + int(elapsed * ticks_per_sec))
                             
                             remaining = beat_dur - elapsed
                             if remaining <= 0:
@@ -1022,14 +1078,22 @@ class MidiEngine:
                                 time.sleep(0)
                             else:
                                 pass
-                    self.accumulated_ticks = 0
+                    self.accumulated_ticks = start_tick
+                    self._interp_base_tick = float(start_tick)
+                    self._interp_max_tick = float(start_tick)
+                    self._interp_start_perf = time.perf_counter()
                     
                 if self.playing_state == 'stopped':
                     break
                     
-                # 2. 本編メイン再生
+                # 2. 本編メイン再生（開始位置 start_tick を基準に差分ティックを待機し、A地点開始時の逆戻りワープを完全防止）
                 self.playing_state = 'playing'
                 reached_b_or_end = False
+                current_play_tick = start_tick
+                self.accumulated_ticks = start_tick
+                self._interp_base_tick = float(start_tick)
+                self._interp_max_tick = float(start_tick)
+                self._interp_start_perf = time.perf_counter()
                 
                 while self.playing_state == 'playing' and self.current_msg_index < len(self.merged_messages):
                     if self.loop_enabled and self.loop_b_target_tick is not None:
@@ -1038,7 +1102,7 @@ class MidiEngine:
                             break
                     
                     event = self.merged_messages[self.current_msg_index]
-                    ticks = event.time
+                    ticks = max(0, event.abs_tick - current_play_tick)
                     
                     if not has_triggered_stream_start:
                         has_triggered_stream_start = True
@@ -1050,8 +1114,11 @@ class MidiEngine:
                             self.active_pitches_callback(self.currently_playing_notes)
                             
                         start_wait = time.perf_counter()
-                        start_tick_base = event.abs_tick - ticks
+                        start_tick_base = current_play_tick
                         base_delta_sec = max(0.0, self.tick_to_sec(event.abs_tick, speed_ratio=1.0) - self.tick_to_sec(start_tick_base, speed_ratio=1.0))
+                        self._interp_base_tick = float(start_tick_base)
+                        self._interp_max_tick = float(event.abs_tick)
+                        self._interp_start_perf = start_wait
                         
                         while True:
                             if self.playing_state != 'playing':
@@ -1065,6 +1132,7 @@ class MidiEngine:
                             cur_bpm = max(1.0, self.get_bpm_at_tick(start_tick_base, speed_r))
                             self.bpm = round(cur_bpm)
                             ticks_per_sec = (cur_bpm * self.ticks_per_beat) / 60.0
+                            self._interp_ticks_per_sec = ticks_per_sec
                             self.accumulated_ticks = min(event.abs_tick, start_tick_base + int(elapsed * ticks_per_sec))
                             
                             if self.loop_enabled and self.loop_b_target_tick is not None:
@@ -1089,7 +1157,11 @@ class MidiEngine:
                     if self.playing_state != 'playing':
                         break
                     
+                    current_play_tick = event.abs_tick
                     self.accumulated_ticks = event.abs_tick
+                    self._interp_base_tick = float(event.abs_tick)
+                    self._interp_max_tick = float(event.abs_tick)
+                    self._interp_start_perf = time.perf_counter()
                     self.bpm = round(self.get_bpm_at_tick(self.accumulated_ticks))
                     measure, beat, num, den, total_measures = self.get_measure_and_beat(self.accumulated_ticks)
                     
@@ -1123,18 +1195,23 @@ class MidiEngine:
                 if self.loop_enabled and (reached_b_or_end or self.current_msg_index >= len(self.merged_messages)):
                     self.all_notes_off()
                     self.current_msg_index = self.loop_a_index if self.loop_a_index is not None else 0
-                    if self.current_msg_index < len(self.merged_messages):
-                        self.accumulated_ticks = self.merged_messages[self.current_msg_index].abs_tick
+                    next_a_tick = self.merged_messages[self.current_msg_index].abs_tick if self.current_msg_index < len(self.merged_messages) else 0
+                    if self.count_in_measures > 0:
+                        self.playing_state = 'count_in'
+                        loop_init_tick = self._get_count_in_origin_tick(next_a_tick)
                     else:
-                        self.accumulated_ticks = 0
+                        self.playing_state = 'playing'
+                        loop_init_tick = next_a_tick
+                    self.accumulated_ticks = loop_init_tick
+                    self._interp_base_tick = float(loop_init_tick)
+                    self._interp_max_tick = float(loop_init_tick)
+                    self._interp_start_perf = time.perf_counter()
                         
                     if self.progress_callback and self.total_ticks > 0:
-                        pct = (self.accumulated_ticks / self.total_ticks) * 100
+                        pct = (max(0, self.accumulated_ticks) / self.total_ticks) * 100
                         self.progress_callback(pct)
                         
-                    time.sleep(0.1)
                     has_triggered_stream_start = False
-                    self.playing_state = 'count_in'
                 else:
                     if self.current_msg_index >= len(self.merged_messages):
                         self.playing_state = 'stopped'

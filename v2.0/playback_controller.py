@@ -510,6 +510,8 @@ class PlaybackController:
 
     def on_play(self):
         if not self.midi_notes: return
+        self.midi_engine.loop_enabled = bool(self.gui.cb_loop.get())
+        self.on_loop_entry_changed()
         self.apply_bpm()
 
         if self.play_state != "playing":
@@ -532,19 +534,10 @@ class PlaybackController:
                 self.midi_engine.device_muted = True
                 self.midi_engine.internal_synth_enabled = False
 
-            ticks_per_beat = self.midi_engine.ticks_per_beat
-            count_in_duration = self.get_count_in_duration()
-            
             now = time.time()
-            if self.midi_engine.accumulated_ticks <= 0 and count_in_duration > 0:
-                self.play_start_time = now
-            else:
-                elapsed_sec = self.midi_engine.ticks_to_ms(self.midi_engine.accumulated_ticks) / 1000.0
-                self.play_start_time = now - (elapsed_sec + count_in_duration)
-
             self.last_update_time = now
-            self.update_clock()
             self.midi_engine.play()
+            self.update_clock()
 
     def on_pause(self):
         self.play_state = "paused"
@@ -600,11 +593,15 @@ class PlaybackController:
         self.gui.volume_label.configure(text=f"音量 (簡易再生時のみ): {int(float(value) * 100)}%")
 
     def on_loop_toggle(self):
-        self.midi_engine.loop_enabled = self.gui.cb_loop.get()
+        self.midi_engine.loop_enabled = bool(self.gui.cb_loop.get())
+        self.on_loop_entry_changed()
+        if self.play_state == "stopped":
+            self.midi_engine.reset_playback_state()
+            self.draw_harmonica_static()
 
     def set_loop_a_at_current(self):
         if not self.midi_notes: return
-        measure, _, _, _, _ = self.midi_engine.get_measure_and_beat(self.midi_engine.accumulated_ticks)
+        measure, _, _, _, _ = self.midi_engine.get_measure_and_beat(max(0, self.midi_engine.accumulated_ticks))
         total_measures = len(self.midi_engine.measures_timeline) if self.midi_engine.measures_timeline else 1
         
         try:
@@ -626,7 +623,7 @@ class PlaybackController:
 
     def set_loop_b_at_current(self):
         if not self.midi_notes: return
-        measure, _, _, _, _ = self.midi_engine.get_measure_and_beat(self.midi_engine.accumulated_ticks)
+        measure, _, _, _, _ = self.midi_engine.get_measure_and_beat(max(0, self.midi_engine.accumulated_ticks))
         total_measures = len(self.midi_engine.measures_timeline) if self.midi_engine.measures_timeline else 1
         
         try:
@@ -656,6 +653,8 @@ class PlaybackController:
         self.gui.loop_a_entry.insert(0, "1")
         self.gui.loop_b_entry.delete(0, tk.END)
         self.gui.loop_b_entry.insert(0, str(total_measures))
+        self.midi_engine.set_loop_point_by_measure('A', 1)
+        self.midi_engine.set_loop_point_by_measure('B', total_measures)
 
     def on_metro_menu_changed(self, value):
         self.midi_engine.metronome_pattern = value
@@ -717,6 +716,9 @@ class PlaybackController:
 
         self.midi_engine.set_loop_point_by_measure('A', val_a)
         self.midi_engine.set_loop_point_by_measure('B', val_b)
+        if self.play_state == "stopped" and self.midi_engine.loop_enabled:
+            self.midi_engine.reset_playback_state()
+            self.draw_harmonica_static()
 
     def update_progress_from_engine(self, pct):
         if self.play_state == "playing":

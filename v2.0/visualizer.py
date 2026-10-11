@@ -80,7 +80,8 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                           last_edit_note=None, last_edit_fing=None,
                           use_skin=True, scale=1.0, aspect_ratio="16:9",
                           use_ring=True, trajectory_mode="3段階 (練習標準)",
-                          show_lookahead=True, show_grid4=True):  
+                          show_lookahead=True, show_grid4=True,
+                          measures_timeline=None):  
     """
     Pillowを一切経由せず、Tkinter Canvasのネイティブ命令と差分キャッシュで超高速描画。
     変化した要素のみを更新し、落下中ノーツは座標移動(coords)のみで60fps安定動作を実現します。
@@ -179,6 +180,11 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         else:
             canvas.note_pool = {}
 
+        if hasattr(canvas, "measure_pool"):
+            canvas.measure_pool.clear()
+        else:
+            canvas.measure_pool = {}
+
         canvas._led_state_cache = {}
         canvas._grid4_hole_cache = {}
         canvas._body_text_state_cache = {}
@@ -215,6 +221,9 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                             canvas.create_line(sx, y_straight_s, sx, y_hole_line_s, fill=guide_color, tags="static_grid")
                         canvas.create_line(hx, y_straight_s, hx, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
                     canvas.create_line(X_start_draw + total_width, y_straight_s, X_start_draw + total_width, y_hole_line_s, fill=grid_line_color, tags="static_grid_border")
+
+        # [レイヤー1.5] 落下する小節横線・小節番号のアンカー（背景グリッドの直上、ノーツやプレートの背面）
+        canvas.create_line(0, 0, 0, 0, state="hidden", tags="anchor_measure_lines_top")
 
         # [レイヤー2] スライドレバー（プレートの背面に常駐させ、ON/OFF変化時のみ差し替え）
         lever_x = X_start_draw + total_width
@@ -479,11 +488,74 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                         canvas.itemconfig(s_id, text=display_text)
                     canvas.itemconfig(canvas.text_body_objects[k], text=display_text, fill=default_text_color)
 
-    # 5. 落下ノーツ＆追従音名ラベルの描画更新（画面内ウィンドウのみ走査・落下中はcoordsのみ実行）
+    # 5. 小節横線（＋小節番号）および落下ノーツ＆追従音名ラベルの描画更新
     if draw_mode in ["all", "notes"]:
+        px_per_tick = 120.0 / ticks_per_beat
+        px_per_tick_s = px_per_tick * scale
+
+        # 5-A. 小節ごとの薄い横線＋左端小節番号の落下更新（ガイド線ON時）
+        if not hasattr(canvas, "measure_pool"):
+            canvas.measure_pool = {}
+        if is_grid_on and measures_timeline and px_per_tick_s > 0:
+            visible_measures = set()
+            m_line_color = "#003300" if canvas_bg_color == "#00FF00" else "#2e2e2e"
+            m_txt_color = "#005500" if canvas_bg_color == "#00FF00" else "#555555"
+            f_m_size = max(6, int(8 * scale))
+            upper_left = 24.0 * scale
+            upper_right = 936.0 * scale
+            lower_left = X_start_draw
+            lower_right = X_start_draw + total_width
+
+            for m in measures_timeline:
+                m_tick = m["start_tick"]
+                y_m = y_hole_line_s - (m_tick - target_tick) * px_per_tick_s
+                if y_m < 0.0:
+                    break
+                if y_m <= y_hole_line_s:
+                    m_num = m["measure_num"]
+                    visible_measures.add(m_num)
+                    if is_straight_mode or y_m >= y_straight_s or height_diag_s <= 0:
+                        x_l, x_r = lower_left, lower_right
+                    elif y_m <= y_collide_s:
+                        x_l, x_r = upper_left, upper_right
+                    else:
+                        ratio_m = (y_m - y_collide_s) / height_diag_s
+                        x_l = upper_left + (lower_left - upper_left) * ratio_m
+                        x_r = upper_right + (lower_right - upper_right) * ratio_m
+
+                    m_item = canvas.measure_pool.get(m_num)
+                    if m_item is None:
+                        lid = canvas.create_line(
+                            x_l, y_m, x_r, y_m,
+                            fill=m_line_color, width=1, tags="measure_line"
+                        )
+                        tid = canvas.create_text(
+                            x_l + 4 * scale, y_m - 2 * scale,
+                            text=str(m_num), fill=m_txt_color, anchor="sw",
+                            font=("Arial", f_m_size, "bold"), tags="measure_line"
+                        )
+                        canvas.tag_lower(lid, "anchor_measure_lines_top")
+                        canvas.tag_lower(tid, "anchor_measure_lines_top")
+                        canvas.measure_pool[m_num] = (lid, tid)
+                    else:
+                        lid, tid = m_item
+                        canvas.coords(lid, x_l, y_m, x_r, y_m)
+                        canvas.coords(tid, x_l + 4 * scale, y_m - 2 * scale)
+
+            if len(canvas.measure_pool) > len(visible_measures):
+                for old_m in list(canvas.measure_pool.keys()):
+                    if old_m not in visible_measures:
+                        lid, tid = canvas.measure_pool.pop(old_m)
+                        canvas.delete(lid)
+                        canvas.delete(tid)
+        elif canvas.measure_pool:
+            for lid, tid in canvas.measure_pool.values():
+                canvas.delete(lid)
+                canvas.delete(tid)
+            canvas.measure_pool.clear()
+
+        # 5-B. 落下ノーツ＆追従音名ラベルの描画更新
         if is_notes_on and midi_notes:
-            px_per_tick = 120.0 / ticks_per_beat
-            px_per_tick_s = px_per_tick * scale
             max_visible_tick = target_tick + (y_hole_line_s / px_per_tick_s) + 10.0 if px_per_tick_s > 0 else target_tick + 10000
 
             visible_keys = set()

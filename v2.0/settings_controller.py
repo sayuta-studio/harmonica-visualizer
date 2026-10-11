@@ -151,6 +151,13 @@ class SettingsController:
                         if k_id != "style_key" and cid is not None:
                             self.gui.canvas.delete(cid)
                 self.gui.canvas.note_pool.clear()
+            if hasattr(self.gui.canvas, "measure_pool"):
+                for lid, tid in self.gui.canvas.measure_pool.values():
+                    if lid is not None:
+                        self.gui.canvas.delete(lid)
+                    if tid is not None:
+                        self.gui.canvas.delete(tid)
+                self.gui.canvas.measure_pool.clear()
 
         if self.midi_notes and self.midi_notes[0].get("_bound_inst") != self.gui.inst_menu.get():
             self.rebind_all_notes_fingerings()
