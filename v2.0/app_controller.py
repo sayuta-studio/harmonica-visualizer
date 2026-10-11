@@ -26,7 +26,7 @@ import harmonica_map
 from config import (
     COLOR_BLOW_RGB, COLOR_BLOW_INNER, COLOR_DRAW_RGB, COLOR_DRAW_INNER,
     W_PITCH, D_HOLE, CANVAS_WIDTH, CANVAS_HEIGHT,
-    get_portable_path, get_visualizer_layout_params,
+    get_portable_path, get_visualizer_layout_params, get_note_dest_x,
     LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT
 )
 from harmonica_map import (
@@ -310,6 +310,14 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.load_safe_melody()
         self.draw_harmonica_static()
 
+    def _set_label_if_changed(self, widget, cache_key, new_text):
+        """CustomTkinterラベルの重い再描画を防ぐため、文字列が実際に変化した時のみ更新します。"""
+        if not hasattr(self, "_ui_text_cache"):
+            self._ui_text_cache = {}
+        if self._ui_text_cache.get(cache_key) != new_text:
+            self._ui_text_cache[cache_key] = new_text
+            widget.configure(text=new_text)
+
     def update_clock(self):
         """完全自立パッシブ等速時間軸タイマー"""
         if self.play_state != "playing": return
@@ -341,10 +349,17 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         if self.gui.seek_slider and self.max_duration > 0:
             if self.current_time < count_in_duration:
-                self.gui.seek_slider.set(0)
+                if getattr(self, "_last_slider_pct", -1.0) != 0.0:
+                    self._last_slider_pct = 0.0
+                    self._last_slider_time = now
+                    self.gui.seek_slider.set(0)
             else:
-                pct = ((self.current_time - count_in_duration) / (self.max_duration - count_in_duration)) * 100
-                self.gui.seek_slider.set(pct)
+                denom = self.max_duration - count_in_duration
+                pct = ((self.current_time - count_in_duration) / denom) * 100 if denom > 0 else 0.0
+                if (now - getattr(self, "_last_slider_time", 0.0) >= 0.08) and (abs(pct - getattr(self, "_last_slider_pct", -1.0)) >= 0.15):
+                    self._last_slider_pct = pct
+                    self._last_slider_time = now
+                    self.gui.seek_slider.set(pct)
             
         self.update_time_label()
 
@@ -360,16 +375,17 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         }
         status_ja = status_map.get(status_state.lower(), "前奏中" if is_count_in_active else status_state)
         
-        self.gui.lbl_lcd_status.configure(text=f"状態：{status_ja[:6].ljust(6)}")
+        self._set_label_if_changed(self.gui.lbl_lcd_status, "lcd_status", f"状態：{status_ja[:6].ljust(6)}")
         
         if is_count_in_active or self.current_time < count_in_duration:
-            self.gui.lbl_lcd_pos.configure(text=f"位置：前奏カウント中...")
+            pos_str = "位置：前奏カウント中..."
         else:
-            self.gui.lbl_lcd_pos.configure(text=f"位置：{measure:03d}小節 . {beat:02d}拍")
+            pos_str = f"位置：{measure:03d}小節 . {beat:02d}拍"
+        self._set_label_if_changed(self.gui.lbl_lcd_pos, "lcd_pos", pos_str)
             
-        self.gui.lbl_lcd_sig.configure(text=f"拍子：{num}/{den}")
+        self._set_label_if_changed(self.gui.lbl_lcd_sig, "lcd_sig", f"拍子：{num}/{den}")
         speed_pct = int(round(getattr(self, "speed_percent", 100)))
-        self.gui.lbl_lcd_bpm.configure(text=f"テンポ:{int(round(self.current_bpm)):03d}BPM({speed_pct}%)")
+        self._set_label_if_changed(self.gui.lbl_lcd_bpm, "lcd_bpm", f"テンポ:{int(round(self.current_bpm)):03d}BPM({speed_pct}%)")
         
         self.last_update_time = now
 
@@ -794,9 +810,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.midi_engine.close_device()
         super().destroy()
 
-    # ロード・変え指設定変更時に、全楽譜ノーツ(midi_notes)に解決済み運指をキャッシュインする関数
+    # ロード・変え指設定変更時に、全楽譜ノーツ(midi_notes)に解決済み運指と描画用メタデータをキャッシュインする関数
     def rebind_all_notes_fingerings(self):
-        """すべての楽譜ノーツに対して、解決済み運指をあらかじめインパイル(埋め込み)します。"""
+        """すべての楽譜ノーツに対して、解決済み運指・音域内外・落下先X座標・音名を事前計算して埋め込みます。"""
         if not self.midi_notes:
             return
         inst_type = self.gui.inst_menu.get()
@@ -804,4 +820,10 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             start_tick = note_data.get("start_tick", 0)
             note_val = note_data["note"]
             note_data["fingering"] = harmonica_map.get_note_fingering_for_song(start_tick, note_val, inst_type)
-        print("[システム] すべて of 音符オブジェクトへの運指プリ・バインドが完了しました。")
+            note_data["in_range"] = harmonica_map.is_note_in_range(note_val, inst_type)
+            note_data["is_editable"] = harmonica_map.is_note_editable(note_val, inst_type)
+            note_data["name_cde"] = harmonica_map.get_note_name(note_val, is_japanese=False)
+            note_data["name_jp"] = harmonica_map.get_note_name(note_val, is_japanese=True)
+            note_data["dest_x_base"] = get_note_dest_x(note_val, inst_type, scale=1.0, start_tick=start_tick)
+            note_data["_bound_inst"] = inst_type
+        print("[システム] すべての音符オブジェクトへの運指・座標プリ・バインドが完了しました。")

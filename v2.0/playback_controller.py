@@ -145,7 +145,7 @@ class PlaybackController:
             traceback.print_exc()
 
     def update_time_label(self):
-        """前奏マイナス時間軸カウント対応時間表記"""
+        """前奏マイナス時間軸カウント対応時間表記（秒が変わった瞬間のみ更新）"""
         count_in_duration = self.get_count_in_duration()
         display_sec = self.current_time - count_in_duration
         
@@ -158,7 +158,8 @@ class PlaybackController:
         max_sec = int(self.max_duration - count_in_duration) % 60
         
         sign = "-" if is_negative else ""
-        self.gui.seek_label.configure(text=f"{sign}{cur_min:02d}:{cur_sec:02d} / {max_min:02d}:{max_sec:02d}")
+        new_text = f"{sign}{cur_min:02d}:{cur_sec:02d} / {max_min:02d}:{max_sec:02d}"
+        self._set_label_if_changed(self.gui.seek_label, "seek_label", new_text)
 
     def _truncate_by_visual_width(self, text, max_width=24):
         """全角文字=2・半角文字=1として見た目幅を計算し、固定幅ボックスに収まるよう省略します。"""
@@ -423,8 +424,10 @@ class PlaybackController:
             self.update_time_label()
             
             if hasattr(self, "gui") and hasattr(self.gui, "lbl_lcd_bpm"):
-                self.gui.lbl_lcd_bpm.configure(
-                    text=f"テンポ:{int(round(self.current_bpm)):03d}BPM({int(round(self.speed_percent))}%)")
+                self._set_label_if_changed(
+                    self.gui.lbl_lcd_bpm, "lcd_bpm",
+                    f"テンポ:{int(round(self.current_bpm)):03d}BPM({int(round(self.speed_percent))}%)"
+                )
 
             if hasattr(self, "gui") and self.gui.canvas and self.play_state != "playing":
                 self.draw_harmonica_static() 
@@ -719,6 +722,7 @@ class PlaybackController:
         if self.play_state == "playing":
             return
         if self.gui.seek_slider:
+            self._last_slider_pct = pct
             self.gui.seek_slider.set(pct)
         self.current_time = (pct / 100.0) * self.max_duration
         self.update_time_label()
@@ -726,11 +730,11 @@ class PlaybackController:
     def update_measure_beat_from_engine(self, measure, beat, num, den, total_measures):
         if self.play_state == "playing":
             return
-        self.gui.lbl_lcd_pos.configure(text=f"位置：{measure:03d}小節 . {beat:02d}拍")
-        self.gui.lbl_lcd_sig.configure(text=f"拍子：{num}/{den}")
+        self._set_label_if_changed(self.gui.lbl_lcd_pos, "lcd_pos", f"位置：{measure:03d}小節 . {beat:02d}拍")
+        self._set_label_if_changed(self.gui.lbl_lcd_sig, "lcd_sig", f"拍子：{num}/{den}")
         cur_bpm = int(round(self.midi_engine.get_bpm_at_tick(self.midi_engine.accumulated_ticks)))
         speed_pct = int(round(getattr(self, "speed_percent", 100)))
-        self.gui.lbl_lcd_bpm.configure(text=f"テンポ:{cur_bpm:03d}BPM({speed_pct}%)")
+        self._set_label_if_changed(self.gui.lbl_lcd_bpm, "lcd_bpm", f"テンポ:{cur_bpm:03d}BPM({speed_pct}%)")
         
         self.gui.jump_entry.delete(0, tk.END)
         self.gui.jump_entry.insert(0, str(measure))
@@ -744,7 +748,7 @@ class PlaybackController:
         }
         status_ja = status_map.get(status.lower(), status)
         
-        self.gui.lbl_lcd_status.configure(text=f"状態：{status_ja[:6].ljust(6)}")
+        self._set_label_if_changed(self.gui.lbl_lcd_status, "lcd_status", f"状態：{status_ja[:6].ljust(6)}")
         
         if status == "Finished":
             self.on_stop()

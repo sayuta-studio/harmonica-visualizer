@@ -141,27 +141,19 @@ class SettingsController:
 
     def on_setting_changed(self, value=None):
         # トグル表示（ガイド線/ノーツ表示/落下軌道など）切り替え時に
-        # Canvas内の静的なグリッドや凡例キャッシュを強制的にデリート消去するロジックを肉付け。
-        # これにより、再生中・一時停止中にかかわらず、スイッチのオン/オフが完全不整合なくリアルタイムに反映。
+        # Canvas内の静的状態キャッシュを無効化し、再生中・一時停止中にかかわらず即座に再構築反映。
         if hasattr(self, "gui") and self.gui.canvas:
-            self.gui.canvas.delete("static_grid")
-            self.gui.canvas.delete("static_grid_border")
-            self.gui.canvas.delete("static_legend")
-            self.gui.canvas.delete("static_plate")  # プレート消去で次回 draw_mode="all" を自動励起
-            self.gui.canvas.delete("static_hole")
-            self.gui.canvas.delete("cached_led")
-            self.gui.canvas.delete("cached_shadow")
-            self.gui.canvas.delete("cached_body")
-            self.gui.canvas.delete("cached_grid4")
-            self.gui.canvas.delete("cached_lookahead")
-            self.gui.canvas.delete("static_text")
+            self.gui.canvas._static_state_key = None
+            self.gui.canvas.delete("static_plate")
             if hasattr(self.gui.canvas, "note_pool"):
-                # ノーツ表示ON/OFF・軌道切り替え時にオブジェクトプールを完全クリーンアップ
                 for pool_item in self.gui.canvas.note_pool.values():
-                    for cid in pool_item.values():
-                        if cid is not None:
+                    for k_id, cid in pool_item.items():
+                        if k_id != "style_key" and cid is not None:
                             self.gui.canvas.delete(cid)
                 self.gui.canvas.note_pool.clear()
+
+        if self.midi_notes and self.midi_notes[0].get("_bound_inst") != self.gui.inst_menu.get():
+            self.rebind_all_notes_fingerings()
 
         self.apply_bpm()
         if getattr(self, "play_state", "stopped") != "playing":
