@@ -675,9 +675,9 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         # --- 🖼️ 背景画像合成 (直合成・クロマキー不要) ---
         self.bg_image_group = ctk.CTkFrame(self.tab_edit_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.bg_image_group.pack(fill="x", padx=12, pady=4)
+        self.bg_image_group.pack(fill="x", padx=12, pady=3)
 
-        ctk.CTkLabel(self.bg_image_group, text="🖼️ 背景画像合成 (クロマキー不要・直合成):", font=self.f_jp_bold).pack(anchor="w", padx=12, pady=(5, 1))
+        ctk.CTkLabel(self.bg_image_group, text="🖼️ 背景画像合成 (直合成・D&D対応):", font=self.f_jp_bold).pack(anchor="w", padx=12, pady=(4, 1))
 
         bg_img_file_row = ctk.CTkFrame(self.bg_image_group, fg_color="transparent")
         bg_img_file_row.pack(fill="x", padx=12, pady=1)
@@ -686,7 +686,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             bg_img_file_row,
             text="📂 画像選択",
             width=88,
-            height=25,
+            height=24,
             font=self.f_jp_bold,
             fg_color="#1f538d",
             hover_color="#143963",
@@ -698,7 +698,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             bg_img_file_row,
             text="✕",
             width=26,
-            height=25,
+            height=24,
             font=self.f_jp_bold,
             fg_color="#555555",
             hover_color="#773333",
@@ -708,15 +708,65 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         self.bg_image_label = ctk.CTkLabel(
             bg_img_file_row,
-            text="未選択 (通常の背景色を使用)",
+            text="未選択 (ここに画像D&D可)",
             font=self.f_jp_norm,
             text_color="#888888",
             anchor="w"
         )
         self.bg_image_label.pack(side="left", fill="x", expand=True)
 
+        bg_img_fit_row = ctk.CTkFrame(self.bg_image_group, fg_color="transparent")
+        bg_img_fit_row.pack(fill="x", padx=12, pady=1)
+        ctk.CTkLabel(bg_img_fit_row, text="配置:", font=self.f_jp_bold, text_color="#aaaaaa", width=52, anchor="w").pack(side="left")
+        self.bg_image_fit_menu = ctk.CTkOptionMenu(
+            bg_img_fit_row,
+            values=[
+                "中央トリミング (画面いっぱい)",
+                "画面内に収める (全体表示)",
+                "横幅に合わせる",
+                "縦幅に合わせる",
+                "画面に引き伸ばす"
+            ],
+            height=24,
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.bg_image_fit_menu.set("中央トリミング (画面いっぱい)")
+        self.bg_image_fit_menu.pack(side="right", fill="x", expand=True)
+
+        bg_img_rot_row = ctk.CTkFrame(self.bg_image_group, fg_color="transparent")
+        bg_img_rot_row.pack(fill="x", padx=12, pady=1)
+        ctk.CTkLabel(bg_img_rot_row, text="回転:", font=self.f_jp_bold, text_color="#aaaaaa", width=52, anchor="w").pack(side="left")
+        self.bg_image_rot_btn = ctk.CTkButton(
+            bg_img_rot_row,
+            text="↻ 90°回転",
+            width=76,
+            height=24,
+            font=self.f_jp_bold,
+            fg_color="#3a3a3a",
+            hover_color="#555555",
+            command=self.controller.on_rotate_bg_image_90
+        )
+        self.bg_image_rot_btn.pack(side="right", padx=(4, 0))
+        self.bg_image_rot_menu = ctk.CTkOptionMenu(
+            bg_img_rot_row,
+            values=[
+                "0° (自動補正)",
+                "右へ90°",
+                "180°",
+                "左へ90°"
+            ],
+            height=24,
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.bg_image_rot_menu.set("0° (自動補正)")
+        self.bg_image_rot_menu.pack(side="left", fill="x", expand=True)
+
         bg_img_dim_row = ctk.CTkFrame(self.bg_image_group, fg_color="transparent")
-        bg_img_dim_row.pack(fill="x", padx=12, pady=(1, 6))
+        bg_img_dim_row.pack(fill="x", padx=12, pady=(1, 5))
         ctk.CTkLabel(bg_img_dim_row, text="明るさ:", font=self.f_jp_bold, text_color="#aaaaaa", width=52, anchor="w").pack(side="left")
         self.bg_image_dim_menu = ctk.CTkOptionMenu(
             bg_img_dim_row,
@@ -726,7 +776,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
                 "半分 (50%・くっきり)",
                 "かなり暗め (30%)"
             ],
-            height=25,
+            height=24,
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
             command=self.controller.on_setting_changed
@@ -736,9 +786,9 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         # --- 🎵 外部音源・頭出し同期・音量設定 (YouTube対応) ---
         self.ext_audio_group = ctk.CTkFrame(self.tab_edit_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.ext_audio_group.pack(fill="x", padx=12, pady=4)
+        self.ext_audio_group.pack(fill="x", padx=12, pady=3)
 
-        ctk.CTkLabel(self.ext_audio_group, text="🎵 外部音源・頭出し・音量 (YouTube対応):", font=self.f_jp_bold).pack(anchor="w", padx=12, pady=(6, 2))
+        ctk.CTkLabel(self.ext_audio_group, text="🎵 外部音源・頭出し・音量 (D&D対応):", font=self.f_jp_bold).pack(anchor="w", padx=12, pady=(5, 2))
 
         ext_file_row = ctk.CTkFrame(self.ext_audio_group, fg_color="transparent")
         ext_file_row.pack(fill="x", padx=12, pady=2)
@@ -768,7 +818,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         self.ext_audio_label = ctk.CTkLabel(
             ext_file_row,
-            text="未選択 (内蔵シンセ合成)",
+            text="未選択 (ここに音源D&D可)",
             font=self.f_jp_norm,
             text_color="#888888",
             anchor="w"

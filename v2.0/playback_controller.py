@@ -180,11 +180,18 @@ class PlaybackController:
         return "".join(head) + "..." + text[-4:]
 
     def on_open_file(self):
-        """MIDIファイルのパース読み込み ＆ 固定幅トリミング表示"""
+        """MIDIファイルの選択ダイアログを開き、読み込みます。"""
         self.on_stop()
-        file_path = filedialog.askopenfilename(title="MIDIファイルを選択してください", filetypes=[("MIDI Files", "*.mid")])
-        if not file_path: return
+        file_path = filedialog.askopenfilename(title="MIDIファイルを選択してください", filetypes=[("MIDI Files", "*.mid *.midi")])
+        if not file_path:
+            return
+        self.load_midi_file(file_path)
 
+    def load_midi_file(self, file_path):
+        """指定パスのMIDIファイルをパース読み込み ＆ 固定幅トリミング表示（D&D・ダイアログ共通）"""
+        if not file_path or not os.path.exists(file_path):
+            return False
+        self.on_stop()
         filename = os.path.basename(file_path)
         display_name = self._truncate_by_visual_width(filename, max_width=24)
             
@@ -231,9 +238,11 @@ class PlaybackController:
                     text=f"警告: 選択パート({part_name})に有効な音符がありません。「🎼 パート選択」から別パートを選んでください。",
                     text_color="#ffcc00"
                 )
+            return True
         except Exception as e:
             self.gui.status_label.configure(text=f"MIDI解析失敗: {e}", text_color="#ff5555")
             traceback.print_exc()
+            return False
 
     def on_part_play_mode_changed(self, value):
         """トップバーのパート再生モード（全パート再生 / 主旋律ソロ / 伴奏のみ(カラオケ)）切替ハンドラ"""
@@ -823,17 +832,12 @@ class PlaybackController:
         except ValueError:
             return 100.0
 
-    def on_select_ext_audio(self):
-        """外部音源ファイル（WAV/MP3/M4A等）を選択し、44.1kHzステレオPCMとしてメモリにロードします。"""
+    def load_ext_audio_file(self, file_path):
+        """指定パスの外部音源ファイル（WAV/MP3/M4A等）を44.1kHzステレオPCMとしてメモリにロードします（D&D・ダイアログ共通）。"""
         from audio_engine import load_external_audio_pcm
+        if not file_path or not os.path.exists(file_path):
+            return False
         self.on_stop()
-        file_path = filedialog.askopenfilename(
-            title="外部音源ファイル（伴奏・演奏録音）を選択してください",
-            filetypes=[("Audio/Video Files", "*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.mp4"), ("All Files", "*.*")]
-        )
-        if not file_path:
-            return
-
         self.gui.status_label.configure(text="🎵 外部音源を読み込み中...", text_color="#ffcc00")
         self.update_idletasks()
         try:
@@ -844,15 +848,33 @@ class PlaybackController:
             disp = self._truncate_by_visual_width(fname, max_width=20)
             if hasattr(self.gui, "ext_audio_label"):
                 self.gui.ext_audio_label.configure(text=disp, text_color="#00ffcc")
+            if hasattr(self.gui, "video_edit_enabled_switch") and not self.gui.video_edit_enabled_switch.get():
+                self.gui.video_edit_enabled_switch.select()
+                if hasattr(self, "update_export_edit_summary_label"):
+                    self.update_export_edit_summary_label()
+                self.save_user_settings_txt()
             dur_sec = len(pcm) / 44100.0
             self.gui.status_label.configure(
                 text=f"🎵 外部音源ロード完了: {disp} ({dur_sec:.1f}秒) — 再生中に [ / ] キーで頭出し調整可能",
                 text_color="#2b8c54"
             )
+            return True
         except Exception as e:
             self.ext_audio_path = None
             self.ext_audio_pcm = None
             self.gui.status_label.configure(text=f"❌ 外部音源の読み込み失敗: {e}", text_color="#ff5555")
+            return False
+
+    def on_select_ext_audio(self):
+        """外部音源ファイル（WAV/MP3/M4A等）を選択し、44.1kHzステレオPCMとしてメモリにロードします。"""
+        self.on_stop()
+        file_path = filedialog.askopenfilename(
+            title="外部音源ファイル（伴奏・演奏録音）を選択してください",
+            filetypes=[("Audio/Video Files", "*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.mp4"), ("All Files", "*.*")]
+        )
+        if not file_path:
+            return
+        self.load_ext_audio_file(file_path)
 
     def on_clear_ext_audio(self):
         """読み込んだ外部音源を解除します。"""
@@ -860,7 +882,7 @@ class PlaybackController:
         self.ext_audio_path = None
         self.ext_audio_pcm = None
         if hasattr(self.gui, "ext_audio_label"):
-            self.gui.ext_audio_label.configure(text="未選択 (内蔵シンセ合成)", text_color="#888888")
+            self.gui.ext_audio_label.configure(text="未選択 (ここに音源D&D可)", text_color="#888888")
         if self.play_state == "playing":
             self._apply_effective_guide_audio_mode()
         self.gui.status_label.configure(text="外部音源を解除しました（内蔵シンセ合成モード）", text_color="#aaaaaa")

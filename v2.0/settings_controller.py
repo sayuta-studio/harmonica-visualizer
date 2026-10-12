@@ -175,6 +175,26 @@ class SettingsController:
             self.gui.video_credit_entry.delete(0, tk.END)
             self.gui.video_credit_entry.insert(0, str(loaded.get("タイトルサブ", "")))
 
+        if hasattr(self.gui, "bg_image_fit_menu"):
+            bg_fit_val = loaded.get("背景画像の配置", "中央トリミング (画面いっぱい)")
+            valid_fits = [
+                "中央トリミング (画面いっぱい)",
+                "画面内に収める (全体表示)",
+                "横幅に合わせる",
+                "縦幅に合わせる",
+                "画面に引き伸ばす"
+            ]
+            if bg_fit_val not in valid_fits:
+                bg_fit_val = "中央トリミング (画面いっぱい)"
+            self.gui.bg_image_fit_menu.set(bg_fit_val)
+
+        if hasattr(self.gui, "bg_image_rot_menu"):
+            bg_rot_val = loaded.get("背景画像の回転", "0° (自動補正)")
+            valid_rots = ["0° (自動補正)", "右へ90°", "180°", "左へ90°"]
+            if bg_rot_val not in valid_rots:
+                bg_rot_val = "0° (自動補正)"
+            self.gui.bg_image_rot_menu.set(bg_rot_val)
+
         if hasattr(self.gui, "bg_image_dim_menu"):
             bg_dim_val = loaded.get("背景画像の明るさ", "少し暗め (70%・ノーツ強調)")
             valid_dims = ["少し暗め (70%・ノーツ強調)", "そのまま (100%)", "半分 (50%・くっきり)", "かなり暗め (30%)"]
@@ -192,7 +212,7 @@ class SettingsController:
         else:
             self.bg_image_path = None
             if hasattr(self.gui, "bg_image_label"):
-                self.gui.bg_image_label.configure(text="未選択 (通常の背景色を使用)", text_color="#888888")
+                self.gui.bg_image_label.configure(text="未選択 (ここに画像D&D可)", text_color="#888888")
 
         if hasattr(self.gui, "ext_audio_mode_menu"):
             em_val = loaded.get("外部音源モード", "頭出し確認 (再生:両方 / 動画:外部のみ)")
@@ -252,24 +272,33 @@ class SettingsController:
         return 0.70
 
     def get_effective_bg_image_info(self):
-        """動画編集スイッチがONかつ背景画像が有効な場合に (bg_image_path, brightness_ratio) を返します。"""
+        """動画編集スイッチがONかつ背景画像が有効な場合に (bg_image_path, brightness_ratio, fit_mode, rotation_mode) を返します。"""
+        fit_mode = self.gui.bg_image_fit_menu.get() if (hasattr(self, "gui") and hasattr(self.gui, "bg_image_fit_menu")) else "中央トリミング (画面いっぱい)"
+        rot_mode = self.gui.bg_image_rot_menu.get() if (hasattr(self, "gui") and hasattr(self.gui, "bg_image_rot_menu")) else "0° (自動補正)"
         if not self.is_video_edit_enabled():
-            return None, 1.0
+            return None, 1.0, fit_mode, rot_mode
         bg_path = getattr(self, "bg_image_path", None)
         if bg_path and os.path.exists(bg_path):
-            return bg_path, self.get_bg_image_brightness_ratio()
-        return None, 1.0
+            return bg_path, self.get_bg_image_brightness_ratio(), fit_mode, rot_mode
+        return None, 1.0, fit_mode, rot_mode
 
-    def on_select_bg_image(self):
-        """🖼️ 背景画像ファイル（PNG/JPG/WebP等）を選択し、プレビューと動画出力へ反映します。"""
-        from tkinter import filedialog
-        from PIL import Image
-        file_path = filedialog.askopenfilename(
-            title="背景に合成する画像ファイルを選択してください",
-            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All Files", "*.*")]
-        )
-        if not file_path:
+    def on_rotate_bg_image_90(self):
+        """↻ 90°回転ボタンで背景画像の回転角度を時計回りに90度ずつ順送りします。"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "bg_image_rot_menu"):
             return
+        order = ["0° (自動補正)", "右へ90°", "180°", "左へ90°"]
+        cur = self.gui.bg_image_rot_menu.get()
+        idx = (order.index(cur) + 1) % len(order) if cur in order else 1
+        next_rot = order[idx]
+        self.gui.bg_image_rot_menu.set(next_rot)
+        self.on_setting_changed()
+        self.gui.status_label.configure(text=f"🖼️ 背景画像の回転: {next_rot}", text_color="#00ffcc")
+
+    def load_bg_image_file(self, file_path):
+        """指定パスの画像ファイルを検証し、背景画像としてセット・即時描画します（D&D・ダイアログ共通）。"""
+        from PIL import Image
+        if not file_path or not os.path.exists(file_path):
+            return False
         try:
             with Image.open(file_path) as img:
                 img.verify()
@@ -278,19 +307,35 @@ class SettingsController:
             disp = self._truncate_by_visual_width(fname, max_width=20) if hasattr(self, "_truncate_by_visual_width") else fname[:18]
             if hasattr(self.gui, "bg_image_label"):
                 self.gui.bg_image_label.configure(text=disp, text_color="#00ffcc")
+            if hasattr(self.gui, "video_edit_enabled_switch") and not self.gui.video_edit_enabled_switch.get():
+                self.gui.video_edit_enabled_switch.select()
+                self.update_export_edit_summary_label()
             self.on_setting_changed()
             self.gui.status_label.configure(
-                text=f"🖼️ 背景画像をセットしました: {disp}（📸画面確認で合成イメージを確認可能）",
+                text=f"🖼️ 背景画像をセットしました: {disp}（配置・回転・明るさを調整可能）",
                 text_color="#2b8c54"
             )
+            return True
         except Exception as e:
             self.gui.status_label.configure(text=f"❌ 背景画像の読み込み失敗: {e}", text_color="#ff5555")
+            return False
+
+    def on_select_bg_image(self):
+        """🖼️ 背景画像ファイル（PNG/JPG/WebP等）を選択し、プレビューと動画出力へ反映します。"""
+        from tkinter import filedialog
+        file_path = filedialog.askopenfilename(
+            title="背景に合成する画像ファイルを選択してください",
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All Files", "*.*")]
+        )
+        if not file_path:
+            return
+        self.load_bg_image_file(file_path)
 
     def on_clear_bg_image(self):
         """選択中の背景画像を解除し、通常の背景色（黒やグリーンバック等）へ戻します。"""
         self.bg_image_path = None
         if hasattr(self.gui, "bg_image_label"):
-            self.gui.bg_image_label.configure(text="未選択 (通常の背景色を使用)", text_color="#888888")
+            self.gui.bg_image_label.configure(text="未選択 (ここに画像D&D可)", text_color="#888888")
         self.on_setting_changed()
         self.gui.status_label.configure(text="背景画像を解除しました（通常の背景色を使用）", text_color="#aaaaaa")
 
@@ -485,6 +530,8 @@ class SettingsController:
                 "YouTube上限リミッター": ("ON" if self.gui.yt_limiter_switch.get() else "OFF") if hasattr(self.gui, "yt_limiter_switch") else "ON",
                 "動画編集を動画出力に適用": ("ON" if self.gui.video_edit_enabled_switch.get() else "OFF") if hasattr(self.gui, "video_edit_enabled_switch") else "ON",
                 "背景画像パス": getattr(self, "bg_image_path", "") or "",
+                "背景画像の配置": self.gui.bg_image_fit_menu.get() if hasattr(self.gui, "bg_image_fit_menu") else "中央トリミング (画面いっぱい)",
+                "背景画像の回転": self.gui.bg_image_rot_menu.get() if hasattr(self.gui, "bg_image_rot_menu") else "0° (自動補正)",
                 "背景画像の明るさ": self.gui.bg_image_dim_menu.get() if hasattr(self.gui, "bg_image_dim_menu") else "少し暗め (70%・ノーツ強調)",
             }
         )

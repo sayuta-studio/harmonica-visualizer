@@ -55,6 +55,75 @@ def _get_notes_index(midi_notes):
     return _NOTES_INDEX_CACHE["start_ticks"], _NOTES_INDEX_CACHE["max_dur_ticks"]
 
 
+def prepare_background_image(bg_image_path, target_w, target_h, bg_brightness=1.0,
+                             bg_fit_mode="中央トリミング (画面いっぱい)",
+                             bg_rotation="0° (自動補正)",
+                             pad_rgb=(13, 13, 13)):
+    """
+    背景画像を読み込み、EXIF撮影向き自動補正・手動回転・指定配置モード
+    （中央トリミング / 画面内に収める / 横幅に合わせる / 縦幅に合わせる / 画面に引き伸ばす）
+    および明るさ調整を適用した RGB PIL.Image (target_w, target_h) を返します。
+    """
+    target_w = max(1, int(round(target_w)))
+    target_h = max(1, int(round(target_h)))
+    pil_bg = Image.open(bg_image_path)
+    try:
+        pil_bg = ImageOps.exif_transpose(pil_bg)
+    except Exception:
+        pass
+    pil_bg = pil_bg.convert("RGB")
+
+    rot_str = str(bg_rotation or "")
+    if "右" in rot_str or "時計" in rot_str or ("90" in rot_str and "左" not in rot_str and "270" not in rot_str):
+        pil_bg = pil_bg.transpose(Image.Transpose.ROTATE_270)
+    elif "180" in rot_str:
+        pil_bg = pil_bg.transpose(Image.Transpose.ROTATE_180)
+    elif "左" in rot_str or "270" in rot_str:
+        pil_bg = pil_bg.transpose(Image.Transpose.ROTATE_90)
+
+    src_w, src_h = pil_bg.size
+    fit_str = str(bg_fit_mode or "")
+
+    if "画面内に収める" in fit_str or "全体" in fit_str:
+        scale_f = min(target_w / max(1, src_w), target_h / max(1, src_h))
+        new_w = max(1, int(round(src_w * scale_f)))
+        new_h = max(1, int(round(src_h * scale_f)))
+        resized = pil_bg.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        out_img = Image.new("RGB", (target_w, target_h), pad_rgb)
+        out_img.paste(resized, ((target_w - new_w) // 2, (target_h - new_h) // 2))
+    elif "横幅に合わせる" in fit_str:
+        scale_f = target_w / max(1, src_w)
+        new_w = target_w
+        new_h = max(1, int(round(src_h * scale_f)))
+        resized = pil_bg.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        if new_h >= target_h:
+            top = (new_h - target_h) // 2
+            out_img = resized.crop((0, top, target_w, top + target_h))
+        else:
+            out_img = Image.new("RGB", (target_w, target_h), pad_rgb)
+            out_img.paste(resized, (0, (target_h - new_h) // 2))
+    elif "縦幅に合わせる" in fit_str:
+        scale_f = target_h / max(1, src_h)
+        new_w = max(1, int(round(src_w * scale_f)))
+        new_h = target_h
+        resized = pil_bg.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        if new_w >= target_w:
+            left = (new_w - target_w) // 2
+            out_img = resized.crop((left, 0, left + target_w, target_h))
+        else:
+            out_img = Image.new("RGB", (target_w, target_h), pad_rgb)
+            out_img.paste(resized, ((target_w - new_w) // 2, 0))
+    elif "引き伸ば" in fit_str:
+        out_img = pil_bg.resize((target_w, target_h), Image.Resampling.LANCZOS)
+    else:
+        out_img = ImageOps.fit(pil_bg, (target_w, target_h), Image.Resampling.LANCZOS)
+
+    if float(bg_brightness) < 0.999:
+        out_img = ImageEnhance.Brightness(out_img).enhance(float(bg_brightness))
+
+    return out_img
+
+
 def draw_bordered_text_canvas(canvas, position, text, text_color, font=("Arial", 11, "bold"), border_width=2, tags="text"):
     x, y = position
     border_color = "#000000"
@@ -77,7 +146,9 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                           show_lookahead=True, show_grid4=True,
                           measures_timeline=None, is_glow_on=False,
                           note_speed_ratio=1.0,
-                          bg_image_path=None, bg_brightness=1.0):  
+                          bg_image_path=None, bg_brightness=1.0,
+                          bg_fit_mode="中央トリミング (画面いっぱい)",
+                          bg_rotation="0° (自動補正)"):  
     """
     Pillowを一切経由せず、Tkinter Canvasのネイティブ命令と差分キャッシュで超高速描画。
     変化した要素のみを更新し、落下中ノーツは座標移動(coords)のみで60fps安定動作を実現します。
@@ -165,7 +236,8 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         color_blow_hex, color_draw_hex,
         use_skin, round(scale, 4), aspect_ratio,
         trajectory_mode, show_grid4,
-        bg_image_path if has_bg_img else None, round(float(bg_brightness), 3)
+        bg_image_path if has_bg_img else None, round(float(bg_brightness), 3),
+        bg_fit_mode if has_bg_img else None, bg_rotation if has_bg_img else None
     )
 
     # 1. 静的部分および常駐キャッシュオブジェクトの初期構築（設定変更時・初回のみ実行）
@@ -191,15 +263,21 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
             
         canvas.configure(bg=canvas_bg_color)
 
-        # [レイヤー0] 背景画像直合成（指定がある場合、最背面にセンタークロップ＆明るさ調整して配置）
+        # [レイヤー0] 背景画像直合成（指定がある場合、EXIF向き補正・回転・配置モード・明るさ調整を適用して最背面に配置）
         if has_bg_img:
             try:
                 cw = max(1, int(round(CANVAS_WIDTH * scale)))
                 ch = max(1, int(round(canvas_height_full * scale)))
-                pil_bg = Image.open(bg_image_path).convert("RGB")
-                pil_bg_fit = ImageOps.fit(pil_bg, (cw, ch), Image.Resampling.LANCZOS)
-                if float(bg_brightness) < 0.999:
-                    pil_bg_fit = ImageEnhance.Brightness(pil_bg_fit).enhance(float(bg_brightness))
+                pad_rgb = (0, 255, 0) if canvas_bg_color == "#00FF00" else ((0, 0, 255) if canvas_bg_color == "#0000FF" else ((255, 0, 255) if canvas_bg_color == "#FF00FF" else (13, 13, 13)))
+                pil_bg_fit = prepare_background_image(
+                    bg_image_path=bg_image_path,
+                    target_w=cw,
+                    target_h=ch,
+                    bg_brightness=bg_brightness,
+                    bg_fit_mode=bg_fit_mode,
+                    bg_rotation=bg_rotation,
+                    pad_rgb=pad_rgb
+                )
                 canvas._bg_photo_tk = ImageTk.PhotoImage(pil_bg_fit)
                 canvas.create_image(0, 0, image=canvas._bg_photo_tk, anchor="nw", tags="static_bg_img")
             except Exception as ex:

@@ -255,6 +255,124 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         self.load_safe_melody()
         self.draw_harmonica_static()
+        self._setup_win32_file_drop()
+
+    def _setup_win32_file_drop(self):
+        """Windows標準のWM_DROPFILESをフックし、画像・外部音源・MIDIのドラッグ＆ドロップ読み込みを有効化します。"""
+        if os.name != "nt" or getattr(self, "_dnd_hwnd", None):
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+            u32 = ctypes.windll.user32
+            s32 = ctypes.windll.shell32
+
+            self.update_idletasks()
+            hwnd = u32.GetParent(self.winfo_id()) or self.winfo_id()
+            if not hwnd:
+                return
+
+            WM_DROPFILES = 0x0233
+            GWL_WNDPROC = -4
+
+            WNDPROCTYPE = ctypes.WINFUNCTYPE(
+                ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
+            )
+            u32.CallWindowProcW.argtypes = [
+                ctypes.c_void_p, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
+            ]
+            u32.CallWindowProcW.restype = ctypes.c_ssize_t
+
+            SetWindowLongPtr = getattr(u32, "SetWindowLongPtrW", u32.SetWindowLongW)
+            SetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_void_p]
+            SetWindowLongPtr.restype = ctypes.c_void_p
+
+            s32.DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
+            s32.DragQueryFileW.argtypes = [wintypes.HANDLE, wintypes.UINT, wintypes.LPWSTR, wintypes.UINT]
+            s32.DragQueryFileW.restype = wintypes.UINT
+            s32.DragFinish.argtypes = [wintypes.HANDLE]
+
+            try:
+                u32.ChangeWindowMessageFilterEx(hwnd, WM_DROPFILES, 1, None)
+                u32.ChangeWindowMessageFilterEx(hwnd, 0x0049, 1, None)
+            except Exception:
+                pass
+
+            s32.DragAcceptFiles(hwnd, True)
+
+            def _wnd_proc(h_wnd, msg, w_param, l_param):
+                if msg == WM_DROPFILES:
+                    try:
+                        h_drop = wintypes.HANDLE(w_param)
+                        count = s32.DragQueryFileW(h_drop, 0xFFFFFFFF, None, 0)
+                        dropped_files = []
+                        for idx in range(count):
+                            length = s32.DragQueryFileW(h_drop, idx, None, 0)
+                            if length > 0:
+                                buf = ctypes.create_unicode_buffer(length + 1)
+                                s32.DragQueryFileW(h_drop, idx, buf, length + 1)
+                                dropped_files.append(buf.value)
+                        s32.DragFinish(h_drop)
+                        if dropped_files:
+                            self.after(10, lambda files=dropped_files: self.on_files_dropped(files))
+                        return 0
+                    except Exception as ex:
+                        print(f"[警告] D&Dイベント処理失敗: {ex}")
+                return u32.CallWindowProcW(self._old_wndproc, h_wnd, msg, w_param, l_param)
+
+            self._dnd_wndproc_ref = WNDPROCTYPE(_wnd_proc)
+            fn_ptr = ctypes.cast(self._dnd_wndproc_ref, ctypes.c_void_p).value
+            self._old_wndproc = SetWindowLongPtr(hwnd, GWL_WNDPROC, fn_ptr)
+            self._dnd_hwnd = hwnd
+            print("[システム] ドラッグ＆ドロップ受付 (画像・外部音源・MIDI) を有効化しました。")
+        except Exception as e:
+            print(f"[警告] D&D初期化スキップ: {e}")
+
+    def _teardown_win32_file_drop(self):
+        hwnd = getattr(self, "_dnd_hwnd", None)
+        old_proc = getattr(self, "_old_wndproc", None)
+        if os.name == "nt" and hwnd and old_proc:
+            try:
+                import ctypes
+                from ctypes import wintypes
+                u32 = ctypes.windll.user32
+                SetWindowLongPtr = getattr(u32, "SetWindowLongPtrW", u32.SetWindowLongW)
+                SetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_void_p]
+                SetWindowLongPtr.restype = ctypes.c_void_p
+                SetWindowLongPtr(hwnd, -4, old_proc)
+            except Exception:
+                pass
+        self._dnd_hwnd = None
+        self._old_wndproc = None
+
+    def on_files_dropped(self, file_paths):
+        """エクスプローラーからドラッグ＆ドロップされたファイルを拡張子で自動判別し、背景画像・外部音源・MIDIへ振り分けます。"""
+        if self.play_state == "exporting" or not file_paths:
+            return
+        img_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+        aud_exts = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".mp4", ".wma"}
+        midi_exts = {".mid", ".midi"}
+
+        loaded_any = False
+        for path in file_paths:
+            if not path or not os.path.isfile(path):
+                continue
+            ext = os.path.splitext(path)[1].lower()
+            if ext in img_exts:
+                if self.load_bg_image_file(path):
+                    loaded_any = True
+            elif ext in aud_exts:
+                if self.load_ext_audio_file(path):
+                    loaded_any = True
+            elif ext in midi_exts:
+                if self.load_midi_file(path):
+                    loaded_any = True
+
+        if not loaded_any:
+            self.gui.status_label.configure(
+                text="⚠️ 未対応のファイル形式です（画像: PNG/JPG/WebP、音源: WAV/MP3/M4A、楽譜: MID に対応）",
+                text_color="#ffcc00"
+            )
 
     def _set_label_if_changed(self, widget, cache_key, new_text):
         """CustomTkinterラベルの重い再描画を防ぐため、文字列が実際に変化した時のみ更新します。"""
@@ -367,7 +485,11 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
         show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
         note_speed_ratio = self.get_note_speed_ratio() if hasattr(self, "get_note_speed_ratio") else 1.0
-        bg_img_path, bg_bright = self.get_effective_bg_image_info() if hasattr(self, "get_effective_bg_image_info") else (None, 1.0)
+        bg_img_path, bg_bright, bg_fit, bg_rot = (
+            self.get_effective_bg_image_info()
+            if hasattr(self, "get_effective_bg_image_info")
+            else (None, 1.0, "中央トリミング (画面いっぱい)", "0° (自動補正)")
+        )
 
         draw_harmonica_canvas(
             canvas=self.gui.canvas,
@@ -401,7 +523,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             is_glow_on=is_glow_on,
             note_speed_ratio=note_speed_ratio,
             bg_image_path=bg_img_path,
-            bg_brightness=bg_bright
+            bg_brightness=bg_bright,
+            bg_fit_mode=bg_fit,
+            bg_rotation=bg_rot
         )
 
     def draw_harmonica_body_only(self, pitches):
@@ -594,6 +718,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             "yt_limiter_switch",
             "bg_image_btn",
             "bg_image_clear_btn",
+            "bg_image_fit_menu",
+            "bg_image_rot_menu",
+            "bg_image_rot_btn",
             "bg_image_dim_menu",
         ):
             if hasattr(self.gui, attr_name):
@@ -677,7 +804,11 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         intro_sec, outro_sec = self.get_intro_outro_seconds() if hasattr(self, "get_intro_outro_seconds") else (0.0, 0.0)
 
         edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
-        bg_img_path, bg_bright = self.get_effective_bg_image_info() if hasattr(self, "get_effective_bg_image_info") else (None, 1.0)
+        bg_img_path, bg_bright, bg_fit, bg_rot = (
+            self.get_effective_bg_image_info()
+            if hasattr(self, "get_effective_bg_image_info")
+            else (None, 1.0, "中央トリミング (画面いっぱい)", "0° (自動補正)")
+        )
         if edit_on:
             title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
             video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
@@ -743,6 +874,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             yt_limiter=yt_limiter,
             bg_image_path=bg_img_path,
             bg_brightness=bg_bright,
+            bg_fit_mode=bg_fit,
+            bg_rotation=bg_rot,
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック
@@ -801,7 +934,11 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
 
         edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
-        bg_img_path, bg_bright = self.get_effective_bg_image_info() if hasattr(self, "get_effective_bg_image_info") else (None, 1.0)
+        bg_img_path, bg_bright, bg_fit, bg_rot = (
+            self.get_effective_bg_image_info()
+            if hasattr(self, "get_effective_bg_image_info")
+            else (None, 1.0, "中央トリミング (画面いっぱい)", "0° (自動補正)")
+        )
         if edit_on:
             title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
             video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
@@ -841,10 +978,13 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             video_credit=video_credit,
             bg_image_path=bg_img_path,
             bg_brightness=bg_bright,
+            bg_fit_mode=bg_fit,
+            bg_rotation=bg_rot,
         )
 
     def destroy(self):
         """ライフサイクル：WinMM / MIDIエンジンのクローズ安全開放処理"""
+        self._teardown_win32_file_drop()
         if hasattr(self, "stop_ext_audio_playback"):
             self.stop_ext_audio_playback()
         self.midi_engine.stop()

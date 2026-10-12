@@ -177,7 +177,9 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          use_skin=True, trajectory_mode="3段階 (練習標準)",
                                          show_lookahead=True, show_grid4=True, measures_timeline=None,
                                          use_ring=True, note_speed_ratio=1.0,
-                                         bg_image_path=None, bg_brightness=1.0):
+                                         bg_image_path=None, bg_brightness=1.0,
+                                         bg_fit_mode="中央トリミング (画面いっぱい)",
+                                         bg_rotation="0° (自動補正)"):
     """
     オフライン書き出し専用：静止パーツ（背景グリッド・カバープレート・4音グリッド64マス・レバー2状態）と
     発光スタンプを事前キャッシュし、毎フレームは差分（小節線・発音中の穴の発光＆セル点灯）のみを高速合成します。
@@ -226,7 +228,8 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         color_blow_hex, color_draw_hex,
         use_skin, trajectory_mode, show_grid4,
         width, height, round(scale, 5),
-        bg_image_path if has_bg_img else None, round(float(bg_brightness), 3)
+        bg_image_path if has_bg_img else None, round(float(bg_brightness), 3),
+        bg_fit_mode if has_bg_img else None, bg_rotation if has_bg_img else None
     )
 
     global _CACHE
@@ -234,27 +237,35 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         base_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         base_draw = ImageDraw.Draw(base_img)
 
+        if canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00":
+            pad_rgb = (0, 255, 0)
+        elif canvas_bg_color == "ブルーバック" or canvas_bg_color == "#0000FF":
+            pad_rgb = (0, 0, 255)
+        elif canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF":
+            pad_rgb = (255, 0, 255)
+        else:
+            pad_rgb = (13, 13, 13)
+
         bg_pasted = False
         if has_bg_img:
             try:
-                pil_bg = Image.open(bg_image_path).convert("RGB")
-                pil_bg_fit = ImageOps.fit(pil_bg, (width, height), Image.Resampling.LANCZOS)
-                if float(bg_brightness) < 0.999:
-                    pil_bg_fit = ImageEnhance.Brightness(pil_bg_fit).enhance(float(bg_brightness))
+                from visualizer import prepare_background_image
+                pil_bg_fit = prepare_background_image(
+                    bg_image_path=bg_image_path,
+                    target_w=width,
+                    target_h=height,
+                    bg_brightness=bg_brightness,
+                    bg_fit_mode=bg_fit_mode,
+                    bg_rotation=bg_rotation,
+                    pad_rgb=pad_rgb
+                )
                 base_img.paste(pil_bg_fit.convert("RGBA"), (0, 0))
                 bg_pasted = True
             except Exception as ex:
                 print(f"[警告] エクスポート用背景画像の読み込み失敗: {ex}")
 
         if not bg_pasted:
-            if canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00":
-                base_draw.rectangle([0, 0, width, height], fill=(0, 255, 0, 255))
-            elif canvas_bg_color == "ブルーバック" or canvas_bg_color == "#0000FF":
-                base_draw.rectangle([0, 0, width, height], fill=(0, 0, 255, 255))
-            elif canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF":
-                base_draw.rectangle([0, 0, width, height], fill=(255, 0, 255, 255))
-            else:
-                base_draw.rectangle([0, 0, width, height], fill=(13, 13, 13, 255))
+            base_draw.rectangle([0, 0, width, height], fill=(pad_rgb[0], pad_rgb[1], pad_rgb[2], 255))
 
         if is_grid_on:
             is_bright_bg = (not bg_pasted) and (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
@@ -763,7 +774,9 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
                                  show_lookahead=True, show_grid4=True, measures_timeline=None,
                                  use_ring=True, note_speed_ratio=1.0,
                                  title_template="なし", video_title="", video_credit="",
-                                 bg_image_path=None, bg_brightness=1.0):
+                                 bg_image_path=None, bg_brightness=1.0,
+                                 bg_fit_mode="中央トリミング (画面いっぱい)",
+                                 bg_rotation="0° (自動補正)"):
     if not OPENCV_AVAILABLE:
         return
 
@@ -813,7 +826,9 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         use_ring=use_ring,
         note_speed_ratio=note_speed_ratio,
         bg_image_path=bg_image_path,
-        bg_brightness=bg_brightness
+        bg_brightness=bg_brightness,
+        bg_fit_mode=bg_fit_mode,
+        bg_rotation=bg_rotation
     )
 
     if aspect_ratio == "9:16":
@@ -1245,7 +1260,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               title_template="なし", video_title="", video_credit="",
                               ext_audio_pcm=None, ext_audio_mode="頭出し確認 (再生:両方 / 動画:外部のみ)",
                               ext_audio_offset_ms=0, ext_audio_vol_pct=100.0, yt_limiter=True,
-                              bg_image_path=None, bg_brightness=1.0):
+                              bg_image_path=None, bg_brightness=1.0,
+                              bg_fit_mode="中央トリミング (画面いっぱい)",
+                              bg_rotation="0° (自動補正)"):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -1367,7 +1384,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     use_ring=use_ring,
                     note_speed_ratio=note_speed_ratio,
                     bg_image_path=bg_image_path,
-                    bg_brightness=bg_brightness
+                    bg_brightness=bg_brightness,
+                    bg_fit_mode=bg_fit_mode,
+                    bg_rotation=bg_rotation
                 )
 
                 bgr_frame = cv2.cvtColor(np.asarray(pil_frame), cv2.COLOR_RGBA2BGR)
