@@ -160,6 +160,29 @@ class SettingsController:
                 out_val = "2秒"
             self.gui.outro_sec_menu.set(out_val)
 
+        if hasattr(self.gui, "fade_in_switch"):
+            if loaded.get("開始フェードイン", "OFF") == "ON":
+                self.gui.fade_in_switch.select()
+            else:
+                self.gui.fade_in_switch.deselect()
+
+        if hasattr(self.gui, "fade_out_switch"):
+            if loaded.get("終了フェードアウト", "OFF") == "ON":
+                self.gui.fade_out_switch.select()
+            else:
+                self.gui.fade_out_switch.deselect()
+
+        if hasattr(self.gui, "fade_in_title_menu"):
+            ft_val = loaded.get("フェード時題名", "フェード中もタイトル表示")
+            valid_fts = [
+                "フェード中もタイトル表示",
+                "フェード中はタイトル非表示",
+                "画面と一緒にフェードイン"
+            ]
+            if ft_val not in valid_fts:
+                ft_val = "フェード中もタイトル表示"
+            self.gui.fade_in_title_menu.set(ft_val)
+
         if hasattr(self.gui, "title_template_menu"):
             tpl_val = loaded.get("タイトル配置", "なし")
             valid_tpls = ["なし", "イントロ中央のみ", "左上常時", "右上常時", "イントロ中央＋左上常時", "イントロ中央＋右上常時"]
@@ -521,6 +544,9 @@ class SettingsController:
                 "書き出し範囲": self.gui.export_range_menu.get() if hasattr(self.gui, "export_range_menu") else "全曲",
                 "前の余白": self.gui.intro_sec_menu.get() if hasattr(self.gui, "intro_sec_menu") else "0秒",
                 "後の余白": self.gui.outro_sec_menu.get() if hasattr(self.gui, "outro_sec_menu") else "2秒",
+                "開始フェードイン": ("ON" if self.gui.fade_in_switch.get() else "OFF") if hasattr(self.gui, "fade_in_switch") else "OFF",
+                "終了フェードアウト": ("ON" if self.gui.fade_out_switch.get() else "OFF") if hasattr(self.gui, "fade_out_switch") else "OFF",
+                "フェード時題名": self.gui.fade_in_title_menu.get() if hasattr(self.gui, "fade_in_title_menu") else "フェード中もタイトル表示",
                 "タイトル配置": self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし",
                 "タイトル曲名": self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else "",
                 "タイトルサブ": self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else "",

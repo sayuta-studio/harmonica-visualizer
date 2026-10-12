@@ -1387,7 +1387,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               ext_audio_offset_ms=0, ext_audio_vol_pct=100.0, yt_limiter=True,
                               bg_image_path=None, bg_brightness=1.0,
                               bg_fit_mode="中央トリミング (画面いっぱい)",
-                              bg_rotation="0° (自動補正)"):
+                              bg_rotation="0° (自動補正)",
+                              fade_in=False, fade_out=False,
+                              fade_in_title_mode="フェード中もタイトル表示"):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -1442,6 +1444,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
         ctrl=ctrl
     )
     intro_display_dur = intro_sec if intro_sec > 0.0 else (count_in_dur if count_in_dur > 0.0 else 2.5)
+    fade_in_dur = (float(intro_sec) if float(intro_sec) > 0.0 else min(1.5, exp_max_duration * 0.25)) if fade_in else 0.0
+    fade_out_dur = (float(outro_sec) if float(outro_sec) > 0.0 else min(1.5, exp_max_duration * 0.25)) if fade_out else 0.0
+    title_mode_str = str(fade_in_title_mode or "フェード中もタイトル表示")
 
     def render_worker():
         try:
@@ -1524,19 +1529,69 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         note_speed_ratio=note_speed_ratio
                     )
 
-                if title_template != "なし":
-                    bgr_frame = apply_title_overlay_bgr(
-                        bgr_frame=bgr_frame,
-                        width=width,
-                        height=height,
-                        scale=scale,
-                        title_template=title_template,
-                        title_text=video_title,
-                        credit_text=video_credit,
-                        current_time=current_time_sec,
-                        intro_display_dur=intro_display_dur,
-                        is_single_preview=False
-                    )
+                in_alpha = (
+                    max(0.0, min(1.0, current_time_sec / fade_in_dur))
+                    if (fade_in and fade_in_dur > 1e-4 and current_time_sec < fade_in_dur)
+                    else 1.0
+                )
+                rem_sec = max(0.0, exp_max_duration - (frame_idx + 1) / fps)
+                out_alpha = (
+                    max(0.0, min(1.0, rem_sec / fade_out_dur))
+                    if (fade_out and fade_out_dur > 1e-4 and rem_sec < fade_out_dur)
+                    else 1.0
+                )
+
+                if "一緒に" in title_mode_str:
+                    if title_template != "なし":
+                        bgr_frame = apply_title_overlay_bgr(
+                            bgr_frame=bgr_frame,
+                            width=width,
+                            height=height,
+                            scale=scale,
+                            title_template=title_template,
+                            title_text=video_title,
+                            credit_text=video_credit,
+                            current_time=current_time_sec,
+                            intro_display_dur=intro_display_dur,
+                            is_single_preview=False
+                        )
+                    if in_alpha < 1.0:
+                        cv2.convertScaleAbs(bgr_frame, alpha=in_alpha, dst=bgr_frame)
+                elif "非表示" in title_mode_str:
+                    if in_alpha < 1.0:
+                        cv2.convertScaleAbs(bgr_frame, alpha=in_alpha, dst=bgr_frame)
+                    elif title_template != "なし":
+                        bgr_frame = apply_title_overlay_bgr(
+                            bgr_frame=bgr_frame,
+                            width=width,
+                            height=height,
+                            scale=scale,
+                            title_template=title_template,
+                            title_text=video_title,
+                            credit_text=video_credit,
+                            current_time=max(0.0, current_time_sec - fade_in_dur),
+                            intro_display_dur=intro_display_dur,
+                            is_single_preview=False
+                        )
+                else:
+                    if in_alpha < 1.0:
+                        cv2.convertScaleAbs(bgr_frame, alpha=in_alpha, dst=bgr_frame)
+                    if title_template != "なし":
+                        bgr_frame = apply_title_overlay_bgr(
+                            bgr_frame=bgr_frame,
+                            width=width,
+                            height=height,
+                            scale=scale,
+                            title_template=title_template,
+                            title_text=video_title,
+                            credit_text=video_credit,
+                            current_time=current_time_sec,
+                            intro_display_dur=intro_display_dur,
+                            is_single_preview=False
+                        )
+
+                if out_alpha < 1.0:
+                    cv2.convertScaleAbs(bgr_frame, alpha=out_alpha, dst=bgr_frame)
                 
                 video_writer.write(bgr_frame)
 

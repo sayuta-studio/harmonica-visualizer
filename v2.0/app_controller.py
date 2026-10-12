@@ -699,6 +699,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             "export_range_menu",
             "intro_sec_menu",
             "outro_sec_menu",
+            "fade_in_switch",
+            "fade_out_switch",
+            "fade_in_title_menu",
             "title_template_menu",
             "video_title_entry",
             "video_credit_entry",
@@ -802,6 +805,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         # Step 3 & Step 4 動画書き出し拡張パラメータ（動画編集タブのマスタースイッチ連動）
         export_range = self.gui.export_range_menu.get() if hasattr(self.gui, "export_range_menu") else "全曲"
         intro_sec, outro_sec = self.get_intro_outro_seconds() if hasattr(self, "get_intro_outro_seconds") else (0.0, 0.0)
+        fade_in = bool(self.gui.fade_in_switch.get()) if hasattr(self.gui, "fade_in_switch") else False
+        fade_out = bool(self.gui.fade_out_switch.get()) if hasattr(self.gui, "fade_out_switch") else False
+        fade_in_title_mode = self.gui.fade_in_title_menu.get() if hasattr(self.gui, "fade_in_title_menu") else "フェード中もタイトル表示"
 
         edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
         bg_img_path, bg_bright, bg_fit, bg_rot = (
@@ -876,6 +882,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             bg_brightness=bg_bright,
             bg_fit_mode=bg_fit,
             bg_rotation=bg_rot,
+            fade_in=fade_in,
+            fade_out=fade_out,
+            fade_in_title_mode=fade_in_title_mode,
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック

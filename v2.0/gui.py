@@ -1089,7 +1089,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.export_range_menu.pack(side="right", fill="x", expand=True)
 
         in_out_row = ctk.CTkFrame(self.export_range_group, fg_color="transparent")
-        in_out_row.pack(fill="x", padx=15, pady=(3, 10))
+        in_out_row.pack(fill="x", padx=15, pady=3)
         ctk.CTkLabel(in_out_row, text="前後の余白:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
         ctk.CTkLabel(in_out_row, text="前", font=self.f_jp_norm, text_color="#cccccc").pack(side="left", padx=(0, 3))
         self.intro_sec_menu = ctk.CTkOptionMenu(
@@ -1114,6 +1114,44 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         )
         self.outro_sec_menu.set("2秒")
         self.outro_sec_menu.pack(side="left")
+
+        fade_row = ctk.CTkFrame(self.export_range_group, fg_color="transparent")
+        fade_row.pack(fill="x", padx=15, pady=3)
+        ctk.CTkLabel(fade_row, text="フェード演出:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
+        self.fade_in_switch = ctk.CTkSwitch(
+            fade_row,
+            text="開始フェードイン",
+            font=self.f_jp_bold,
+            command=self.controller.on_setting_changed
+        )
+        self.fade_in_switch.deselect()
+        self.fade_in_switch.pack(side="left", padx=(0, 8))
+
+        self.fade_out_switch = ctk.CTkSwitch(
+            fade_row,
+            text="終了フェードアウト",
+            font=self.f_jp_bold,
+            command=self.controller.on_setting_changed
+        )
+        self.fade_out_switch.deselect()
+        self.fade_out_switch.pack(side="left")
+
+        fade_title_row = ctk.CTkFrame(self.export_range_group, fg_color="transparent")
+        fade_title_row.pack(fill="x", padx=15, pady=(3, 10))
+        ctk.CTkLabel(fade_title_row, text="フェード時題名:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
+        self.fade_in_title_menu = ctk.CTkOptionMenu(
+            fade_title_row,
+            values=[
+                "フェード中もタイトル表示",
+                "フェード中はタイトル非表示",
+                "画面と一緒にフェードイン"
+            ],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.fade_in_title_menu.set("フェード中もタイトル表示")
+        self.fade_in_title_menu.pack(side="right", fill="x", expand=True)
 
         # 初期表示タブを「🎵 練習」に設定
         self.tab_practice_frame.pack(fill="both", expand=True)
