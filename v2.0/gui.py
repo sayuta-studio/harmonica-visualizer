@@ -1120,16 +1120,18 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         ctk.CTkLabel(fade_row, text="フェード演出:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
         self.fade_in_switch = ctk.CTkSwitch(
             fade_row,
-            text="開始フェードイン",
+            text="開始",
+            width=82,
             font=self.f_jp_bold,
             command=self.controller.on_setting_changed
         )
         self.fade_in_switch.deselect()
-        self.fade_in_switch.pack(side="left", padx=(0, 8))
+        self.fade_in_switch.pack(side="left", padx=(0, 12))
 
         self.fade_out_switch = ctk.CTkSwitch(
             fade_row,
-            text="終了フェードアウト",
+            text="終了",
+            width=82,
             font=self.f_jp_bold,
             command=self.controller.on_setting_changed
         )
