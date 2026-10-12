@@ -26,7 +26,7 @@ from config import (
 )
 from harmonica_map import (
     is_note_in_range, get_note_fingering, get_note_name, FINGERING_CANDIDATES,
-    get_note_fingering_for_song, is_note_editable, get_hole_4_notes
+    get_note_fingering_for_song, is_note_editable, get_hole_4_notes, BLOW_NOTES_MIDI
 )
 
 _CACHE = {
@@ -38,12 +38,6 @@ _NOTES_INDEX_CACHE = {
     "key": None,
     "start_ticks": [],
     "max_dur_ticks": 0,
-}
-
-_BLOW_NOTES_MIDI = {
-    "16穴": [48, 52, 55, 60, 60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96],
-    "12穴 標準": [60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96], 
-    "12穴 バス": [24, 28, 31, 35, 36, 40, 43, 47, 48, 52, 55, 59]
 }
 
 
@@ -335,7 +329,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         for k, idx in enumerate(visible_indices):
             x_center = X_start_draw + k * W_PITCH * scale + (W_PITCH * scale / 2)
             visible_hole_number_absolute = idx + 1
-            default_note_text = get_note_name(_BLOW_NOTES_MIDI[mode_key][k], is_japanese=is_jp)
+            default_note_text = get_note_name(BLOW_NOTES_MIDI[mode_key][k], is_japanese=is_jp)
 
             hole_cells = {}
             if show_grid4:
@@ -499,7 +493,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
             new_body_state = (is_led_active, cur_note)
             if canvas._body_text_state_cache.get(k) != new_body_state:
                 canvas._body_text_state_cache[k] = new_body_state
-                default_note_text = get_note_name(_BLOW_NOTES_MIDI[mode_key][k], is_japanese=is_jp)
+                default_note_text = get_note_name(BLOW_NOTES_MIDI[mode_key][k], is_japanese=is_jp)
                 if is_led_active:
                     note_text = get_note_name(cur_note, is_japanese=is_jp) if cur_note is not None else default_note_text
                     if lang_seg_value == "なし":

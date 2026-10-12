@@ -9,8 +9,8 @@ import time
 import tkinter as tk
 from tkinter import filedialog
 import traceback
-from audio_engine import synthesize_midi_to_wav
-import harmonica_map  
+import numpy as np
+import harmonica_map
 
 class PlaybackController:
     # Mixinのため self は app_controller.HarmonicaAppIntegrator インスタンスを指します
@@ -422,8 +422,6 @@ class PlaybackController:
 
             self.max_duration = (self.original_max_duration * self.bpm_ratio) + count_in_duration
             self.current_time = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks) + count_in_duration
-            if self.play_state == "playing":
-                self.play_start_time = time.time() - self.current_time
             self.update_time_label()
             
             if hasattr(self, "gui") and hasattr(self.gui, "lbl_lcd_bpm"):
@@ -459,62 +457,6 @@ class PlaybackController:
         self.gui.bpm_entry.delete(0, tk.END)
         self.gui.bpm_entry.insert(0, "100")
         self.apply_bpm()
-
-    def lock_controls_on_play(self, lock=True):
-        """再生中のUIコントロールロック（表示設定・カラー・速度・パート再生モード・小節ジャンプ・ABループは再生中も常時操作可能）"""
-        state = "disabled" if lock else "normal"
-        self.gui.bpm_minus_btn.configure(state="normal")
-        self.gui.bpm_entry.configure(state="normal")
-        self.gui.bpm_plus_btn.configure(state="normal")
-        self.gui.default_bpm_btn.configure(state="normal")
-        self.gui.file_btn.configure(state=state)
-        if hasattr(self.gui, "part_select_btn"):
-            self.gui.part_select_btn.configure(state=state)
-        if hasattr(self.gui, "part_play_mode_menu"):
-            self.gui.part_play_mode_menu.configure(state="normal")
-        
-        self.gui.audio_mode_menu.configure(state=state)
-        self.gui.metro_menu.configure(state=state)
-        self.gui.count_in_menu.configure(state=state)
-        
-        self.gui.jump_entry.configure(state="normal")
-        self.gui.jump_btn.configure(state="normal")
-        
-        self.gui.loop_a_entry.configure(state="normal")
-        self.gui.loop_b_entry.configure(state="normal")
-        self.gui.cb_loop.configure(state="normal")
-        self.gui.btn_set_a.configure(state="normal")
-        self.gui.btn_set_b.configure(state="normal")
-        self.gui.btn_clear_loop.configure(state="normal")
-        if hasattr(self.gui, "note_speed_menu"):
-            self.gui.note_speed_menu.configure(state="normal")
-        
-        self.gui.inst_menu.configure(state=state)
-        self.gui.lang_menu.configure(state="normal")
-        if hasattr(self.gui, "trajectory_menu"):
-            self.gui.trajectory_menu.configure(state="normal")
-        
-        # 再生中も表示パーツ・テーマ・グリッド等はリアルタイム切替可能に常時アンロック
-        self.gui.hole_num_switch.configure(state="normal")
-        self.gui.show_legend_switch.configure(state="normal")
-        self.gui.show_notes_switch.configure(state="normal")
-        self.gui.show_grid_switch.configure(state="normal")
-        self.gui.show_ring_switch.configure(state="normal")
-        self.gui.show_glow_switch.configure(state="normal")
-        if hasattr(self.gui, "show_lookahead_switch"):
-            self.gui.show_lookahead_switch.configure(state="normal")
-        if hasattr(self.gui, "grid4_menu"):
-            self.gui.grid4_menu.configure(state="normal")
-        self.gui.opacity_entry.configure(state="normal")
-        if hasattr(self.gui, "reset_fingering_btn"):
-            self.gui.reset_fingering_btn.configure(state=state)
-        self.gui.bg_menu.configure(state="normal")
-        self.gui.res_menu.configure(state="normal")
-        
-        if self.fingering_edit_mode:
-            self.gui.export_btn.configure(state="disabled")
-        else:
-            self.gui.export_btn.configure(state=state)
 
     def on_play(self):
         if not self.midi_notes: return
@@ -609,10 +551,7 @@ class PlaybackController:
         
         self.current_tick = self.midi_engine.accumulated_ticks
         count_in_duration = self.get_count_in_duration()
-        
-        now = time.time()
         elapsed_sec = self.midi_engine.ticks_to_ms(self.current_tick) / 1000.0
-        self.play_start_time = now - (elapsed_sec + count_in_duration)
         
         self.current_time = elapsed_sec + count_in_duration
         self.update_time_label()
@@ -709,10 +648,7 @@ class PlaybackController:
             
             self.current_tick = self.midi_engine.accumulated_ticks
             count_in_duration = self.get_count_in_duration()
-            
-            now = time.time()
             elapsed_sec = self.midi_engine.ticks_to_ms(self.current_tick) / 1000.0
-            self.play_start_time = now - (elapsed_sec + count_in_duration)
             
             self.current_time = elapsed_sec + count_in_duration
             self.update_time_label()
@@ -833,6 +769,26 @@ class PlaybackController:
     # ==============================================================================
     # 外部音源（伴奏・実演録音）の読み込み・リアルタイム頭出し同期・音量制御
     # ==============================================================================
+    def get_ext_audio_offset_ms(self):
+        """外部音源の開始オフセット(ms)を整数として返します（正値＝外部音源を遅らせる、負値＝外部音源の頭を削って早める）。"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "ext_audio_offset_entry"):
+            return 0
+        raw = str(self.gui.ext_audio_offset_entry.get()).replace("ms", "").strip()
+        try:
+            return max(-60000, min(60000, int(round(float(raw)))))
+        except ValueError:
+            return 0
+
+    def get_ext_audio_vol_pct(self):
+        """外部音源の音量(%)を 0.0〜200.0 の範囲で返します。"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "ext_audio_vol_entry"):
+            return 100.0
+        raw = str(self.gui.ext_audio_vol_entry.get()).replace("%", "").strip()
+        try:
+            return max(0.0, min(200.0, float(raw)))
+        except ValueError:
+            return 100.0
+
     def on_select_ext_audio(self):
         """外部音源ファイル（WAV/MP3/M4A等）を選択し、44.1kHzステレオPCMとしてメモリにロードします。"""
         from audio_engine import load_external_audio_pcm
@@ -909,10 +865,8 @@ class PlaybackController:
         if cur_tick >= 0:
             song_sec = self.midi_engine.tick_to_sec(cur_tick)
         else:
-            # カウントイン中（負のティック）
-            tpb = max(1, self.midi_engine.ticks_per_beat)
-            bpm = max(1.0, self.current_bpm)
-            song_sec = (cur_tick / float(tpb)) * (60.0 / bpm)
+            # カウントイン中（負のティック）：update_clock と同じ tick_to_sec 換算式に統一
+            song_sec = -self.midi_engine.tick_to_sec(-cur_tick)
 
         offset_sec = self.get_ext_audio_offset_ms() / 1000.0
         ext_pos_sec = song_sec - offset_sec
@@ -1066,7 +1020,7 @@ class PlaybackController:
                 self.on_pause()
             else:
                 self.on_play()
-        elif ks in ("BackSpace", "Escape"):
+        elif ks in ("BackSpace", "Escape", "Return"):
             self.on_stop()
         elif ks in ("bracketleft", "comma", "less", "braceleft"):
             step = -1 if is_shift else (-100 if is_ctrl else -10)
@@ -1093,5 +1047,9 @@ class PlaybackController:
         elif ks in ("b", "B"):
             self.set_loop_b_at_current()
         elif ks in ("l", "L"):
-            self.gui.cb_loop.toggle()
+            if self.gui.cb_loop.get():
+                self.gui.cb_loop.deselect()
+            else:
+                self.gui.cb_loop.select()
+            self.on_loop_toggle()
 

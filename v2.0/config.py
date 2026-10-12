@@ -220,3 +220,53 @@ def get_note_dest_x(note, inst_type, scale=1.0, start_tick=0):
 
     dest_x = center_x_absolute + offset - X_shift
     return dest_x
+
+
+def draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False):
+    """
+    左上に光源をシミュレートした立体的な『扁平縦長ステンレス楕円ボタン』を
+    Pillowで生成して返します（スキン自動生成および動画出力のフォールバック描画で共通利用）。
+    """
+    import math
+    from PIL import Image
+
+    img = Image.new("RGBA", (btn_w, btn_h), (0, 0, 0, 0))
+    rx = btn_w / 2.0
+    ry = btn_h / 2.0
+    cx, cy = rx, ry
+    pixels = img.load()
+    for y_idx in range(btn_h):
+        for x_idx in range(btn_w):
+            dx = x_idx - cx
+            dy = y_idx - cy
+            dist_sq = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry)
+            if dist_sq <= 1.0:
+                dz = math.sqrt(max(0.0, 1.0 - dist_sq))
+                nx, ny, nz = dx / rx, dy / ry, dz
+                n_len = math.sqrt(nx * nx + ny * ny + nz * nz)
+                if n_len > 0:
+                    nx, ny, nz = nx / n_len, ny / n_len, nz / n_len
+
+                lx, ly, lz = -0.5, -0.5, 0.707
+                l_len = math.sqrt(lx * lx + ly * ly + lz * lz)
+                lx, ly, lz = lx / l_len, ly / l_len, lz / l_len
+
+                dot = nx * lx + ny * ly + nz * lz
+                diff = max(0.0, dot)
+
+                r_z = 2.0 * dot * nz - lz
+                spec = max(0.0, r_z)
+                spec_power = math.pow(spec, 8)
+
+                ambient = 60 if not is_on else 45
+                diff_factor = 110 if not is_on else 90
+                base_color = ambient + diff * diff_factor + spec_power * 80
+                val = min(255, int(base_color))
+
+                edge_dist = 1.0 - math.sqrt(dist_sq)
+                alpha = 255
+                if edge_dist < 0.1:
+                    alpha = int(255 * (edge_dist / 0.1))
+
+                pixels[x_idx, y_idx] = (val, val, val, alpha)
+    return img

@@ -11,62 +11,7 @@
 
 import os
 import wave
-import threading
 import numpy as np
-
-if os.name == 'nt':
-    import winsound
-
-class WindowsBeepSynth:
-    def __init__(self):
-        print("[MIDIフォールバック] Windows標準ビープ音(電子音)モードを起動します。")
-
-    def note_on(self, note, velocity, duration_sec, speed=1.0):
-        freq = int(440.0 * (2.0 ** ((note - 69) / 12.0)))
-        freq = max(37, min(32767, freq))
-        duration_ms = int((duration_sec / speed) * 900)
-        duration_ms = max(50, duration_ms)
-
-        def beep_thread():
-            try:
-                winsound.Beep(freq, duration_ms)
-            except Exception:
-                pass
-
-        t = threading.Thread(target=beep_thread, daemon=True)
-        t.start()
-
-    def note_off(self, note):
-        pass
-
-    def all_notes_off(self):
-        pass
-
-    def close(self):
-        pass
-
-
-class WindowsMidiSynth:
-    def __init__(self):
-        self.device = None
-        self.volume_factor = 0.8
-        self.fallback_synth = WindowsBeepSynth()
-
-    def note_on(self, note, velocity, duration_sec=1.0, speed=1.0):
-        if self.fallback_synth:
-            self.fallback_synth.note_on(note, velocity, duration_sec, speed)
-
-    def note_off(self, note):
-        if self.fallback_synth:
-            self.fallback_synth.note_off(note)
-
-    def all_notes_off(self):
-        if self.fallback_synth:
-            self.fallback_synth.all_notes_off()
-
-    def close(self):
-        if self.fallback_synth:
-            self.fallback_synth.close()
 
 
 def generate_harmonica_tone(freq, num_samples, sample_rate):

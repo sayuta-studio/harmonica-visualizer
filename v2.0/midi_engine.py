@@ -999,22 +999,6 @@ class MidiEngine:
     def ticks_to_ms(self, ticks):
         return self.tick_to_sec(ticks) * 1000.0
 
-    def ms_to_ticks(self, ms):
-        return int(self.sec_to_tick(ms / 1000.0))
-
-    def sync_with_wav_ms(self, ms):
-        target_tick = self.ms_to_ticks(ms)
-        self.accumulated_ticks = max(0, min(target_tick, self.total_ticks))
-        
-        closest_index = 0
-        min_diff = float('inf')
-        for idx, event in enumerate(self.merged_messages):
-            diff = abs(event.abs_tick - self.accumulated_ticks)
-            if diff < min_diff:
-                min_diff = diff
-                closest_index = idx
-        self.current_msg_index = closest_index
-
     def _playback_worker(self):
         try:
             last_sent_measure = -1

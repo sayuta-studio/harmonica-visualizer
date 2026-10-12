@@ -74,10 +74,10 @@ from config import (
     W_PITCH, D_HOLE, CANVAS_WIDTH, CANVAS_HEIGHT,
     get_y_layout_params, get_y_trajectory_params, get_portable_path,
     LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT,
-    get_layout_params, get_note_dest_x, hex_to_rgb
+    get_layout_params, get_note_dest_x, hex_to_rgb, draw_metallic_button_pil_flat
 )
 from harmonica_map import (
-    is_note_in_range, get_note_name, get_note_fingering_for_song, get_hole_4_notes
+    is_note_in_range, get_note_name, get_note_fingering_for_song, get_hole_4_notes, BLOW_NOTES_MIDI
 )
 
 def resolve_resolution_and_scale(res_mode, aspect_ratio):
@@ -167,49 +167,6 @@ def draw_bordered_text_pillow(draw, position, text, text_color, font, border_wid
         for dy in range(-border_width, border_width + 1):
             draw.text((x + dx, y + dy), text, fill=border_color, font=font, anchor="mm")
     draw.text((x, y), text, fill=text_color, font=font, anchor="mm")
-
-
-def _draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False):
-    img = Image.new("RGBA", (btn_w, btn_h), (0, 0, 0, 0))
-    rx = btn_w / 2.0
-    ry = btn_h / 2.0
-    cx, cy = rx, ry
-    pixels = img.load()
-    for y_idx in range(btn_h):
-        for x_idx in range(btn_w):
-            dx = x_idx - cx
-            dy = y_idx - cy
-            dist_sq = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry)
-            if dist_sq <= 1.0:
-                dz = math.sqrt(max(0.0, 1.0 - dist_sq))
-                nx, ny, nz = dx / rx, dy / ry, dz
-                n_len = math.sqrt(nx * nx + ny * ny + nz * nz)
-                if n_len > 0:
-                    nx, ny, nz = nx / n_len, ny / n_len, nz / n_len
-
-                lx, ly, lz = -0.5, -0.5, 0.707
-                l_len = math.sqrt(lx * lx + ly * ly + lz * lz)
-                lx, ly, lz = lx / l_len, ly / l_len, lz / l_len
-
-                dot = nx * lx + ny * ly + nz * lz
-                diff = max(0.0, dot)
-
-                r_z = 2.0 * dot * nz - lz
-                spec = max(0.0, r_z)
-                spec_power = math.pow(spec, 8)
-
-                ambient = 60 if not is_on else 45
-                diff_factor = 110 if not is_on else 90
-                base_color = ambient + diff * diff_factor + spec_power * 80
-                val = min(255, int(base_color))
-
-                edge_dist = 1.0 - math.sqrt(dist_sq)
-                alpha = 255
-                if edge_dist < 0.1:
-                    alpha = int(255 * (edge_dist / 0.1))
-
-                pixels[x_idx, y_idx] = (val, val, val, alpha)
-    return img
 
 
 def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, inst_type, lang_seg_value, 
@@ -348,12 +305,12 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
             btn_h = max(1, int(36 * scale))
             d_off = ImageDraw.Draw(body_overlay_off)
             d_off.rounded_rectangle([lever_left, y_center_s - 12 * scale, lever_left + 24 * scale, y_center_s + 12 * scale], radius=int(4 * scale), fill=(85, 85, 85, 255))
-            btn_img_off = _draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False)
+            btn_img_off = draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False)
             body_overlay_off.paste(btn_img_off, (int(lever_left + 22 * scale), int(y_center_s - btn_h / 2)), mask=btn_img_off)
 
             d_on = ImageDraw.Draw(body_overlay_on)
             d_on.rounded_rectangle([lever_left, y_center_s - 12 * scale, lever_left + 12 * scale, y_center_s + 12 * scale], radius=int(4 * scale), fill=(58, 58, 58, 255))
-            btn_img_on = _draw_metallic_button_pil_flat(btn_w, btn_h, is_on=True)
+            btn_img_on = draw_metallic_button_pil_flat(btn_w, btn_h, is_on=True)
             body_overlay_on.paste(btn_img_on, (int(lever_left + 3 * scale), int(y_center_s - btn_h / 2)), mask=btn_img_on)
 
         plate_w = int(total_width + 30 * scale)
@@ -402,11 +359,6 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         clean_note_band = full_off.crop((0, note_band_y0, width, note_band_y1))
 
         hole_4_maps = {}
-        blow_notes_midi = {
-            "16穴": [48, 52, 55, 60, 60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96],
-            "12穴 標準": [60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96],
-            "12穴 バス": [24, 28, 31, 35, 36, 40, 43, 47, 48, 52, 55, 59]
-        }
         mode_key = "16穴" if "16穴" in inst_type else ("12穴 標準" if "標準" in inst_type else "12穴 バス")
 
         for full_img in (full_off, full_on):
@@ -444,7 +396,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                         if cell_text:
                             d_full.text(((cx0 + cx1) / 2.0, (cy0 + cy1) / 2.0), cell_text, fill=t_fill, font=f_grid, anchor="mm")
                 elif lang_seg_value != "なし":
-                    note_text = get_note_name(blow_notes_midi[mode_key][k], is_japanese=is_jp)
+                    note_text = get_note_name(BLOW_NOTES_MIDI[mode_key][k], is_japanese=is_jp)
                     text_color = "#000000" if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else "#AAAAAA"
                     draw_bordered_text_pillow(d_full, (x_center, y_center_s + 60 * scale), note_text, text_color, f_note, border_width=2 * scale)
 
@@ -858,9 +810,6 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
     resized_pil = pil_frame.resize((preview_w, preview_h), Image.Resampling.LANCZOS)
     
     preview_canvas = Image.new("RGB", (960, 540), (20, 20, 20))
-    preview_canvas.paste(resized_pil, ((960 - preview_w)//2, (540 - preview_h)//2))
-
-    bgr_frame = cv2.cvtColor(np.array(preview_canvas), cv2.COLOR_RGB2BGR)
     
     bgr_notes_part = cv2.cvtColor(np.array(resized_pil), cv2.COLOR_RGB2BGR)
     if is_notes_on:
@@ -898,9 +847,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
     )
     
     preview_canvas.paste(Image.fromarray(cv2.cvtColor(bgr_notes_part, cv2.COLOR_BGR2RGB)), ((960 - preview_w)//2, (540 - preview_h)//2))
-    
-    rgb_frame = cv2.cvtColor(cv2.cvtColor(np.array(preview_canvas), cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2RGB)
-    pil_final_preview = Image.fromarray(rgb_frame)
+    pil_final_preview = preview_canvas
     
     pop_win = ctk.CTkToplevel(parent_window)
     pop_win.title(f"📸 1枚絵完成プレビュー - {res_mode} ({current_time:.2f}秒)")
@@ -1285,16 +1232,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
 
     status_label.configure(text="🎬 動画エクスポートの準備中...", text_color="#ffcc00")
 
-    try:
-        if getattr(sys, 'frozen', False):
-            base_dir = os.path.dirname(sys.executable)
-        else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-    except Exception:
-        base_dir = os.path.abspath(".")
-
-    temp_dir = os.path.join(base_dir, "temp")
-    output_dir = os.path.join(base_dir, "output")
+    temp_dir = get_portable_path("temp")
+    output_dir = get_portable_path("output")
     os.makedirs(temp_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 

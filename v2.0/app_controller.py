@@ -22,25 +22,12 @@ import numpy as np
 import math
 
 # モジュール全体を安全にインポート
-import harmonica_map
 from config import (
-    COLOR_BLOW_RGB, COLOR_BLOW_INNER, COLOR_DRAW_RGB, COLOR_DRAW_INNER,
-    W_PITCH, D_HOLE, CANVAS_WIDTH, CANVAS_HEIGHT,
-    get_portable_path, get_visualizer_layout_params, get_note_dest_x,
-    LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT
+    get_portable_path, get_visualizer_layout_params, draw_metallic_button_pil_flat
 )
-from harmonica_map import (
-    is_note_in_range, get_note_fingering, get_note_name, apply_fingering_preset,
-    FINGERING_CANDIDATES, SONG_FINGERING_OVERRIDES, save_song_fingering, load_song_fingering,
-    get_note_fingering_for_song, is_note_editable
-)
-from audio_engine import synthesize_midi_to_wav
 from midi_engine import MidiEngine
 from gui import HarmonicaAppGUI
 from visualizer import draw_harmonica_canvas
-
-import settings_manager
-import video_exporter
 
 # 機能別 Mixin コントローラーのインポート
 from playback_controller import PlaybackController
@@ -67,7 +54,6 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.play_state = "stopped"
         self.last_update_time = 0.0
         self.current_midi_path = None
-        self.temp_wav_toggle = 0
         
         self.video_export_cancelled = False
         
@@ -85,7 +71,6 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         # 自立進行用の等速累積時間ティック
         self.current_tick = 0.0
-        self.play_start_time = 0.0
 
         self.default_bpm = 120.0
         self.current_bpm = 120.0
@@ -214,59 +199,6 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             final_face.paste(face_img, (0, 0), mask=mask)
             final_face.save(face_path, "PNG")
             print("[システム] skins/マウスピース.png の自動書き出しに成功しました。")
-
-        # 🚀【解決（3D扁平縦長楕円ステンレス金属光沢シミュレーション）】
-        def draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False):
-            """
-            左上に光源をシミュレートした、極めて美しい立体的な『扁平縦長ステンレス楕円ボタン』
-            をPillowで生成して返します（拡散光Diffuse＋反射光Specular物理計算）。
-            """
-            img = Image.new("RGBA", (btn_w, btn_h), (0,0,0,0))
-            rx = btn_w / 2.0
-            ry = btn_h / 2.0
-            cx, cy = rx, ry
-            pixels = img.load()
-            for y_idx in range(btn_h):
-                for x_idx in range(btn_w):
-                    dx = x_idx - cx
-                    dy = y_idx - cy
-                    dist_sq = (dx*dx)/(rx*rx) + (dy*dy)/(ry*ry)
-                    if dist_sq <= 1.0:
-                        # Z高さの近似による法線ベクトル算出
-                        dz = math.sqrt(max(0.0, 1.0 - dist_sq))
-                        nx, ny, nz = dx / rx, dy / ry, dz
-                        n_len = math.sqrt(nx*nx + ny*ny + nz*nz)
-                        if n_len > 0:
-                            nx, ny, nz = nx/n_len, ny/n_len, nz/n_len
-                        
-                        # 光源ベクトル: 左上方向から
-                        lx, ly, lz = -0.5, -0.5, 0.707
-                        l_len = math.sqrt(lx*lx + ly*ly + lz*lz)
-                        lx, ly, lz = lx/l_len, ly/l_len, lz/l_len
-                        
-                        dot = nx*lx + ny*ly + nz*lz
-                        diff = max(0.0, dot)
-                        
-                        # 反射スペキュラー
-                        r_x = 2.0 * dot * nx - lx
-                        r_y = 2.0 * dot * ny - ly
-                        r_z = 2.0 * dot * nz - lz
-                        spec = max(0.0, r_z)
-                        spec_power = math.pow(spec, 8) # マイルドなクローム光沢
-                        
-                        ambient = 60 if not is_on else 45
-                        diff_factor = 110 if not is_on else 90
-                        base_color = ambient + diff * diff_factor + spec_power * 80
-                        val = min(255, int(base_color))
-                        
-                        # エッジアンチエイリアス
-                        edge_dist = 1.0 - math.sqrt(dist_sq)
-                        alpha = 255
-                        if edge_dist < 0.1:
-                            alpha = int(255 * (edge_dist / 0.1))
-                        
-                        pixels[x_idx, y_idx] = (val, val, val, alpha)
-            return img
 
         # 2. スライドレバー「レバーオフ.png」の自立生成 (ステンレス扁平ボタン・通常位置)
         if not os.path.exists(lever_off_path):
@@ -483,87 +415,61 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
     def on_engine_error(self, err):
         print(f"[演奏スレッド警告] {err}")
 
-    # Canvasクリックイベントハンドラ
-    def on_canvas_click(self, event):
-        """Canvasクリック時にEntry等からフォーカスを外し、運指変更モード時は対象ノーツの運指設定を循環させます。"""
-        try:
-            self.gui.canvas.focus_set()
-        except Exception:
-            pass
-        if not self.fingering_edit_mode:
-            return
-            
-        items = self.gui.canvas.find_overlapping(event.x - 2, event.y - 2, event.x + 2, event.y + 2)
-        for item in items:
-            tags = self.gui.canvas.gettags(item)
-            for tag in tags:
-                if tag.startswith("note_edit_"):
-                    parts = tag.split("_")
-                    if len(parts) == 4:
-                        start_tick = int(parts[2])
-                        note_val = int(parts[3])
-                        
-                        self.cycle_note_fingering(start_tick, note_val)
-                        return
-
-    def cycle_note_fingering(self, start_tick, note_val):
-        """対象ノーツのオーバーライドインデックスを循環させ、右上に常時描画させるための状態を更新します。"""
-        if not is_note_editable(note_val, self.gui.inst_menu.get()):
-            return
-
-        lookup_note = note_val
-        if "バス" in self.gui.inst_menu.get():
-            lookup_note = note_val + 36
-            
-        if lookup_note not in FINGERING_CANDIDATES:
-            return
-            
-        candidates = FINGERING_CANDIDATES[lookup_note]
-        current_idx = SONG_FINGERING_OVERRIDES.get((start_tick, lookup_note), 0)
+    def lock_controls_on_play(self, lock=True):
+        """再生中のUIコントロールロック（表示設定・カラー・速度・パート再生モード・小節ジャンプ・ABループは再生中も常時操作可能）"""
+        state = "disabled" if lock else "normal"
+        self.gui.bpm_minus_btn.configure(state="normal")
+        self.gui.bpm_entry.configure(state="normal")
+        self.gui.bpm_plus_btn.configure(state="normal")
+        self.gui.default_bpm_btn.configure(state="normal")
+        self.gui.file_btn.configure(state=state)
+        if hasattr(self.gui, "part_select_btn"):
+            self.gui.part_select_btn.configure(state=state)
+        if hasattr(self.gui, "part_play_mode_menu"):
+            self.gui.part_play_mode_menu.configure(state="normal")
         
-        old_f = candidates[current_idx]
-        old_str = f"{old_f['hole']}穴 {old_f['action']} {old_f['lever']}"
+        self.gui.audio_mode_menu.configure(state=state)
+        self.gui.metro_menu.configure(state=state)
+        self.gui.count_in_menu.configure(state=state)
         
-        next_idx = (current_idx + 1) % len(candidates)
-        SONG_FINGERING_OVERRIDES[(start_tick, lookup_note)] = next_idx
+        self.gui.jump_entry.configure(state="normal")
+        self.gui.jump_btn.configure(state="normal")
         
-        new_f = candidates[next_idx]
-        new_str = f"{new_f['hole']}穴 {new_f['action']} {new_f['lever']}"
+        self.gui.loop_a_entry.configure(state="normal")
+        self.gui.loop_b_entry.configure(state="normal")
+        self.gui.cb_loop.configure(state="normal")
+        self.gui.btn_set_a.configure(state="normal")
+        self.gui.btn_set_b.configure(state="normal")
+        self.gui.btn_clear_loop.configure(state="normal")
+        if hasattr(self.gui, "note_speed_menu"):
+            self.gui.note_speed_menu.configure(state="normal")
         
-        save_song_fingering(self.current_midi_path)
+        self.gui.inst_menu.configure(state=state)
+        self.gui.lang_menu.configure(state="normal")
+        if hasattr(self.gui, "trajectory_menu"):
+            self.gui.trajectory_menu.configure(state="normal")
         
-        self.rebind_all_notes_fingerings()
+        # 再生中も表示パーツ・テーマ・グリッド等はリアルタイム切替可能に常時アンロック
+        self.gui.hole_num_switch.configure(state="normal")
+        self.gui.show_legend_switch.configure(state="normal")
+        self.gui.show_notes_switch.configure(state="normal")
+        self.gui.show_grid_switch.configure(state="normal")
+        self.gui.show_ring_switch.configure(state="normal")
+        self.gui.show_glow_switch.configure(state="normal")
+        if hasattr(self.gui, "show_lookahead_switch"):
+            self.gui.show_lookahead_switch.configure(state="normal")
+        if hasattr(self.gui, "grid4_menu"):
+            self.gui.grid4_menu.configure(state="normal")
+        self.gui.opacity_entry.configure(state="normal")
+        if hasattr(self.gui, "reset_fingering_btn"):
+            self.gui.reset_fingering_btn.configure(state=state)
+        self.gui.bg_menu.configure(state="normal")
+        self.gui.res_menu.configure(state="normal")
         
-        self.play_edit_click_sound()
-        
-        note_name_str = get_note_name(note_val, is_japanese=("ドレミ" in self.gui.lang_menu.get()))
-        
-        self.last_edited_note_name = note_name_str
-        self.last_edited_fingering = new_str
-        
-        self.gui.status_label.configure(
-            text=f"切替: {note_name_str} ({new_str})", 
-            text_color="#ffcc00"
-        )
-        
-        self.draw_harmonica_static()
-
-    def play_edit_click_sound(self):
-        try:
-            sample_rate = 44100
-            duration = 0.05  
-            t = np.arange(0, duration, 1.0 / sample_rate)
-            wave_data = np.sin(2.0 * np.pi * 1600.0 * t)
-            
-            fade_len = int(sample_rate * 0.01)
-            wave_data[-fade_len:] *= np.linspace(1.0, 0.0, fade_len)
-            
-            pcm_data = (wave_data * 12000).astype(np.int16)
-            sound = pygame.mixer.Sound(buffer=pcm_data)
-            sound.set_volume(self.midi_engine.volume_factor * 0.4)
-            sound.play()
-        except Exception as e:
-            print(f"[警告] 効果音生成失敗: {e}")
+        if self.fingering_edit_mode:
+            self.gui.export_btn.configure(state="disabled")
+        else:
+            self.gui.export_btn.configure(state=state)
 
     # 動画書き出し時専用の一括コントロールロック
     def lock_controls_for_export(self, lock=True):
@@ -812,8 +718,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         # すべてのコントロールロックを解除
         self.lock_controls_for_export(False)
         
-        # ボタンのテキストとカラーを通常時に戻す
-        self.gui.export_btn.configure(text="🎬 書き出し", fg_color="#2b8c54", hover_color="#1f6b3e", state="normal")
+        # ボタンのテキストとカラーを通常時に戻す（運指変更モード中は disabled を維持）
+        btn_state = "disabled" if self.fingering_edit_mode else "normal"
+        self.gui.export_btn.configure(text="🎬 書き出し", fg_color="#2b8c54", hover_color="#1f6b3e", state=btn_state)
         
         if status == "cancelled":
             self.gui.status_label.configure(text="🛑 レンダリングを中止しました", text_color="#ff5555")
@@ -894,21 +801,3 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.midi_engine.stop()
         self.midi_engine.close_device()
         super().destroy()
-
-    # ロード・変え指設定変更時に、全楽譜ノーツ(midi_notes)に解決済み運指と描画用メタデータをキャッシュインする関数
-    def rebind_all_notes_fingerings(self):
-        """すべての楽譜ノーツに対して、解決済み運指・音域内外・落下先X座標・音名を事前計算して埋め込みます。"""
-        if not self.midi_notes:
-            return
-        inst_type = self.gui.inst_menu.get()
-        for note_data in self.midi_notes:
-            start_tick = note_data.get("start_tick", 0)
-            note_val = note_data["note"]
-            note_data["fingering"] = harmonica_map.get_note_fingering_for_song(start_tick, note_val, inst_type)
-            note_data["in_range"] = harmonica_map.is_note_in_range(note_val, inst_type)
-            note_data["is_editable"] = harmonica_map.is_note_editable(note_val, inst_type)
-            note_data["name_cde"] = harmonica_map.get_note_name(note_val, is_japanese=False)
-            note_data["name_jp"] = harmonica_map.get_note_name(note_val, is_japanese=True)
-            note_data["dest_x_base"] = get_note_dest_x(note_val, inst_type, scale=1.0, start_tick=start_tick)
-            note_data["_bound_inst"] = inst_type
-        print("[システム] すべての音符オブジェクトへの運指・座標プリ・バインドが完了しました。")

@@ -9,9 +9,15 @@
 import os
 import tkinter as tk
 from tkinter import colorchooser
+import numpy as np
+import pygame
 import settings_manager
-import harmonica_map  
-from config import get_visualizer_layout_params
+import harmonica_map
+from harmonica_map import (
+    is_note_editable, FINGERING_CANDIDATES, SONG_FINGERING_OVERRIDES,
+    save_song_fingering, get_note_name
+)
+from config import get_portable_path, get_visualizer_layout_params, get_note_dest_x
 
 class SettingsController:
     # Mixinのため self は app_controller.HarmonicaAppIntegrator インスタンスを指します
@@ -216,26 +222,6 @@ class SettingsController:
                 except ValueError:
                     out_sec = 2.0
         return max(0.0, in_sec), max(0.0, out_sec)
-
-    def get_ext_audio_offset_ms(self):
-        """外部音源の開始オフセット(ms)を整数として返します（正値＝外部音源を遅らせる、負値＝外部音源の頭を削って早める）。"""
-        if not hasattr(self, "gui") or not hasattr(self.gui, "ext_audio_offset_entry"):
-            return 0
-        raw = str(self.gui.ext_audio_offset_entry.get()).replace("ms", "").strip()
-        try:
-            return max(-60000, min(60000, int(round(float(raw)))))
-        except ValueError:
-            return 0
-
-    def get_ext_audio_vol_pct(self):
-        """外部音源の音量(%)を 0.0〜200.0 の範囲で返します。"""
-        if not hasattr(self, "gui") or not hasattr(self.gui, "ext_audio_vol_entry"):
-            return 100.0
-        raw = str(self.gui.ext_audio_vol_entry.get()).replace("%", "").strip()
-        try:
-            return max(0.0, min(200.0, float(raw)))
-        except ValueError:
-            return 100.0
 
     def on_open_output_dir(self):
         """動画の出力先フォルダ（output）をOSのエクスプローラーで開きます。"""
@@ -515,6 +501,95 @@ class SettingsController:
             text_color="#2ecc71"
         )
 
+    def on_canvas_click(self, event):
+        """Canvasクリック時にEntry等からフォーカスを外し、運指変更モード時は対象ノーツの運指設定を循環させます。"""
+        try:
+            self.gui.canvas.focus_set()
+        except Exception:
+            pass
+        if not self.fingering_edit_mode:
+            return
+            
+        items = self.gui.canvas.find_overlapping(event.x - 2, event.y - 2, event.x + 2, event.y + 2)
+        for item in items:
+            tags = self.gui.canvas.gettags(item)
+            for tag in tags:
+                if tag.startswith("note_edit_"):
+                    parts = tag.split("_")
+                    if len(parts) == 4:
+                        start_tick = int(parts[2])
+                        note_val = int(parts[3])
+                        self.cycle_note_fingering(start_tick, note_val)
+                        return
+
+    def cycle_note_fingering(self, start_tick, note_val):
+        """対象ノーツのオーバーライドインデックスを循環させ、右上に常時描画させるための状態を更新します。"""
+        if not is_note_editable(note_val, self.gui.inst_menu.get()):
+            return
+
+        lookup_note = note_val
+        if "バス" in self.gui.inst_menu.get():
+            lookup_note = note_val + 36
+            
+        if lookup_note not in FINGERING_CANDIDATES:
+            return
+            
+        candidates = FINGERING_CANDIDATES[lookup_note]
+        current_idx = SONG_FINGERING_OVERRIDES.get((start_tick, lookup_note), 0)
+        
+        next_idx = (current_idx + 1) % len(candidates)
+        SONG_FINGERING_OVERRIDES[(start_tick, lookup_note)] = next_idx
+        
+        new_f = candidates[next_idx]
+        new_str = f"{new_f['hole']}穴 {new_f['action']} {new_f['lever']}"
+        
+        save_song_fingering(self.current_midi_path)
+        self.rebind_all_notes_fingerings()
+        self.play_edit_click_sound()
+        
+        note_name_str = get_note_name(note_val, is_japanese=("ドレミ" in self.gui.lang_menu.get()))
+        self.last_edited_note_name = note_name_str
+        self.last_edited_fingering = new_str
+        
+        self.gui.status_label.configure(
+            text=f"切替: {note_name_str} ({new_str})", 
+            text_color="#ffcc00"
+        )
+        self.draw_harmonica_static()
+
+    def play_edit_click_sound(self):
+        try:
+            sample_rate = 44100
+            duration = 0.05  
+            t = np.arange(0, duration, 1.0 / sample_rate)
+            wave_data = np.sin(2.0 * np.pi * 1600.0 * t)
+            
+            fade_len = int(sample_rate * 0.01)
+            wave_data[-fade_len:] *= np.linspace(1.0, 0.0, fade_len)
+            
+            pcm_data = (wave_data * 12000).astype(np.int16)
+            sound = pygame.mixer.Sound(buffer=pcm_data)
+            sound.set_volume(self.midi_engine.volume_factor * 0.4)
+            sound.play()
+        except Exception as e:
+            print(f"[警告] 効果音生成失敗: {e}")
+
+    def rebind_all_notes_fingerings(self):
+        """すべての楽譜ノーツに対して、解決済み運指・音域内外・落下先X座標・音名を事前計算して埋め込みます。"""
+        if not self.midi_notes:
+            return
+        inst_type = self.gui.inst_menu.get()
+        for note_data in self.midi_notes:
+            start_tick = note_data.get("start_tick", 0)
+            note_val = note_data["note"]
+            note_data["fingering"] = harmonica_map.get_note_fingering_for_song(start_tick, note_val, inst_type)
+            note_data["in_range"] = harmonica_map.is_note_in_range(note_val, inst_type)
+            note_data["is_editable"] = harmonica_map.is_note_editable(note_val, inst_type)
+            note_data["name_cde"] = harmonica_map.get_note_name(note_val, is_japanese=False)
+            note_data["name_jp"] = harmonica_map.get_note_name(note_val, is_japanese=True)
+            note_data["dest_x_base"] = get_note_dest_x(note_val, inst_type, scale=1.0, start_tick=start_tick)
+            note_data["_bound_inst"] = inst_type
+        print("[システム] すべての音符オブジェクトへの運指・座標プリ・バインドが完了しました。")
 
     def get_effective_canvas_ratio(self):
         """

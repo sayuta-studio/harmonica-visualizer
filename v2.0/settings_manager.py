@@ -6,7 +6,7 @@
 # - 🚀【STEP 4.5】：新設「レバーリング表示」の設定ロード・セーブを追加同期。
 
 import os
-import sys
+from config import get_portable_path
 
 def get_portable_base_dir():
     """
@@ -14,10 +14,7 @@ def get_portable_base_dir():
     ユーザーが実際にダブルクリックして起動した「実行ファイル（.exe）が存在している物理フォルダ」
     の絶対パスを正確に取得します。
     """
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
-    else:
-        return os.path.dirname(os.path.abspath(__file__))
+    return get_portable_path("")
 
 
 DEFAULT_SETTINGS = {
