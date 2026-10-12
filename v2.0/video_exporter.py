@@ -41,30 +41,46 @@ _CACHE = {
 }
 _FONT_CACHE = {}
 _LABEL_STAMP_CACHE = {}
+_MEASURE_STAMP_CACHE = {}
 _EXP_NOTES_INDEX_CACHE = {
     "list_id": None,
     "len": 0,
     "first_start_t": None,
+    "inst_type": None,
     "start_times": [],
     "max_dur": 0.0,
 }
 
-def _get_exporter_notes_index(midi_notes):
+def _get_exporter_notes_index(midi_notes, inst_type=None):
     if not midi_notes:
         return [], 0.0
     lid = id(midi_notes)
     n_len = len(midi_notes)
     first_st = midi_notes[0].get("start_time", 0.0)
+    need_rebind = bool(inst_type and (midi_notes[0].get("_bound_inst") != inst_type or "dest_x_base" not in midi_notes[0]))
     if (
         _EXP_NOTES_INDEX_CACHE["list_id"] != lid
         or _EXP_NOTES_INDEX_CACHE["len"] != n_len
         or _EXP_NOTES_INDEX_CACHE["first_start_t"] != first_st
+        or need_rebind
     ):
         _EXP_NOTES_INDEX_CACHE["list_id"] = lid
         _EXP_NOTES_INDEX_CACHE["len"] = n_len
         _EXP_NOTES_INDEX_CACHE["first_start_t"] = first_st
+        _EXP_NOTES_INDEX_CACHE["inst_type"] = inst_type
         _EXP_NOTES_INDEX_CACHE["start_times"] = [n.get("start_time", 0.0) for n in midi_notes]
         _EXP_NOTES_INDEX_CACHE["max_dur"] = max((n.get("duration", 0.0) for n in midi_notes), default=0.0)
+        if inst_type:
+            for n in midi_notes:
+                if n.get("_bound_inst") != inst_type or "dest_x_base" not in n:
+                    st_tick = n.get("start_tick", 0)
+                    pitch = n["note"]
+                    n["fingering"] = get_note_fingering_for_song(st_tick, pitch, inst_type)
+                    n["in_range"] = is_note_in_range(pitch, inst_type)
+                    n["dest_x_base"] = get_note_dest_x(pitch, inst_type, 1.0, start_tick=st_tick)
+                    n["name_jp"] = get_note_name(pitch, is_japanese=True)
+                    n["name_cde"] = get_note_name(pitch, is_japanese=False)
+                    n["_bound_inst"] = inst_type
     return _EXP_NOTES_INDEX_CACHE["start_times"], _EXP_NOTES_INDEX_CACHE["max_dur"]
 
 from audio_engine import synthesize_midi_to_wav
@@ -169,6 +185,78 @@ def draw_bordered_text_pillow(draw, position, text, text_color, font, border_wid
     draw.text((x, y), text, fill=text_color, font=font, anchor="mm")
 
 
+def _make_premul_bgr_stamp(rgba_img, crop_bbox=True):
+    """
+    PIL.Image(RGBA) から高速ブレンド用の事前乗算スタンプ (premul_bgr_f32, inv_alpha_f32, bx0, by0) を生成します。
+    """
+    if crop_bbox:
+        bbox = rgba_img.getbbox()
+        if not bbox:
+            return None, None, 0, 0
+        bx0, by0, _, _ = bbox
+        arr = np.asarray(rgba_img.crop(bbox))
+    else:
+        bx0, by0 = 0, 0
+        arr = np.asarray(rgba_img)
+    alpha = (arr[:, :, 3:4].astype(np.float32)) * (1.0 / 255.0)
+    bgr = arr[:, :, 2::-1].astype(np.float32)
+    premul_bgr = bgr * alpha
+    inv_alpha = 1.0 - alpha
+    return premul_bgr, inv_alpha, bx0, by0
+
+
+def _blend_premul_stamp_bgr(bgr_frame, stamp, x0, y0, width, height):
+    """
+    事前乗算スタンプ (premul_bgr, inv_alpha, bx0, by0) を bgr_frame の (x0 + bx0, y0 + by0) に高速合成します。
+    """
+    premul_bgr, inv_alpha, bx0, by0 = stamp
+    if premul_bgr is None:
+        return
+    px0 = x0 + bx0
+    py0 = y0 + by0
+    sh, sw = premul_bgr.shape[:2]
+    dx0 = max(0, px0)
+    dy0 = max(0, py0)
+    dx1 = min(width, px0 + sw)
+    dy1 = min(height, py0 + sh)
+    if dx1 > dx0 and dy1 > dy0:
+        sx0 = dx0 - px0
+        sy0 = dy0 - py0
+        sx1 = sx0 + (dx1 - dx0)
+        sy1 = sy0 + (dy1 - dy0)
+        sub_bg = bgr_frame[dy0:dy1, dx0:dx1]
+        bgr_frame[dy0:dy1, dx0:dx1] = (
+            sub_bg.astype(np.float32) * inv_alpha[sy0:sy1, sx0:sx1] + premul_bgr[sy0:sy1, sx0:sx1]
+        ).astype(np.uint8)
+
+
+def _get_measure_label_stamp(text_str, font_size, color_rgba):
+    key = (text_str, int(font_size), color_rgba[:3])
+    cached = _MEASURE_STAMP_CACHE.get(key)
+    if cached is not None:
+        return cached
+    f_m = get_truetype_font("arial.ttf", max(6, int(font_size)))
+    pad_w = max(24, int(font_size * max(2, len(text_str)) + 12))
+    pad_h = max(20, int(font_size * 2.2 + 12))
+    ax = 4
+    ay = pad_h - 4
+    img = Image.new("RGBA", (pad_w, pad_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.text((ax, ay), text_str, fill=color_rgba, font=f_m, anchor="lb")
+    bbox = img.getbbox()
+    if not bbox:
+        res = (None, None, 0, 0)
+        _MEASURE_STAMP_CACHE[key] = res
+        return res
+    bx0, by0, _, _ = bbox
+    arr = np.asarray(img.crop(bbox))
+    alpha = (arr[:, :, 3:4].astype(np.float32)) * (1.0 / 255.0)
+    bgr = arr[:, :, 2::-1].astype(np.float32)
+    res = (bgr * alpha, 1.0 - alpha, bx0 - ax, by0 - ay)
+    _MEASURE_STAMP_CACHE[key] = res
+    return res
+
+
 def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, inst_type, lang_seg_value, 
                                          is_hole_num_on, is_legend_on, is_notes_on, is_grid_on,
                                          note_opacity_value, midi_notes=None, current_time=0.0, current_bpm=120.0, 
@@ -179,12 +267,12 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          use_ring=True, note_speed_ratio=1.0,
                                          bg_image_path=None, bg_brightness=1.0,
                                          bg_fit_mode="中央トリミング (画面いっぱい)",
-                                         bg_rotation="0° (自動補正)"):
+                                         bg_rotation="0° (自動補正)",
+                                         return_bgr=False):
     """
     オフライン書き出し専用：静止パーツ（背景グリッド・カバープレート・4音グリッド64マス・レバー2状態）と
-    発光スタンプを事前キャッシュし、毎フレームは差分（小節線・発音中の穴の発光＆セル点灯）のみを高速合成します。
+    発光スタンプ・各穴の発音状態パッチを事前/遅延キャッシュし、毎フレームはBGR NumPy配列上で高速差分合成します。
     """
-    if active_pitches is None: active_pitches = set()
     if midi_notes is None: midi_notes = []
 
     y_center_s, y_collide_s, y_straight_s, y_hole_line_s, height_diag_s, height_straight_s = get_y_trajectory_params(height / scale, trajectory_mode)
@@ -226,14 +314,14 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         inst_type, canvas_bg_color, lang_seg_value,
         is_hole_num_on, is_legend_on, is_notes_on, is_grid_on,
         color_blow_hex, color_draw_hex,
-        use_skin, trajectory_mode, show_grid4,
+        use_skin, trajectory_mode, show_grid4, use_ring,
         width, height, round(scale, 5),
         bg_image_path if has_bg_img else None, round(float(bg_brightness), 3),
         bg_fit_mode if has_bg_img else None, bg_rotation if has_bg_img else None
     )
 
     global _CACHE
-    if _CACHE.get("key") != cache_key or _CACHE.get("full_static_off") is None:
+    if _CACHE.get("key") != cache_key or _CACHE.get("bgr_static_off") is None:
         base_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         base_draw = ImageDraw.Draw(base_img)
 
@@ -427,14 +515,17 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                     text_color = "#000000" if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else "#AAAAAA"
                     draw_bordered_text_pillow(d_full, (x_center, y_center_s + 60 * scale), note_text, text_color, f_note, border_width=2 * scale)
 
-        legend_patch = None
+        bgr_static_off = cv2.cvtColor(np.asarray(full_off), cv2.COLOR_RGBA2BGR)
+        bgr_static_on = cv2.cvtColor(np.asarray(full_on), cv2.COLOR_RGBA2BGR)
+
+        legend_patch_bgr = None
         legend_pos = (0, 0)
         if is_legend_on:
             lx0 = max(0, int(766 * scale))
             ly0 = max(0, int(26 * scale))
             lx1 = min(width, int(914 * scale))
             ly1 = min(height, int(79 * scale))
-            legend_patch = full_off.crop((lx0, ly0, lx1, ly1))
+            legend_patch_bgr = bgr_static_off[ly0:ly1, lx0:lx1].copy()
             legend_pos = (lx0, ly0)
 
         # 発光スタンプ（Blowリング / Drawリング / 上部扇形）の事前生成
@@ -456,11 +547,13 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         _CACHE["base_image"] = base_img
         _CACHE["full_static_off"] = full_off
         _CACHE["full_static_on"] = full_on
-        _CACHE["top_strip_off"] = top_strip_off
-        _CACHE["top_strip_on"] = top_strip_on
+        _CACHE["bgr_static_off"] = bgr_static_off
+        _CACHE["bgr_static_on"] = bgr_static_on
+        _CACHE["top_strip_off_stamp"] = _make_premul_bgr_stamp(top_strip_off, crop_bbox=True)
+        _CACHE["top_strip_on_stamp"] = _make_premul_bgr_stamp(top_strip_on, crop_bbox=True)
         _CACHE["strip_y0"] = strip_y0
         _CACHE["strip_y1"] = strip_y1
-        _CACHE["legend_patch"] = legend_patch
+        _CACHE["legend_patch_bgr"] = legend_patch_bgr
         _CACHE["legend_pos"] = legend_pos
         _CACHE["clean_note_band"] = clean_note_band
         _CACHE["note_band_y0"] = note_band_y0
@@ -468,8 +561,9 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         _CACHE["glow_ring_blow"] = glow_ring_blow
         _CACHE["glow_ring_draw"] = glow_ring_draw
         _CACHE["ring_pad"] = ring_pad
-        _CACHE["glow_pie"] = glow_pie
+        _CACHE["glow_pie_stamp"] = _make_premul_bgr_stamp(glow_pie, crop_bbox=True)
         _CACHE["pie_pad"] = pie_pad
+        _CACHE["hole_patches"] = {}
 
     lever_pressed = False
     playing_holes_data = {}
@@ -478,7 +572,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     
     currently_active_notes = []
     if midi_notes:
-        start_times, max_dur = _get_exporter_notes_index(midi_notes)
+        start_times, max_dur = _get_exporter_notes_index(midi_notes, inst_type)
         idx_start = bisect.bisect_left(start_times, current_time - max_dur - 0.05)
         n_total = len(midi_notes)
         for i in range(idx_start, n_total):
@@ -503,15 +597,15 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
             if fingering["lever"] == "ON": 
                 lever_pressed = True
 
-    frame_img = (_CACHE["full_static_on"] if lever_pressed else _CACHE["full_static_off"]).copy()
-    draw_img = ImageDraw.Draw(frame_img)
+    bgr_frame = (_CACHE["bgr_static_on"] if lever_pressed else _CACHE["bgr_static_off"]).copy()
 
     # 小節ごとの薄い横線＋左端小節番号の落下描画（ガイド線ON時）
     if is_grid_on and measures_timeline:
         is_bright_bg = (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
-        m_line_color = (0, 51, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((50, 0, 50, 255) if is_bright_bg else (46, 46, 46, 255))
-        m_txt_color = (0, 85, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((80, 0, 80, 255) if is_bright_bg else (85, 85, 85, 255))
-        f_m = get_truetype_font("arial.ttf", max(6, int(8 * scale)))
+        m_line_rgba = (0, 51, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((50, 0, 50, 255) if is_bright_bg else (46, 46, 46, 255))
+        m_txt_rgba = (0, 85, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((80, 0, 80, 255) if is_bright_bg else (85, 85, 85, 255))
+        m_line_bgr = (m_line_rgba[2], m_line_rgba[1], m_line_rgba[0])
+        m_font_size = max(6, int(8 * scale))
         line_w = max(1, int(1 * scale))
         pixels_per_second = (220.0 * current_bpm * max(0.1, float(note_speed_ratio))) / 240.0
         if is_straight_mode:
@@ -521,6 +615,8 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
             x_l = 24.0 * scale
             x_r = 936.0 * scale
 
+        xl_i = max(0, int(round(x_l)))
+        xr_i = min(width, int(round(x_r)) + 1)
         strip_y0 = _CACHE["strip_y0"]
         overlapped_plate = False
         overlapped_legend = False
@@ -533,27 +629,36 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
             if y_m < 0.0:
                 break
             if y_m <= y_hole_line_s:
-                draw_img.line([(x_l, y_m), (x_r, y_m)], fill=m_line_color, width=line_w)
-                draw_img.text((x_l + 4 * scale, y_m - 2 * scale), str(m["measure_num"]), fill=m_txt_color, font=f_m, anchor="lb")
+                ym_i = int(round(y_m))
+                ly0 = max(0, ym_i - line_w // 2)
+                ly1 = min(height, ly0 + line_w)
+                if ly1 > ly0 and xr_i > xl_i:
+                    bgr_frame[ly0:ly1, xl_i:xr_i] = m_line_bgr
+                m_stamp = _get_measure_label_stamp(str(m["measure_num"]), m_font_size, m_txt_rgba)
+                _blend_premul_stamp_bgr(bgr_frame, m_stamp, int(round(x_l + 4 * scale)), int(round(y_m - 2 * scale)), width, height)
                 if y_m >= strip_y0 - 2:
                     overlapped_plate = True
                 if is_legend_on and (leg_y0 <= y_m <= leg_y1):
                     overlapped_legend = True
 
         if overlapped_plate:
-            top_strip = _CACHE["top_strip_on"] if lever_pressed else _CACHE["top_strip_off"]
-            frame_img.alpha_composite(top_strip, (0, strip_y0))
-        if overlapped_legend and _CACHE["legend_patch"] is not None:
-            frame_img.paste(_CACHE["legend_patch"], _CACHE["legend_pos"])
+            top_stamp = _CACHE["top_strip_on_stamp"] if lever_pressed else _CACHE["top_strip_off_stamp"]
+            _blend_premul_stamp_bgr(bgr_frame, top_stamp, 0, strip_y0, width, height)
+        if overlapped_legend and _CACHE["legend_patch_bgr"] is not None:
+            lx0, ly0 = _CACHE["legend_pos"]
+            l_patch = _CACHE["legend_patch_bgr"]
+            lh, lw = l_patch.shape[:2]
+            bgr_frame[ly0:ly0 + lh, lx0:lx0 + lw] = l_patch
 
-    # 発音中の穴のみ発光スタンプ＆レバーリング＆4音グリッド強調セルを差分合成
+    # 発音中の穴のみキャッシュ済みBGRパッチ＆上部扇形グロースタンプを高速差分合成
     if playing_holes_data:
         ring_pad = _CACHE["ring_pad"]
         pie_pad = _CACHE["pie_pad"]
-        glow_pie = _CACHE["glow_pie"]
+        glow_pie_stamp = _CACHE["glow_pie_stamp"]
         hole_4_maps = _CACHE["hole_4_maps"]
         clean_note_band = _CACHE["clean_note_band"]
         note_band_y0 = _CACHE["note_band_y0"]
+        hole_patches = _CACHE["hole_patches"]
         lever_ring_r = 21.0 * scale
         lever_ring_w = max(2, int(3 * scale))
 
@@ -564,49 +669,77 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
 
             x_center = X_start_draw + k * W_pitch_s + (W_pitch_s / 2)
             action = playing_holes_data[visible_hole_number_absolute]
-            ring_stamp = _CACHE["glow_ring_blow"] if action == "吹" else _CACHE["glow_ring_draw"]
-            frame_img.alpha_composite(ring_stamp, (int(round(x_center)) - ring_pad, int(round(y_center_s)) - ring_pad))
+            if show_grid4:
+                cells_mask = tuple((visible_hole_number_absolute, act, lev) in playing_hole_cells for act, lev, _, _ in cell_order)
+                current_note = None
+            elif lang_seg_value != "なし":
+                cells_mask = None
+                current_note = playing_holes_note.get(visible_hole_number_absolute)
+            else:
+                cells_mask = None
+                current_note = None
 
-            if use_ring and lever_pressed:
-                l_rgb = color_blow_rgb if action == "吹" else color_draw_rgb
-                draw_img.ellipse(
-                    [x_center - lever_ring_r, y_center_s - lever_ring_r, x_center + lever_ring_r, y_center_s + lever_ring_r],
-                    outline=(l_rgb[0], l_rgb[1], l_rgb[2], 255),
-                    width=lever_ring_w
-                )
+            h_key = (k, bool(lever_pressed), action, cells_mask, current_note)
+            cached_patch = hole_patches.get(h_key)
+            if cached_patch is None:
+                hx0 = max(0, int(x_center - W_pitch_s / 2))
+                hx1 = min(width, int(math.ceil(x_center + W_pitch_s / 2)))
+                hy0 = max(0, int(round(y_center_s)) - ring_pad)
+                hy1 = min(height, int(math.ceil(y_center_s + 80 * scale)))
+                src_full = _CACHE["full_static_on"] if lever_pressed else _CACHE["full_static_off"]
+                patch_pil = src_full.crop((hx0, hy0, hx1, hy1))
+                patch_draw = ImageDraw.Draw(patch_pil)
+
+                ring_stamp = _CACHE["glow_ring_blow"] if action == "吹" else _CACHE["glow_ring_draw"]
+                patch_pil.alpha_composite(ring_stamp, (int(round(x_center)) - ring_pad - hx0, int(round(y_center_s)) - ring_pad - hy0))
+
+                if use_ring and lever_pressed:
+                    l_rgb = color_blow_rgb if action == "吹" else color_draw_rgb
+                    patch_draw.ellipse(
+                        [x_center - lever_ring_r - hx0, y_center_s - lever_ring_r - hy0,
+                         x_center + lever_ring_r - hx0, y_center_s + lever_ring_r - hy0],
+                        outline=(l_rgb[0], l_rgb[1], l_rgb[2], 255),
+                        width=lever_ring_w
+                    )
+
+                if is_hole_num_on:
+                    draw_bordered_text_pillow(patch_draw, (x_center - hx0, y_center_s + 24 * scale - hy0), str(k + 1), "#FFFFFF", f_num, border_width=2 * scale)
+
+                if show_grid4:
+                    hole_4_map = hole_4_maps.get(visible_hole_number_absolute) or get_hole_4_notes(visible_hole_number_absolute, inst_type)
+                    grid_left = x_center - cell_w - hx0
+                    grid_top_rel = grid_top - hy0
+                    for act, lev, r_idx, c_idx in cell_order:
+                        if (visible_hole_number_absolute, act, lev) in playing_hole_cells:
+                            cx0 = grid_left + c_idx * cell_w
+                            cy0 = grid_top_rel + r_idx * cell_h
+                            cx1 = cx0 + cell_w
+                            cy1 = cy0 + cell_h
+                            cell_midi = hole_4_map.get((act, lev))
+                            cell_text = get_note_name(cell_midi, is_japanese=is_jp) if (cell_midi is not None and lang_seg_value != "なし") else ""
+                            c_rgb = color_blow_rgb if act == "吹" else color_draw_rgb
+                            patch_draw.rectangle([cx0, cy0, cx1, cy1], fill=(c_rgb[0], c_rgb[1], c_rgb[2], 255), outline=(255, 255, 255, 255), width=max(1, int(1 * scale)))
+                            if cell_text:
+                                patch_draw.text(((cx0 + cx1) / 2.0, (cy0 + cy1) / 2.0), cell_text, fill=(0, 0, 0, 255), font=f_grid, anchor="mm")
+                elif lang_seg_value != "なし" and current_note is not None:
+                    sub_bg = clean_note_band.crop((hx0, 0, hx1, clean_note_band.height))
+                    patch_pil.paste(sub_bg, (0, note_band_y0 - hy0))
+                    note_text = get_note_name(current_note, is_japanese=is_jp)
+                    draw_bordered_text_pillow(patch_draw, (x_center - hx0, y_center_s + 60 * scale - hy0), note_text, "#FFFFFF", f_note, border_width=2 * scale)
+
+                patch_bgr = cv2.cvtColor(np.asarray(patch_pil), cv2.COLOR_RGBA2BGR)
+                cached_patch = (hx0, hy0, hx1, hy1, patch_bgr)
+                hole_patches[h_key] = cached_patch
+
+            hx0, hy0, hx1, hy1, patch_bgr = cached_patch
+            bgr_frame[hy0:hy1, hx0:hx1] = patch_bgr
 
             if show_glow_effect:
-                frame_img.alpha_composite(glow_pie, (int(round(x_center)) - pie_pad, int(round(y_hole_line_s)) - pie_pad))
+                _blend_premul_stamp_bgr(bgr_frame, glow_pie_stamp, int(round(x_center)) - pie_pad, int(round(y_hole_line_s)) - pie_pad, width, height)
 
-            if is_hole_num_on:
-                draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 24 * scale), str(k + 1), "#FFFFFF", f_num, border_width=2 * scale)
-
-            if show_grid4:
-                hole_4_map = hole_4_maps.get(visible_hole_number_absolute) or get_hole_4_notes(visible_hole_number_absolute, inst_type)
-                grid_left = x_center - cell_w
-                for act, lev, r_idx, c_idx in cell_order:
-                    if (visible_hole_number_absolute, act, lev) in playing_hole_cells:
-                        cx0 = grid_left + c_idx * cell_w
-                        cy0 = grid_top + r_idx * cell_h
-                        cx1 = cx0 + cell_w
-                        cy1 = cy0 + cell_h
-                        cell_midi = hole_4_map.get((act, lev))
-                        cell_text = get_note_name(cell_midi, is_japanese=is_jp) if (cell_midi is not None and lang_seg_value != "なし") else ""
-                        c_rgb = color_blow_rgb if act == "吹" else color_draw_rgb
-                        draw_img.rectangle([cx0, cy0, cx1, cy1], fill=(c_rgb[0], c_rgb[1], c_rgb[2], 255), outline=(255, 255, 255, 255), width=max(1, int(1 * scale)))
-                        if cell_text:
-                            draw_img.text(((cx0 + cx1) / 2.0, (cy0 + cy1) / 2.0), cell_text, fill=(0, 0, 0, 255), font=f_grid, anchor="mm")
-            elif lang_seg_value != "なし":
-                current_note = playing_holes_note.get(visible_hole_number_absolute)
-                if current_note is not None:
-                    patch_x0 = max(0, int(x_center - W_pitch_s / 2))
-                    patch_x1 = min(width, int(x_center + W_pitch_s / 2))
-                    sub_bg = clean_note_band.crop((patch_x0, 0, patch_x1, clean_note_band.height))
-                    frame_img.paste(sub_bg, (patch_x0, note_band_y0))
-                    note_text = get_note_name(current_note, is_japanese=is_jp)
-                    draw_bordered_text_pillow(draw_img, (x_center, y_center_s + 60 * scale), note_text, "#FFFFFF", f_note, border_width=2 * scale)
-
-    return frame_img
+    if return_bgr:
+        return bgr_frame
+    return Image.fromarray(cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
 
 
 _TITLE_STAMP_CACHE = {}
@@ -787,19 +920,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
     except Exception:
         opacity_val = 0.5
 
-    active_pitches = set()
-    if midi_notes:
-        start_times, max_dur = _get_exporter_notes_index(midi_notes)
-        idx_s = bisect.bisect_left(start_times, current_time - max_dur - 0.05)
-        for i in range(idx_s, len(midi_notes)):
-            note_data = midi_notes[i]
-            start_t = note_data["start_time"]
-            if start_t > current_time:
-                break
-            if start_t <= current_time < start_t + note_data["duration"]:
-                active_pitches.add(note_data["note"])
-
-    pil_frame = draw_harmonica_pillow_frame_exporter(
+    bgr_base = draw_harmonica_pillow_frame_exporter(
         width=width,
         height=height,
         scale=scale,
@@ -814,7 +935,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         midi_notes=midi_notes,
         current_time=current_time,
         current_bpm=current_bpm,
-        active_pitches=active_pitches,
+        active_pitches=None,
         show_glow_effect=is_glow_on,
         color_blow_hex=color_blow_hex,                
         color_draw_hex=color_draw_hex,
@@ -828,7 +949,8 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         bg_image_path=bg_image_path,
         bg_brightness=bg_brightness,
         bg_fit_mode=bg_fit_mode,
-        bg_rotation=bg_rotation
+        bg_rotation=bg_rotation,
+        return_bgr=True
     )
 
     if aspect_ratio == "9:16":
@@ -841,11 +963,12 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         preview_h = 540
         preview_w = 960
 
-    resized_pil = pil_frame.resize((preview_w, preview_h), Image.Resampling.LANCZOS)
-    
+    if (width, height) != (preview_w, preview_h):
+        bgr_notes_part = cv2.resize(bgr_base, (preview_w, preview_h), interpolation=cv2.INTER_AREA)
+    else:
+        bgr_notes_part = bgr_base
+
     preview_canvas = Image.new("RGB", (960, 540), (20, 20, 20))
-    
-    bgr_notes_part = cv2.cvtColor(np.array(resized_pil), cv2.COLOR_RGB2BGR)
     if is_notes_on:
         bgr_notes_part = apply_opencv_vector_notes_draw(
             bgr_frame=bgr_notes_part,
@@ -856,7 +979,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
             midi_notes=midi_notes,
             current_time=current_time,
             current_bpm=current_bpm,
-            active_pitches=active_pitches,
+            active_pitches=None,
             note_opacity_value=opacity_val,
             color_blow_hex=color_blow_hex,
             color_draw_hex=color_draw_hex,
@@ -922,8 +1045,10 @@ def _get_note_label_stamp(text_str, font_size, bw):
     bx0, by0, bx1, by1 = bbox
     cropped = np.asarray(img.crop(bbox))
     bgr_stamp = cropped[:, :, 2::-1].astype(np.float32)
-    alpha_stamp = (cropped[:, :, 3:4].astype(np.float32)) / 255.0
-    res = (bgr_stamp, alpha_stamp, cx - bx0, cy - by0)
+    alpha_stamp = (cropped[:, :, 3:4].astype(np.float32)) * (1.0 / 255.0)
+    premul_bgr = bgr_stamp * alpha_stamp
+    inv_alpha = 1.0 - alpha_stamp
+    res = (premul_bgr, inv_alpha, cx - bx0, cy - by0)
     _LABEL_STAMP_CACHE[key] = res
     return res
 
@@ -937,7 +1062,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     """
     OpenCVの LINE_AA を用いて、斜め面取りされたソリッドでシャープな幾何学多角形ノーツを合成描画。
     「3段階 (練習標準)」「垂直落下 (穴直上)」「2段階 (ビジュアル)」の3モードすべてに対応。
-    二分探索ウィンドウ抽出・ROI部分ブレンド・音名ラベルスタンプキャッシュにより高速化。
+    二分探索ウィンドウ抽出・cv2.addWeightedによる高速C++ ROIブレンド・事前乗算音名ラベルスタンプにより高速化。
     """
     if not midi_notes:
         return bgr_frame
@@ -957,16 +1082,15 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     pixels_per_second = (220.0 * current_bpm * max(0.1, float(note_speed_ratio))) / 240.0
     px_per_sec_s = pixels_per_second * scale
     note_labels_to_draw = []
+    polys_to_draw = []
     is_jp = ("ドレミ" in str(lang_seg_value))
 
-    start_times, max_dur = _get_exporter_notes_index(midi_notes)
+    start_times, max_dur = _get_exporter_notes_index(midi_notes, inst_type)
     idx_start = bisect.bisect_left(start_times, current_time - max_dur - 0.05)
     max_visible_time = current_time + (y_hole_line_s / px_per_sec_s) + 0.1 if px_per_sec_s > 0 else current_time + 20.0
     n_total = len(midi_notes)
 
     zone_h = min(height, int(math.ceil(y_hole_line_s)) + 2)
-    notes_overlay = None
-    notes_mask = None
     min_x, min_y = width, zone_h
     max_x, max_y = 0, 0
 
@@ -1077,12 +1201,8 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 pts_accum.append([int(round(x_left_at(y_r_start))), int(round(y_r_start))])
 
             if len(pts_accum) >= 3:
-                if notes_overlay is None:
-                    notes_overlay = np.zeros((zone_h, width, 3), dtype=np.uint8)
-                    notes_mask = np.zeros((zone_h, width), dtype=np.uint8)
                 pts = np.array(pts_accum, dtype=np.int32)
-                cv2.fillPoly(notes_overlay, [pts], col_bgr, lineType=cv2.LINE_AA)
-                cv2.fillPoly(notes_mask, [pts], 255, lineType=cv2.LINE_AA)
+                polys_to_draw.append((pts, col_bgr))
                 px_min = int(pts[:, 0].min()) - 2
                 px_max = int(pts[:, 0].max()) + 3
                 py_min = int(pts[:, 1].min()) - 2
@@ -1106,26 +1226,31 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 n_str = (note_data["name_jp"] if is_jp else note_data["name_cde"]) if bound_ok else get_note_name(note_data["note"], is_japanese=is_jp)
                 note_labels_to_draw.append((label_x, label_y, n_str))
 
-    if notes_overlay is not None and max_x > min_x and max_y > min_y:
+    if polys_to_draw and max_x > min_x and max_y > min_y:
         rx0 = max(0, min_x)
         rx1 = min(width, max_x)
         ry0 = max(0, min_y)
         ry1 = min(zone_h, max_y)
         if rx1 > rx0 and ry1 > ry0:
-            roi_mask = notes_mask[ry0:ry1, rx0:rx1]
-            alpha_roi = (roi_mask.astype(np.float32) * (float(note_opacity_value) / 255.0))[:, :, np.newaxis]
-            roi_bg = bgr_frame[ry0:ry1, rx0:rx1].astype(np.float32)
-            roi_ov = notes_overlay[ry0:ry1, rx0:rx1].astype(np.float32)
-            bgr_frame[ry0:ry1, rx0:rx1] = (roi_bg * (1.0 - alpha_roi) + roi_ov * alpha_roi).astype(np.uint8)
+            op_val = max(0.0, min(1.0, float(note_opacity_value)))
+            roi_bg = bgr_frame[ry0:ry1, rx0:rx1]
+            if op_val >= 0.999:
+                for pts, col_bgr in polys_to_draw:
+                    cv2.fillPoly(roi_bg, [pts], col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
+            elif op_val > 0.001:
+                roi_ov = roi_bg.copy()
+                for pts, col_bgr in polys_to_draw:
+                    cv2.fillPoly(roi_ov, [pts], col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
+                cv2.addWeighted(roi_ov, op_val, roi_bg, 1.0 - op_val, 0.0, dst=roi_bg)
 
     if note_labels_to_draw:
         f_size = max(6, int(9 * scale))
         bw = max(1, int(1.5 * scale))
         for lx, ly, l_str in note_labels_to_draw:
-            bgr_stamp, alpha_stamp, cx_off, cy_off = _get_note_label_stamp(l_str, f_size, bw)
-            if bgr_stamp is None:
+            premul_bgr, inv_alpha, cx_off, cy_off = _get_note_label_stamp(l_str, f_size, bw)
+            if premul_bgr is None:
                 continue
-            sh, sw = bgr_stamp.shape[:2]
+            sh, sw = premul_bgr.shape[:2]
             x0 = int(round(lx)) - cx_off
             y0 = int(round(ly)) - cy_off
             x1 = x0 + sw
@@ -1139,10 +1264,10 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
             if dx1 > dx0 and dy1 > dy0:
                 sx1 = sx0 + (dx1 - dx0)
                 sy1 = sy0 + (dy1 - dy0)
-                sub_bg = bgr_frame[dy0:dy1, dx0:dx1].astype(np.float32)
-                sub_st = bgr_stamp[sy0:sy1, sx0:sx1]
-                sub_al = alpha_stamp[sy0:sy1, sx0:sx1]
-                bgr_frame[dy0:dy1, dx0:dx1] = (sub_bg * (1.0 - sub_al) + sub_st * sub_al).astype(np.uint8)
+                sub_bg = bgr_frame[dy0:dy1, dx0:dx1]
+                bgr_frame[dy0:dy1, dx0:dx1] = (
+                    sub_bg.astype(np.float32) * inv_alpha[sy0:sy1, sx0:sx1] + premul_bgr[sy0:sy1, sx0:sx1]
+                ).astype(np.uint8)
 
     return bgr_frame
 
@@ -1329,8 +1454,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
 
             print(f"[Export] OpenCV高解像度ベクトル描画レンダリング開始: {width}x{height} (Scale: {scale}, FPS: {fps}), 総フレーム: {total_frames}")
 
-            start_times, max_dur = _get_exporter_notes_index(exp_notes)
-            n_total = len(exp_notes)
+            _get_exporter_notes_index(exp_notes, inst_type)
             last_percent = -1
 
             for frame_idx in range(total_frames):
@@ -1345,19 +1469,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     pass
 
                 current_time_sec = frame_idx / fps
-                
-                active_pitches = set()
-                if exp_notes:
-                    idx_s = bisect.bisect_left(start_times, current_time_sec - max_dur - 0.05)
-                    for i in range(idx_s, n_total):
-                        note_data = exp_notes[i]
-                        start_t = note_data["start_time"]
-                        if start_t > current_time_sec:
-                            break
-                        if start_t <= current_time_sec < start_t + note_data["duration"]:
-                            active_pitches.add(note_data["note"])
 
-                pil_frame = draw_harmonica_pillow_frame_exporter(
+                bgr_frame = draw_harmonica_pillow_frame_exporter(
                     width=width,
                     height=height,
                     scale=scale,
@@ -1372,7 +1485,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     midi_notes=exp_notes,
                     current_time=current_time_sec,
                     current_bpm=current_bpm,
-                    active_pitches=active_pitches,
+                    active_pitches=None,
                     show_glow_effect=is_glow_on,
                     color_blow_hex=color_blow_hex,            
                     color_draw_hex=color_draw_hex,
@@ -1386,10 +1499,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     bg_image_path=bg_image_path,
                     bg_brightness=bg_brightness,
                     bg_fit_mode=bg_fit_mode,
-                    bg_rotation=bg_rotation
+                    bg_rotation=bg_rotation,
+                    return_bgr=True
                 )
-
-                bgr_frame = cv2.cvtColor(np.asarray(pil_frame), cv2.COLOR_RGBA2BGR)
                 
                 if is_notes_on:
                     bgr_frame = apply_opencv_vector_notes_draw(
@@ -1401,7 +1513,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         midi_notes=exp_notes,
                         current_time=current_time_sec,
                         current_bpm=current_bpm,
-                        active_pitches=active_pitches,
+                        active_pitches=None,
                         note_opacity_value=opacity_val,
                         color_blow_hex=color_blow_hex,
                         color_draw_hex=color_draw_hex,
