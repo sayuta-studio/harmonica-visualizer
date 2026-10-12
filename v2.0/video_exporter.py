@@ -630,13 +630,171 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     return frame_img
 
 
+_TITLE_STAMP_CACHE = {}
+
+
+def _get_title_overlay_stamp(width, height, scale, title_text, credit_text, mode):
+    """
+    タイトル・クレジット表示用の透過RGBAスタンプ（bgr, alpha, x0, y0）を生成・キャッシュします。
+    mode: 'intro_center' | 'top_left' | 'top_right'
+    """
+    key = (width, height, round(scale, 3), str(title_text), str(credit_text), mode)
+    cached = _TITLE_STAMP_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    t_str = str(title_text or "").strip()
+    c_str = str(credit_text or "").strip()
+    if not t_str and not c_str:
+        res = (None, None, 0, 0)
+        _TITLE_STAMP_CACHE[key] = res
+        return res
+
+    if mode == "intro_center":
+        f_title = get_truetype_font("meiryo.ttc", max(16, int(34 * scale)))
+        f_cred = get_truetype_font("meiryo.ttc", max(11, int(18 * scale)))
+        dummy = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+        d_draw = ImageDraw.Draw(dummy)
+        tw = d_draw.textlength(t_str, font=f_title) if t_str else 0
+        cw = d_draw.textlength(c_str, font=f_cred) if c_str else 0
+
+        card_w = min(int(width * 0.88), max(int(360 * scale), int(max(tw, cw) + 80 * scale)))
+        card_h = int((132 if (t_str and c_str) else 96) * scale)
+        card_w = max(64, card_w)
+        card_h = max(48, card_h)
+
+        img = Image.new("RGBA", (card_w, card_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        r = max(6, int(12 * scale))
+        draw.rounded_rectangle([0, 0, card_w - 1, card_h - 1], radius=r, fill=(12, 16, 26, 225), outline=(0, 210, 255, 210), width=max(1, int(2 * scale)))
+        # 上下のアクセントライン
+        line_m = int(18 * scale)
+        draw.line([(line_m, int(6 * scale)), (card_w - line_m, int(6 * scale))], fill=(255, 165, 30, 200), width=max(1, int(2 * scale)))
+        draw.line([(line_m, card_h - int(7 * scale)), (card_w - line_m, card_h - int(7 * scale))], fill=(0, 210, 255, 180), width=max(1, int(2 * scale)))
+
+        cx = card_w // 2
+        if t_str and c_str:
+            draw_bordered_text_pillow(draw, (cx, int(card_h * 0.38)), t_str, "#FFFFFF", f_title, border_width=max(1, int(2.5 * scale)))
+            draw_bordered_text_pillow(draw, (cx, int(card_h * 0.74)), c_str, "#00e5ff", f_cred, border_width=max(1, int(1.5 * scale)))
+        elif t_str:
+            draw_bordered_text_pillow(draw, (cx, card_h // 2), t_str, "#FFFFFF", f_title, border_width=max(1, int(2.5 * scale)))
+        else:
+            draw_bordered_text_pillow(draw, (cx, card_h // 2), c_str, "#00e5ff", f_cred, border_width=max(1, int(1.5 * scale)))
+
+        x0 = (width - card_w) // 2
+        y0 = max(10, int(height * 0.24) - card_h // 2)
+    else:
+        f_title = get_truetype_font("meiryo.ttc", max(11, int(16 * scale)))
+        f_cred = get_truetype_font("meiryo.ttc", max(9, int(11 * scale)))
+        dummy = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+        d_draw = ImageDraw.Draw(dummy)
+        tw = d_draw.textlength(t_str, font=f_title) if t_str else 0
+        cw = d_draw.textlength(c_str, font=f_cred) if c_str else 0
+
+        pad_x = max(10, int(14 * scale))
+        card_w = min(int(width * 0.65), max(int(110 * scale), int(max(tw, cw) + pad_x * 2 + 8 * scale)))
+        card_h = int((52 if (t_str and c_str) else 34) * scale)
+        card_w = max(48, card_w)
+        card_h = max(24, card_h)
+
+        img = Image.new("RGBA", (card_w, card_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        r = max(4, int(8 * scale))
+        draw.rounded_rectangle([0, 0, card_w - 1, card_h - 1], radius=r, fill=(14, 18, 28, 195), outline=(80, 130, 170, 170), width=max(1, int(1.2 * scale)))
+
+        cx = card_w // 2
+        if t_str and c_str:
+            draw_bordered_text_pillow(draw, (cx, int(card_h * 0.36)), t_str, "#FFFFFF", f_title, border_width=max(1, int(1.5 * scale)))
+            draw_bordered_text_pillow(draw, (cx, int(card_h * 0.75)), c_str, "#b2ebf2", f_cred, border_width=max(1, int(1.0 * scale)))
+        elif t_str:
+            draw_bordered_text_pillow(draw, (cx, card_h // 2), t_str, "#FFFFFF", f_title, border_width=max(1, int(1.5 * scale)))
+        else:
+            draw_bordered_text_pillow(draw, (cx, card_h // 2), c_str, "#b2ebf2", f_cred, border_width=max(1, int(1.0 * scale)))
+
+        margin_x = max(8, int(14 * scale))
+        margin_y = max(8, int(12 * scale))
+        if mode == "top_right":
+            x0 = max(0, width - card_w - margin_x)
+        else:
+            x0 = margin_x
+        y0 = margin_y
+
+    arr = np.asarray(img)
+    bgr_stamp = arr[:, :, [2, 1, 0]].astype(np.float32)
+    alpha_stamp = (arr[:, :, 3:4].astype(np.float32)) / 255.0
+    res = (bgr_stamp, alpha_stamp, x0, y0)
+    _TITLE_STAMP_CACHE[key] = res
+    return res
+
+
+def apply_title_overlay_bgr(bgr_frame, width, height, scale, title_template, title_text, credit_text,
+                            current_time, intro_display_dur=2.5, is_single_preview=False):
+    """
+    選択されたタイトル配置テンプレート（イントロ中央・左上常時・右上常時・組み合わせ）に従い、
+    事前キャッシュ済みスタンプを高速ブレンドします。
+    """
+    tpl = str(title_template or "なし")
+    if tpl == "なし":
+        return bgr_frame
+    if not str(title_text or "").strip() and not str(credit_text or "").strip():
+        return bgr_frame
+
+    def _blend_stamp(stamp_tuple, fade_mul=1.0):
+        bgr_st, al_st, x0, y0 = stamp_tuple
+        if bgr_st is None or fade_mul <= 0.01:
+            return
+        sh, sw = bgr_st.shape[:2]
+        dx0 = max(0, x0)
+        dy0 = max(0, y0)
+        dx1 = min(width, x0 + sw)
+        dy1 = min(height, y0 + sh)
+        if dx1 > dx0 and dy1 > dy0:
+            sx0 = dx0 - x0
+            sy0 = dy0 - y0
+            sx1 = sx0 + (dx1 - dx0)
+            sy1 = sy0 + (dy1 - dy0)
+            sub_bg = bgr_frame[dy0:dy1, dx0:dx1].astype(np.float32)
+            sub_st = bgr_st[sy0:sy1, sx0:sx1]
+            sub_al = al_st[sy0:sy1, sx0:sx1] * float(fade_mul)
+            bgr_frame[dy0:dy1, dx0:dx1] = (sub_bg * (1.0 - sub_al) + sub_st * sub_al).astype(np.uint8)
+
+    show_intro = ("イントロ中央" in tpl)
+    show_left = ("左上常時" in tpl)
+    show_right = ("右上常時" in tpl)
+
+    eff_intro_dur = max(1.5, float(intro_display_dur))
+    in_intro_window = is_single_preview or (current_time < eff_intro_dur)
+
+    if show_intro and in_intro_window:
+        if is_single_preview:
+            fade = 1.0
+        elif current_time < 0.35:
+            fade = max(0.15, current_time / 0.35)
+        elif current_time > eff_intro_dur - 0.45:
+            fade = max(0.0, (eff_intro_dur - current_time) / 0.45)
+        else:
+            fade = 1.0
+        st = _get_title_overlay_stamp(width, height, scale, title_text, credit_text, "intro_center")
+        _blend_stamp(st, fade)
+
+    if show_left and (not show_intro or not in_intro_window or is_single_preview):
+        st = _get_title_overlay_stamp(width, height, scale, title_text, credit_text, "top_left")
+        _blend_stamp(st, 1.0)
+    elif show_right and (not show_intro or not in_intro_window or is_single_preview):
+        st = _get_title_overlay_stamp(width, height, scale, title_text, credit_text, "top_right")
+        _blend_stamp(st, 1.0)
+
+    return bgr_frame
+
+
 def execute_single_frame_preview(midi_notes, current_bpm, current_time,
                                  res_mode, inst_type, notation_mode, bg_color, 
                                  is_hole_num_on, is_legend_on, is_notes_on, is_grid_on, is_glow_on, note_opacity,
                                  parent_window, color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                                  aspect_ratio="16:9", use_skin=True, trajectory_mode="3段階 (練習標準)",
                                  show_lookahead=True, show_grid4=True, measures_timeline=None,
-                                 use_ring=True, note_speed_ratio=1.0):
+                                 use_ring=True, note_speed_ratio=1.0,
+                                 title_template="なし", video_title="", video_credit=""):
     if not OPENCV_AVAILABLE:
         return
 
@@ -725,6 +883,19 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
             show_lookahead=show_lookahead,
             note_speed_ratio=note_speed_ratio
         )
+
+    bgr_notes_part = apply_title_overlay_bgr(
+        bgr_frame=bgr_notes_part,
+        width=preview_w,
+        height=preview_h,
+        scale=preview_w / 960.0,
+        title_template=title_template,
+        title_text=video_title,
+        credit_text=video_credit,
+        current_time=current_time,
+        intro_display_dur=2.5,
+        is_single_preview=True
+    )
     
     preview_canvas.paste(Image.fromarray(cv2.cvtColor(bgr_notes_part, cv2.COLOR_BGR2RGB)), ((960 - preview_w)//2, (540 - preview_h)//2))
     
@@ -995,6 +1166,105 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     return bgr_frame
 
 
+def _build_export_timeline(midi_notes, accompaniment_notes, measures_timeline, max_duration,
+                           export_range, intro_sec, outro_sec, ctrl):
+    """
+    動画出力範囲（全曲 / A〜B小節のみ）およびイントロ・アウトロ秒数に従い、
+    練習用データを破壊せずに動画書き出し専用のタイムライン（ノーツ・伴奏・小節線・総尺・開始原曲秒）を構築します。
+    """
+    count_in_dur = ctrl.get_count_in_duration() if (ctrl and hasattr(ctrl, "get_count_in_duration")) else 0.0
+    in_s = max(0.0, float(intro_sec))
+    out_s = max(0.0, float(outro_sec))
+
+    if export_range == "A〜B小節のみ" and measures_timeline and ctrl and hasattr(ctrl, "gui"):
+        total_m = len(measures_timeline)
+        try:
+            val_a = max(1, min(total_m, int(ctrl.gui.loop_a_entry.get())))
+        except Exception:
+            val_a = 1
+        try:
+            val_b = max(1, min(total_m, int(ctrl.gui.loop_b_entry.get())))
+        except Exception:
+            val_b = total_m
+        if val_a > val_b:
+            val_a, val_b = 1, total_m
+
+        start_tick_a = measures_timeline[val_a - 1]["start_tick"]
+        end_tick_b = measures_timeline[val_b - 1]["end_tick"]
+        sec_a_in_song = ctrl.midi_engine.tick_to_sec(start_tick_a)
+        sec_b_in_song = ctrl.midi_engine.tick_to_sec(end_tick_b)
+
+        win_start = sec_a_in_song + count_in_dur
+        win_end = sec_b_in_song + count_in_dur
+        time_shift = -sec_a_in_song + in_s
+
+        exp_notes = []
+        for n in (midi_notes or []):
+            ns = n["start_time"]
+            ne = ns + n["duration"]
+            if ne > win_start + 1e-4 and ns < win_end - 1e-4:
+                nc = dict(n)
+                s_clamp = max(win_start, ns)
+                e_clamp = min(win_end, ne)
+                nc["start_time"] = s_clamp + time_shift
+                nc["duration"] = max(0.02, e_clamp - s_clamp)
+                exp_notes.append(nc)
+
+        exp_acc = []
+        for an in (accompaniment_notes or []):
+            ans = an.get("start_time", an.get("original_start_time", 0.0) + count_in_dur)
+            ane = ans + an.get("duration", an.get("original_duration", 0.1))
+            if ane > win_start + 1e-4 and ans < win_end - 1e-4:
+                ac = dict(an)
+                s_clamp = max(win_start, ans)
+                e_clamp = min(win_end, ane)
+                ac["start_time"] = s_clamp + time_shift
+                ac["duration"] = max(0.02, e_clamp - s_clamp)
+                exp_acc.append(ac)
+
+        exp_measures = []
+        for m in measures_timeline:
+            m_num = m.get("measure_num", 1)
+            if val_a <= m_num <= val_b:
+                mc = dict(m)
+                m_orig = m.get("start_time", ctrl.midi_engine.tick_to_sec(m["start_tick"]) + count_in_dur)
+                mc["start_time"] = m_orig + time_shift
+                exp_measures.append(mc)
+
+        exp_max_dur = max(0.5, (sec_b_in_song - sec_a_in_song) + count_in_dur + in_s + out_s)
+        return exp_notes, exp_acc, exp_measures, exp_max_dur, sec_a_in_song, count_in_dur
+
+    # 全曲出力
+    sec_a_in_song = 0.0
+    if in_s > 0.0:
+        exp_notes = []
+        for n in (midi_notes or []):
+            nc = dict(n)
+            nc["start_time"] = n["start_time"] + in_s
+            exp_notes.append(nc)
+        exp_acc = []
+        for an in (accompaniment_notes or []):
+            ac = dict(an)
+            ans = an.get("start_time", an.get("original_start_time", 0.0) + count_in_dur)
+            ac["start_time"] = ans + in_s
+            exp_acc.append(ac)
+        exp_measures = []
+        for m in (measures_timeline or []):
+            mc = dict(m)
+            if "start_time" in m:
+                mc["start_time"] = m["start_time"] + in_s
+            elif ctrl and hasattr(ctrl, "midi_engine"):
+                mc["start_time"] = ctrl.midi_engine.tick_to_sec(m["start_tick"]) + count_in_dur + in_s
+            exp_measures.append(mc)
+    else:
+        exp_notes = midi_notes or []
+        exp_acc = accompaniment_notes or []
+        exp_measures = measures_timeline or []
+
+    exp_max_dur = max(0.5, float(max_duration) + in_s + out_s)
+    return exp_notes, exp_acc, exp_measures, exp_max_dur, sec_a_in_song, count_in_dur
+
+
 def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in, is_metro,
                               res_mode, inst_type, notation_mode, bg_color, 
                               is_hole_num_on, is_legend_on, is_notes_on, is_grid_on, is_glow_on, note_opacity,
@@ -1004,7 +1274,11 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               aspect_ratio="16:9", use_skin=True, controller=None,
                               trajectory_mode="3段階 (練習標準)",
                               show_lookahead=True, show_grid4=True, measures_timeline=None,
-                              use_ring=True, note_speed_ratio=1.0):
+                              use_ring=True, note_speed_ratio=1.0,
+                              export_range="全曲", intro_sec=0.0, outro_sec=2.0,
+                              title_template="なし", video_title="", video_credit="",
+                              ext_audio_pcm=None, ext_audio_mode="頭出し確認 (再生:両方 / 動画:外部のみ)",
+                              ext_audio_offset_ms=0, ext_audio_vol_pct=100.0, yt_limiter=True):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -1055,9 +1329,22 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
         except Exception:
             ctrl = None
 
+    raw_acc_notes = getattr(ctrl, "accompaniment_notes", None) if ctrl else None
+    exp_notes, exp_acc_notes, exp_measures, exp_max_duration, sec_a_in_song, count_in_dur = _build_export_timeline(
+        midi_notes=midi_notes,
+        accompaniment_notes=raw_acc_notes,
+        measures_timeline=measures_timeline,
+        max_duration=max_duration,
+        export_range=export_range,
+        intro_sec=intro_sec,
+        outro_sec=outro_sec,
+        ctrl=ctrl
+    )
+    intro_display_dur = intro_sec if intro_sec > 0.0 else (count_in_dur if count_in_dur > 0.0 else 2.5)
+
     def render_worker():
         try:
-            total_frames = int(max_duration * fps)
+            total_frames = int(exp_max_duration * fps)
             if total_frames <= 0:
                 total_frames = 600 
                 
@@ -1066,8 +1353,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
 
             print(f"[Export] OpenCV高解像度ベクトル描画レンダリング開始: {width}x{height} (Scale: {scale}, FPS: {fps}), 総フレーム: {total_frames}")
 
-            start_times, max_dur = _get_exporter_notes_index(midi_notes)
-            n_total = len(midi_notes)
+            start_times, max_dur = _get_exporter_notes_index(exp_notes)
+            n_total = len(exp_notes)
             last_percent = -1
 
             for frame_idx in range(total_frames):
@@ -1084,10 +1371,10 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 current_time_sec = frame_idx / fps
                 
                 active_pitches = set()
-                if midi_notes:
+                if exp_notes:
                     idx_s = bisect.bisect_left(start_times, current_time_sec - max_dur - 0.05)
                     for i in range(idx_s, n_total):
-                        note_data = midi_notes[i]
+                        note_data = exp_notes[i]
                         start_t = note_data["start_time"]
                         if start_t > current_time_sec:
                             break
@@ -1106,7 +1393,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     is_notes_on=is_notes_on,                  
                     is_grid_on=is_grid_on,
                     note_opacity_value=opacity_val,
-                    midi_notes=midi_notes,
+                    midi_notes=exp_notes,
                     current_time=current_time_sec,
                     current_bpm=current_bpm,
                     active_pitches=active_pitches,
@@ -1117,7 +1404,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     trajectory_mode=trajectory_mode,
                     show_lookahead=show_lookahead,
                     show_grid4=show_grid4,
-                    measures_timeline=measures_timeline,
+                    measures_timeline=exp_measures,
                     use_ring=use_ring,
                     note_speed_ratio=note_speed_ratio
                 )
@@ -1131,7 +1418,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         height=height,
                         scale=scale,
                         inst_type=inst_type,
-                        midi_notes=midi_notes,
+                        midi_notes=exp_notes,
                         current_time=current_time_sec,
                         current_bpm=current_bpm,
                         active_pitches=active_pitches,
@@ -1143,6 +1430,20 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         lang_seg_value=notation_mode,
                         show_lookahead=show_lookahead,
                         note_speed_ratio=note_speed_ratio
+                    )
+
+                if title_template != "なし":
+                    bgr_frame = apply_title_overlay_bgr(
+                        bgr_frame=bgr_frame,
+                        width=width,
+                        height=height,
+                        scale=scale,
+                        title_template=title_template,
+                        title_text=video_title,
+                        credit_text=video_credit,
+                        current_time=current_time_sec,
+                        intro_display_dur=intro_display_dur,
+                        is_single_preview=False
                     )
                 
                 video_writer.write(bgr_frame)
@@ -1162,39 +1463,42 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
             ))
 
             if ctrl and hasattr(ctrl, "midi_engine"):
-                measures_timeline_ref = ctrl.midi_engine.measures_timeline
                 ticks_per_beat_ref = ctrl.midi_engine.ticks_per_beat
                 metronome_pattern_ref = ctrl.midi_engine.metronome_pattern
                 count_in_measures_ref = ctrl.midi_engine.count_in_measures if is_count_in else 0
                 tick_to_sec_ref = ctrl.midi_engine.tick_to_sec
                 part_play_mode_ref = getattr(ctrl.midi_engine, "part_play_mode", "全パート再生")
-                accompaniment_notes_ref = getattr(ctrl, "accompaniment_notes", None)
             else:
-                measures_timeline_ref = None
                 ticks_per_beat_ref = ticks_per_beat
                 metronome_pattern_ref = "標準（頭拍強調）"
                 count_in_measures_ref = 1 if is_count_in else 0
                 tick_to_sec_ref = None
                 part_play_mode_ref = "全パート再生"
-                accompaniment_notes_ref = None
 
             synthesize_midi_to_wav(
-                midi_notes=midi_notes,
+                midi_notes=exp_notes,
                 current_bpm=current_bpm,
-                max_duration=max_duration,
+                max_duration=exp_max_duration,
                 is_count_in=is_count_in,
                 is_metro=is_metro,
                 output_wav_path=temp_audio_path,
                 time_sig_num=4,
                 time_sig_den=4,
                 count_in_measures=count_in_measures_ref,
-                measures_timeline=measures_timeline_ref,
+                measures_timeline=exp_measures,
                 metronome_pattern=metronome_pattern_ref,
                 ticks_per_beat=ticks_per_beat_ref,
                 sample_rate=44100,
                 tick_to_sec_fn=tick_to_sec_ref,
-                accompaniment_notes=accompaniment_notes_ref,
-                part_play_mode=part_play_mode_ref
+                accompaniment_notes=exp_acc_notes,
+                part_play_mode=part_play_mode_ref,
+                intro_sec=intro_sec,
+                ext_audio_pcm=ext_audio_pcm,
+                ext_audio_mode=ext_audio_mode,
+                ext_audio_offset_ms=ext_audio_offset_ms,
+                ext_audio_vol_pct=ext_audio_vol_pct,
+                sec_a_in_song=sec_a_in_song,
+                yt_limiter=yt_limiter
             )
             print("[Export] 高音質WAV物理合成完了。FFmpegによる最終音声結合を開始します。")
 

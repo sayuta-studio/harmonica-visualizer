@@ -261,8 +261,10 @@ class MidiEngine:
     def all_notes_off(self):
         if self.device_opened and winmm:
             for ch in range(16):
-                msg = (0xB0 | ch) | (123 << 8) | (0 << 16)
-                winmm.midiOutShortMsg(self.h_midi_out, msg)
+                # サステインペダル解除(CC 64)、オールサウンドオフ(CC 120)、オールノートオフ(CC 123)を順次送信して残響を完全遮断
+                winmm.midiOutShortMsg(self.h_midi_out, (0xB0 | ch) | (64 << 8) | (0 << 16))
+                winmm.midiOutShortMsg(self.h_midi_out, (0xB0 | ch) | (120 << 8) | (0 << 16))
+                winmm.midiOutShortMsg(self.h_midi_out, (0xB0 | ch) | (123 << 8) | (0 << 16))
                 
         if self.synth_initialized:
             for note, channel in list(self.active_channels.items()):
@@ -867,6 +869,8 @@ class MidiEngine:
                 self.loop_a_index, self.loop_b_index = self.loop_b_index, self.loop_a_index
 
     def send_midi_msg(self, msg, track_idx=-1):
+        if self.playing_state not in ('playing', 'count_in'):
+            return
         if not self.is_track_audible(track_idx):
             return
         msg = self.transform_msg_for_routing(msg, track_idx)
@@ -885,6 +889,8 @@ class MidiEngine:
                 self.synth_note_off(msg.note)
 
     def play_metronome_tick(self, beat_in_measure, force_standard=False):
+        if self.playing_state not in ('playing', 'count_in'):
+            return
         pattern = "標準（頭拍強調）" if force_standard else self.metronome_pattern
         if pattern == "なし":
             return
@@ -1082,12 +1088,14 @@ class MidiEngine:
                                 time.sleep(0)
                             else:
                                 pass
+                    if self.playing_state != 'count_in':
+                        break
                     self.accumulated_ticks = start_tick
                     self._interp_base_tick = float(start_tick)
                     self._interp_max_tick = float(start_tick)
                     self._interp_start_perf = time.perf_counter()
                     
-                if self.playing_state == 'stopped':
+                if self.playing_state not in ('playing', 'count_in'):
                     break
                     
                 # 2. 本編メイン再生（開始位置 start_tick を基準に差分ティックを待機し、A地点開始時の逆戻りワープを完全防止）
@@ -1238,3 +1246,6 @@ class MidiEngine:
             self.all_notes_off()
             if self.error_callback:
                 self.error_callback(e)
+        finally:
+            # スレッド終了時（一時停止・停止いずれの場合も）必ず全チャンネル消音を保証
+            self.all_notes_off()

@@ -135,6 +135,122 @@ class SettingsController:
         if hasattr(self.gui, "stepup_switch"):
             self.gui.stepup_switch.deselect()
 
+        # 動画範囲・イントロ/アウトロ・タイトル・外部音源設定の復元
+        if hasattr(self.gui, "export_range_menu"):
+            rng_val = loaded.get("動画出力範囲", "全曲")
+            if rng_val not in ["全曲", "A〜B小節のみ"]:
+                rng_val = "全曲"
+            self.gui.export_range_menu.set(rng_val)
+
+        if hasattr(self.gui, "intro_sec_menu"):
+            in_val = loaded.get("動画イントロ秒", "0秒")
+            if in_val not in ["0秒", "1秒", "2秒", "3秒", "5秒"]:
+                in_val = "0秒"
+            self.gui.intro_sec_menu.set(in_val)
+
+        if hasattr(self.gui, "outro_sec_menu"):
+            out_val = loaded.get("動画アウトロ秒", "2秒")
+            if out_val not in ["0秒", "1秒", "2秒", "3秒", "5秒"]:
+                out_val = "2秒"
+            self.gui.outro_sec_menu.set(out_val)
+
+        if hasattr(self.gui, "title_template_menu"):
+            tpl_val = loaded.get("動画タイトル配置", "なし")
+            valid_tpls = ["なし", "イントロ中央のみ", "左上常時", "右上常時", "イントロ中央＋左上常時", "イントロ中央＋右上常時"]
+            if tpl_val not in valid_tpls:
+                tpl_val = "なし"
+            self.gui.title_template_menu.set(tpl_val)
+
+        if hasattr(self.gui, "video_title_entry"):
+            self.gui.video_title_entry.delete(0, tk.END)
+            self.gui.video_title_entry.insert(0, str(loaded.get("動画タイトル文字列", "")))
+
+        if hasattr(self.gui, "video_credit_entry"):
+            self.gui.video_credit_entry.delete(0, tk.END)
+            self.gui.video_credit_entry.insert(0, str(loaded.get("動画クレジット文字列", "")))
+
+        if hasattr(self.gui, "ext_audio_mode_menu"):
+            em_val = loaded.get("外部音源モード", "頭出し確認 (再生:両方 / 動画:外部のみ)")
+            valid_ems = [
+                "頭出し確認 (再生:両方 / 動画:外部のみ)",
+                "外部音源のみ (再生も動画も外部のみ)",
+                "両方ミックス (再生も動画も両方)",
+                "外部音源オフ (ガイド音のみ)"
+            ]
+            if em_val not in valid_ems:
+                em_val = "頭出し確認 (再生:両方 / 動画:外部のみ)"
+            self.gui.ext_audio_mode_menu.set(em_val)
+
+        if hasattr(self.gui, "ext_audio_offset_entry"):
+            self.gui.ext_audio_offset_entry.delete(0, tk.END)
+            self.gui.ext_audio_offset_entry.insert(0, str(loaded.get("外部音源オフセットms", "0")))
+
+        if hasattr(self.gui, "ext_audio_vol_entry") and hasattr(self.gui, "ext_audio_vol_slider"):
+            try:
+                v_pct = int(max(0, min(200, float(loaded.get("外部音源音量", "100")))))
+            except ValueError:
+                v_pct = 100
+            self.gui.ext_audio_vol_entry.delete(0, tk.END)
+            self.gui.ext_audio_vol_entry.insert(0, str(v_pct))
+            self.gui.ext_audio_vol_slider.set(v_pct)
+
+        if hasattr(self.gui, "yt_limiter_switch"):
+            if loaded.get("YouTube上限リミッター", "ON") == "ON":
+                self.gui.yt_limiter_switch.select()
+            else:
+                self.gui.yt_limiter_switch.deselect()
+
+    def get_intro_outro_seconds(self):
+        """イントロ秒数・アウトロ秒数を float タプル (intro_sec, outro_sec) として返します。"""
+        in_sec = 0.0
+        out_sec = 2.0
+        if hasattr(self, "gui"):
+            if hasattr(self.gui, "intro_sec_menu"):
+                try:
+                    in_sec = float(str(self.gui.intro_sec_menu.get()).replace("秒", "").strip())
+                except ValueError:
+                    in_sec = 0.0
+            if hasattr(self.gui, "outro_sec_menu"):
+                try:
+                    out_sec = float(str(self.gui.outro_sec_menu.get()).replace("秒", "").strip())
+                except ValueError:
+                    out_sec = 2.0
+        return max(0.0, in_sec), max(0.0, out_sec)
+
+    def get_ext_audio_offset_ms(self):
+        """外部音源の開始オフセット(ms)を整数として返します（正値＝外部音源を遅らせる、負値＝外部音源の頭を削って早める）。"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "ext_audio_offset_entry"):
+            return 0
+        raw = str(self.gui.ext_audio_offset_entry.get()).replace("ms", "").strip()
+        try:
+            return max(-60000, min(60000, int(round(float(raw)))))
+        except ValueError:
+            return 0
+
+    def get_ext_audio_vol_pct(self):
+        """外部音源の音量(%)を 0.0〜200.0 の範囲で返します。"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "ext_audio_vol_entry"):
+            return 100.0
+        raw = str(self.gui.ext_audio_vol_entry.get()).replace("%", "").strip()
+        try:
+            return max(0.0, min(200.0, float(raw)))
+        except ValueError:
+            return 100.0
+
+    def on_open_output_dir(self):
+        """動画の出力先フォルダ（output）をOSのエクスプローラーで開きます。"""
+        out_dir = get_portable_path("output")
+        os.makedirs(out_dir, exist_ok=True)
+        try:
+            if os.name == "nt":
+                os.startfile(out_dir)
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", out_dir])
+            self.gui.status_label.configure(text=f"📂 保存先フォルダを開きました: {out_dir}", text_color="#00ffcc")
+        except Exception as e:
+            self.gui.status_label.configure(text=f"フォルダを開けませんでした: {e}", text_color="#ff5555")
+
     def get_note_speed_ratio(self):
         """ノーツ落下速度メニュー（0.5x〜2.0x）から数値倍率を返します。"""
         if not hasattr(self, "gui") or not hasattr(self.gui, "note_speed_menu"):
@@ -243,6 +359,16 @@ class SettingsController:
                 "ステップアップ増加": self.gui.stepup_step_menu.get() if hasattr(self.gui, "stepup_step_menu") else "+5%",
                 "ステップアップ開始": self.gui.stepup_start_entry.get() if hasattr(self.gui, "stepup_start_entry") else "70",
                 "ステップアップ目標": self.gui.stepup_goal_entry.get() if hasattr(self.gui, "stepup_goal_entry") else "100",
+                "動画出力範囲": self.gui.export_range_menu.get() if hasattr(self.gui, "export_range_menu") else "全曲",
+                "動画イントロ秒": self.gui.intro_sec_menu.get() if hasattr(self.gui, "intro_sec_menu") else "0秒",
+                "動画アウトロ秒": self.gui.outro_sec_menu.get() if hasattr(self.gui, "outro_sec_menu") else "2秒",
+                "動画タイトル配置": self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし",
+                "動画タイトル文字列": self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else "",
+                "動画クレジット文字列": self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else "",
+                "外部音源モード": self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else "頭出し確認 (再生:両方 / 動画:外部のみ)",
+                "外部音源オフセットms": self.gui.ext_audio_offset_entry.get() if hasattr(self.gui, "ext_audio_offset_entry") else "0",
+                "外部音源音量": self.gui.ext_audio_vol_entry.get() if hasattr(self.gui, "ext_audio_vol_entry") else "100",
+                "YouTube上限リミッター": ("ON" if self.gui.yt_limiter_switch.get() else "OFF") if hasattr(self.gui, "yt_limiter_switch") else "ON",
             }
         )
 

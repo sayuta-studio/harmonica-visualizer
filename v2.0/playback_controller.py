@@ -542,31 +542,44 @@ class PlaybackController:
             
             self.gui.export_btn.configure(state="disabled")
 
-            audio_mode = self.gui.audio_mode_menu.get()
-            
-            if "MIDI再生" in audio_mode:
-                self.midi_engine.device_muted = False
-                self.midi_engine.internal_synth_enabled = False
-                self.midi_engine.metronome_pattern = self.gui.metro_menu.get()
-            elif "簡易再生" in audio_mode:
-                self.midi_engine.device_muted = True
-                self.midi_engine.internal_synth_enabled = True
-                self.midi_engine.metronome_pattern = self.gui.metro_menu.get()
-            else:
-                self.midi_engine.device_muted = True
-                self.midi_engine.internal_synth_enabled = False
+            self._apply_effective_guide_audio_mode()
 
             now = time.time()
             self.last_update_time = now
             self.midi_engine.play()
+            self.sync_ext_audio_playback()
             self.update_clock()
+
+    def _apply_effective_guide_audio_mode(self):
+        """外部音源モードが『外部音源のみ』かつ外部音源ロード済みの場合はガイド音を自動ミュートし、それ以外は通常音源設定を適用します。"""
+        has_ext = (getattr(self, "ext_audio_pcm", None) is not None and len(getattr(self, "ext_audio_pcm", [])) > 0)
+        ext_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else ""
+        if has_ext and "外部音源のみ" in ext_mode:
+            self.midi_engine.device_muted = True
+            self.midi_engine.internal_synth_enabled = False
+            self.midi_engine.all_notes_off()
+            return
+
+        audio_mode = self.gui.audio_mode_menu.get()
+        if "MIDI再生" in audio_mode:
+            self.midi_engine.device_muted = False
+            self.midi_engine.internal_synth_enabled = False
+            self.midi_engine.metronome_pattern = self.gui.metro_menu.get()
+        elif "簡易再生" in audio_mode:
+            self.midi_engine.device_muted = True
+            self.midi_engine.internal_synth_enabled = True
+            self.midi_engine.metronome_pattern = self.gui.metro_menu.get()
+        else:
+            self.midi_engine.device_muted = True
+            self.midi_engine.internal_synth_enabled = False
 
     def on_pause(self):
         self.play_state = "paused"
         self.midi_engine.pause()
+        self.stop_ext_audio_playback()
         try:
             import pygame
-            if pygame.mixer.get_init() is None:
+            if pygame.mixer.get_init() is not None:
                 pygame.mixer.music.pause()
         except Exception:
             pass
@@ -577,9 +590,10 @@ class PlaybackController:
     def on_stop(self):
         self.play_state = "stopped"
         self.midi_engine.stop()
+        self.stop_ext_audio_playback()
         try:
             import pygame
-            if pygame.mixer.get_init() is None:
+            if pygame.mixer.get_init() is not None:
                 pygame.mixer.music.stop()
                 pygame.mixer.music.unload()
         except Exception:
@@ -602,13 +616,15 @@ class PlaybackController:
         
         self.current_time = elapsed_sec + count_in_duration
         self.update_time_label()
+        if self.play_state == "playing":
+            self.sync_ext_audio_playback()
         self.draw_harmonica_static()
 
     def on_volume_change(self, value):
         self.midi_engine.volume_factor = float(value)
         try:
             import pygame
-            if pygame.mixer.get_init() is None:
+            if pygame.mixer.get_init() is not None:
                 pygame.mixer.music.set_volume(float(value))
         except Exception:
             pass
@@ -700,6 +716,8 @@ class PlaybackController:
             
             self.current_time = elapsed_sec + count_in_duration
             self.update_time_label()
+            if self.play_state == "playing":
+                self.sync_ext_audio_playback()
             self.draw_harmonica_static()
         except ValueError:
             pass
@@ -785,33 +803,219 @@ class PlaybackController:
             print("[System] 再生ストリームの物理発音を検知 ➔ UIタイマーループ点火")
 
     def on_loop_wrapped(self):
-        """A-BループでB点末尾からA点頭へ折り返した瞬間のコールバック（ステップアップ練習連動）"""
-        if not hasattr(self, "gui") or not hasattr(self.gui, "stepup_switch"):
-            return
-        if not self.gui.stepup_switch.get():
-            return
-        start_pct, goal_pct, step_pct = self.get_stepup_params()
-        cur_pct = int(round(getattr(self, "speed_percent", start_pct)))
-        if cur_pct < goal_pct:
-            new_pct = min(goal_pct, cur_pct + step_pct)
-            self.gui.bpm_entry.delete(0, tk.END)
-            self.gui.bpm_entry.insert(0, str(new_pct))
-            self.apply_bpm()
-            if new_pct >= goal_pct:
-                self.gui.status_label.configure(
-                    text=f"🎯 目標速度 {goal_pct}% に到達しました！（この速度を維持してループ）",
-                    text_color="#00ffcc"
-                )
+        """A-BループでB点末尾からA点頭へ折り返した瞬間のコールバック（ステップアップ練習＆外部音源再同期）"""
+        if hasattr(self, "gui") and hasattr(self.gui, "stepup_switch") and self.gui.stepup_switch.get():
+            start_pct, goal_pct, step_pct = self.get_stepup_params()
+            cur_pct = int(round(getattr(self, "speed_percent", start_pct)))
+            if cur_pct < goal_pct:
+                new_pct = min(goal_pct, cur_pct + step_pct)
+                self.gui.bpm_entry.delete(0, tk.END)
+                self.gui.bpm_entry.insert(0, str(new_pct))
+                self.apply_bpm()
+                if new_pct >= goal_pct:
+                    self.gui.status_label.configure(
+                        text=f"🎯 目標速度 {goal_pct}% に到達しました！（この速度を維持してループ）",
+                        text_color="#00ffcc"
+                    )
+                else:
+                    self.gui.status_label.configure(
+                        text=f"📈 ステップアップ: {cur_pct}% ➔ {new_pct}% (目標 {goal_pct}%)",
+                        text_color="#ffcc00"
+                    )
             else:
                 self.gui.status_label.configure(
-                    text=f"📈 ステップアップ: {cur_pct}% ➔ {new_pct}% (目標 {goal_pct}%)",
-                    text_color="#ffcc00"
+                    text=f"🎯 目標速度 {goal_pct}% でループ練習中",
+                    text_color="#00ffcc"
                 )
-        else:
+        if self.play_state == "playing":
+            self.sync_ext_audio_playback()
+
+    # ==============================================================================
+    # 外部音源（伴奏・実演録音）の読み込み・リアルタイム頭出し同期・音量制御
+    # ==============================================================================
+    def on_select_ext_audio(self):
+        """外部音源ファイル（WAV/MP3/M4A等）を選択し、44.1kHzステレオPCMとしてメモリにロードします。"""
+        from audio_engine import load_external_audio_pcm
+        self.on_stop()
+        file_path = filedialog.askopenfilename(
+            title="外部音源ファイル（伴奏・演奏録音）を選択してください",
+            filetypes=[("Audio/Video Files", "*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.mp4"), ("All Files", "*.*")]
+        )
+        if not file_path:
+            return
+
+        self.gui.status_label.configure(text="🎵 外部音源を読み込み中...", text_color="#ffcc00")
+        self.update_idletasks()
+        try:
+            pcm = load_external_audio_pcm(file_path, sample_rate=44100)
+            self.ext_audio_path = file_path
+            self.ext_audio_pcm = pcm
+            fname = os.path.basename(file_path)
+            disp = self._truncate_by_visual_width(fname, max_width=20)
+            if hasattr(self.gui, "ext_audio_label"):
+                self.gui.ext_audio_label.configure(text=disp, text_color="#00ffcc")
+            dur_sec = len(pcm) / 44100.0
             self.gui.status_label.configure(
-                text=f"🎯 目標速度 {goal_pct}% でループ練習中",
-                text_color="#00ffcc"
+                text=f"🎵 外部音源ロード完了: {disp} ({dur_sec:.1f}秒) — 再生中に [ / ] キーで頭出し調整可能",
+                text_color="#2b8c54"
             )
+        except Exception as e:
+            self.ext_audio_path = None
+            self.ext_audio_pcm = None
+            self.gui.status_label.configure(text=f"❌ 外部音源の読み込み失敗: {e}", text_color="#ff5555")
+
+    def on_clear_ext_audio(self):
+        """読み込んだ外部音源を解除します。"""
+        self.stop_ext_audio_playback()
+        self.ext_audio_path = None
+        self.ext_audio_pcm = None
+        if hasattr(self.gui, "ext_audio_label"):
+            self.gui.ext_audio_label.configure(text="未選択 (内蔵シンセ合成)", text_color="#888888")
+        if self.play_state == "playing":
+            self._apply_effective_guide_audio_mode()
+        self.gui.status_label.configure(text="外部音源を解除しました（内蔵シンセ合成モード）", text_color="#aaaaaa")
+
+    def stop_ext_audio_playback(self):
+        """再生中の外部音源チャンネルを即座に停止します。"""
+        ch = getattr(self, "_ext_audio_channel", None)
+        if ch is not None:
+            try:
+                ch.stop()
+            except Exception:
+                pass
+        self._ext_audio_channel = None
+        self._ext_audio_sound_ref = None
+
+    def sync_ext_audio_playback(self):
+        """現在の再生ティック位置・ミリ秒オフセット・音量%に合わせて外部音源をサンプル精度で同期再生します。"""
+        self.stop_ext_audio_playback()
+        if self.play_state != "playing":
+            return
+        pcm = getattr(self, "ext_audio_pcm", None)
+        if pcm is None or len(pcm) == 0:
+            return
+        ext_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else ""
+        if "外部音源オフ" in ext_mode:
+            return
+
+        try:
+            import pygame
+            if pygame.mixer.get_init() is None:
+                return
+        except Exception:
+            return
+
+        cur_tick = self.midi_engine.get_smooth_current_tick()
+        if cur_tick >= 0:
+            song_sec = self.midi_engine.tick_to_sec(cur_tick)
+        else:
+            # カウントイン中（負のティック）
+            tpb = max(1, self.midi_engine.ticks_per_beat)
+            bpm = max(1.0, self.current_bpm)
+            song_sec = (cur_tick / float(tpb)) * (60.0 / bpm)
+
+        offset_sec = self.get_ext_audio_offset_ms() / 1000.0
+        ext_pos_sec = song_sec - offset_sec
+        sample_rate = 44100
+        start_sample = int(round(ext_pos_sec * sample_rate))
+
+        if start_sample >= len(pcm):
+            return
+
+        if start_sample >= 0:
+            play_pcm = pcm[start_sample:]
+        else:
+            pad_samples = min(-start_sample, sample_rate * 20)
+            pad = np.zeros((pad_samples, 2), dtype=np.int16)
+            play_pcm = np.vstack((pad, pcm))
+
+        vol_pct = self.get_ext_audio_vol_pct()
+        yt_lim = bool(self.gui.yt_limiter_switch.get()) if hasattr(self.gui, "yt_limiter_switch") else True
+
+        if vol_pct > 100.0:
+            gain = vol_pct / 100.0
+            scaled = play_pcm.astype(np.float32) * gain
+            max_amp = 29200.0 if yt_lim else 32767.0
+            play_pcm = np.clip(scaled, -max_amp, max_amp).astype(np.int16)
+            hw_vol = 1.0
+            self._ext_audio_boosted = True
+        else:
+            play_pcm = np.ascontiguousarray(play_pcm, dtype=np.int16)
+            hw_vol = max(0.0, min(1.0, vol_pct / 100.0))
+            self._ext_audio_boosted = False
+
+        try:
+            snd = pygame.mixer.Sound(buffer=play_pcm)
+            ch = snd.play()
+            if ch is not None:
+                ch.set_volume(hw_vol)
+            self._ext_audio_sound_ref = snd
+            self._ext_audio_channel = ch
+        except Exception as e:
+            print(f"[警告] 外部音源の再生開始失敗: {e}")
+
+    def on_ext_audio_mode_changed(self, value=None):
+        """外部音源モード変更時にガイド音のミュート状態と外部音源再生を即時同期します。"""
+        if self.play_state == "playing":
+            self._apply_effective_guide_audio_mode()
+            self.sync_ext_audio_playback()
+        self.save_user_settings_txt()
+
+    def step_ext_audio_offset(self, delta_ms):
+        """外部音源の開始オフセットを ±delta_ms だけ増減し、再生中なら即座に再同期します。"""
+        cur_ms = self.get_ext_audio_offset_ms()
+        new_ms = max(-60000, min(60000, cur_ms + int(delta_ms)))
+        if hasattr(self.gui, "ext_audio_offset_entry"):
+            self.gui.ext_audio_offset_entry.delete(0, tk.END)
+            self.gui.ext_audio_offset_entry.insert(0, str(new_ms))
+        self.on_ext_audio_offset_changed()
+
+    def on_ext_audio_offset_changed(self):
+        """外部音源オフセットEntry確定時の正規化・即時再同期・保存"""
+        ms = self.get_ext_audio_offset_ms()
+        if hasattr(self.gui, "ext_audio_offset_entry"):
+            self.gui.ext_audio_offset_entry.delete(0, tk.END)
+            self.gui.ext_audio_offset_entry.insert(0, str(ms))
+        if self.play_state == "playing":
+            self.sync_ext_audio_playback()
+        sign = "+" if ms > 0 else ""
+        self.gui.status_label.configure(
+            text=f"⏱️ 外部音源 頭出しオフセット: {sign}{ms} ms",
+            text_color="#00ffcc"
+        )
+        self.save_user_settings_txt()
+
+    def on_ext_audio_vol_slider(self, value):
+        """外部音源音量スライダー操作時のリアルタイム反映"""
+        v_int = int(round(float(value)))
+        if hasattr(self.gui, "ext_audio_vol_entry"):
+            self.gui.ext_audio_vol_entry.delete(0, tk.END)
+            self.gui.ext_audio_vol_entry.insert(0, str(v_int))
+        self._apply_ext_audio_live_volume(v_int)
+        self.save_user_settings_txt()
+
+    def on_ext_audio_vol_entry_changed(self):
+        """外部音源音量Entry手入力確定時の反映"""
+        v_int = int(round(self.get_ext_audio_vol_pct()))
+        if hasattr(self.gui, "ext_audio_vol_entry"):
+            self.gui.ext_audio_vol_entry.delete(0, tk.END)
+            self.gui.ext_audio_vol_entry.insert(0, str(v_int))
+        if hasattr(self.gui, "ext_audio_vol_slider"):
+            self.gui.ext_audio_vol_slider.set(v_int)
+        self._apply_ext_audio_live_volume(v_int)
+        self.save_user_settings_txt()
+
+    def _apply_ext_audio_live_volume(self, vol_pct):
+        if self.play_state != "playing":
+            return
+        ch = getattr(self, "_ext_audio_channel", None)
+        if ch is not None and vol_pct <= 100 and not getattr(self, "_ext_audio_boosted", False):
+            try:
+                ch.set_volume(max(0.0, min(1.0, vol_pct / 100.0)))
+                return
+            except Exception:
+                pass
+        self.sync_ext_audio_playback()
 
     def on_canvas_mousewheel(self, event):
         """停止中・一時停止中にCanvas上でマウスホイールを回すと、1拍単位（Shiftで1/4拍、Ctrlで1小節単位）で前後スクラブ確認"""
@@ -843,7 +1047,7 @@ class PlaybackController:
         self.draw_harmonica_static(show_active_at_tick=True)
 
     def on_global_key_press(self, event):
-        """ハンズフリー練習用キーボードショートカット（入力欄フォーカス時・動画書き出し中は無効）"""
+        """ハンズフリー練習＆外部音源ミリ秒頭出し用キーボードショートカット（入力欄フォーカス時・動画書き出し中は無効）"""
         if self.play_state == "exporting":
             return
         focus_w = self.focus_get()
@@ -853,6 +1057,10 @@ class PlaybackController:
             return
 
         ks = event.keysym
+        state_flags = getattr(event, "state", 0)
+        is_shift = bool(state_flags & 0x0001)
+        is_ctrl = bool(state_flags & 0x0004)
+
         if ks == "space":
             if self.play_state == "playing":
                 self.on_pause()
@@ -860,6 +1068,12 @@ class PlaybackController:
                 self.on_play()
         elif ks in ("BackSpace", "Escape"):
             self.on_stop()
+        elif ks in ("bracketleft", "comma", "less", "braceleft"):
+            step = -1 if is_shift else (-100 if is_ctrl else -10)
+            self.step_ext_audio_offset(step)
+        elif ks in ("bracketright", "period", "greater", "braceright"):
+            step = 1 if is_shift else (100 if is_ctrl else 10)
+            self.step_ext_audio_offset(step)
         elif ks in ("Left", "Right"):
             if not self.midi_notes:
                 return

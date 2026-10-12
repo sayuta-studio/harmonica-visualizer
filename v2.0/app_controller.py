@@ -77,6 +77,12 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         # 運指変更モードフラグ
         self.fingering_edit_mode = False
 
+        # 外部オーディオファイル状態保持 (Step 4)
+        self.ext_audio_path = None
+        self.ext_audio_pcm = None
+        self._ext_audio_channel = None
+        self._ext_audio_sound_ref = None
+
         # 自立進行用の等速累積時間ティック
         self.current_tick = 0.0
         self.play_start_time = 0.0
@@ -640,6 +646,28 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.ratio_menu.configure(state=state)
         self.gui.use_skin_switch.configure(state=state)
 
+        for attr_name in (
+            "export_range_menu",
+            "intro_sec_menu",
+            "outro_sec_menu",
+            "title_template_menu",
+            "video_title_entry",
+            "video_credit_entry",
+            "ext_audio_btn",
+            "ext_audio_clear_btn",
+            "ext_audio_mode_menu",
+            "ext_offset_m10_btn",
+            "ext_offset_m1_btn",
+            "ext_audio_offset_entry",
+            "ext_offset_p1_btn",
+            "ext_offset_p10_btn",
+            "ext_audio_vol_slider",
+            "ext_audio_vol_entry",
+            "yt_limiter_switch",
+        ):
+            if hasattr(self.gui, attr_name):
+                getattr(self.gui, attr_name).configure(state=state)
+
 
     def execute_video_export(self):
         """高画質動画書き出しコアと画面コンソールボタンを完全に結合！"""
@@ -713,6 +741,19 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         use_skin = bool(self.gui.use_skin_switch.get())
         trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
 
+        # Step 3 & Step 4 動画書き出し拡張パラメータ
+        export_range = self.gui.export_range_menu.get() if hasattr(self.gui, "export_range_menu") else "全曲"
+        intro_sec, outro_sec = self.get_intro_outro_seconds() if hasattr(self, "get_intro_outro_seconds") else (0.0, 0.0)
+        title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
+        video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
+        video_credit = self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else ""
+
+        ext_audio_pcm = getattr(self, "ext_audio_pcm", None)
+        ext_audio_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else "頭出し確認 (再生:両方 / 動画:外部のみ)"
+        ext_audio_offset_ms = self.get_ext_audio_offset_ms() if hasattr(self, "get_ext_audio_offset_ms") else 0
+        ext_audio_vol_pct = self.get_ext_audio_vol_pct() if hasattr(self, "get_ext_audio_vol_pct") else 100
+        yt_limiter = bool(self.gui.yt_limiter_switch.get()) if hasattr(self.gui, "yt_limiter_switch") else True
+
         execute_video_export_core(
             midi_notes=midi_notes,
             current_bpm=current_bpm,
@@ -745,7 +786,18 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             show_grid4=show_grid4,
             measures_timeline=self.midi_engine.measures_timeline,
             use_ring=use_ring,
-            note_speed_ratio=note_speed_ratio
+            note_speed_ratio=note_speed_ratio,
+            export_range=export_range,
+            intro_sec=intro_sec,
+            outro_sec=outro_sec,
+            title_template=title_template,
+            video_title=video_title,
+            video_credit=video_credit,
+            ext_audio_pcm=ext_audio_pcm,
+            ext_audio_mode=ext_audio_mode,
+            ext_audio_offset_ms=ext_audio_offset_ms,
+            ext_audio_vol_pct=ext_audio_vol_pct,
+            yt_limiter=yt_limiter,
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック
@@ -801,6 +853,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         aspect_ratio = self.gui.ratio_menu.get()
         use_skin = bool(self.gui.use_skin_switch.get())
         trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
+        title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
+        video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
+        video_credit = self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else ""
 
         execute_single_frame_preview(
             midi_notes=midi_notes,
@@ -826,11 +881,16 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             show_grid4=show_grid4,
             measures_timeline=self.midi_engine.measures_timeline,
             use_ring=use_ring,
-            note_speed_ratio=note_speed_ratio
+            note_speed_ratio=note_speed_ratio,
+            title_template=title_template,
+            video_title=video_title,
+            video_credit=video_credit,
         )
 
     def destroy(self):
         """ライフサイクル：WinMM / MIDIエンジンのクローズ安全開放処理"""
+        if hasattr(self, "stop_ext_audio_playback"):
+            self.stop_ext_audio_playback()
         self.midi_engine.stop()
         self.midi_engine.close_device()
         super().destroy()
