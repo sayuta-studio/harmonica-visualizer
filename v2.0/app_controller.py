@@ -108,7 +108,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         # Canvasへのマウスイベント・リサイズ追従・グローバルキーイベントバインディング
         self.gui.canvas.bind("<Button-1>", self.on_canvas_click)
         self.gui.canvas.bind("<MouseWheel>", self.on_canvas_mousewheel)
-        self.gui.canvas_frame.bind("<Configure>", self.on_canvas_frame_configure)
+        self.gui.canvas_frame.bind("<Configure>", self.on_canvas_frame_configure, add="+")
+        self.bind("<Configure>", self.on_canvas_frame_configure, add="+")
         self.bind("<KeyPress>", self.on_global_key_press)
 
         self.after(100, self.initialize_flow)
@@ -350,6 +351,11 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         use_skin = bool(self.gui.use_skin_switch.get())
         
         aspect_ratio = self.get_effective_canvas_ratio()
+        if hasattr(self.gui, "canvas_frame"):
+            fw = self.gui.canvas_frame.winfo_width()
+            fh = self.gui.canvas_frame.winfo_height()
+            if fw > 200 and fh > 200 and getattr(self, "_synced_frame_wh", None) != (fw, fh, aspect_ratio):
+                self.sync_canvas_size_to_active_ratio()
         disp_scale = getattr(self, "_current_canvas_scale", None)
         if disp_scale is None:
             _, _, disp_scale = self.get_current_canvas_layout()

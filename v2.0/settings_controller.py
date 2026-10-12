@@ -660,14 +660,20 @@ class SettingsController:
             fw = self.gui.canvas_frame.winfo_width()
             fh = self.gui.canvas_frame.winfo_height()
             if fw > 200 and fh > 200:
-                max_w = max(320, fw - 40)
-                max_h = max(240, fh - 40)
+                max_w = max(320, fw - 20)
+                max_h = max(240, fh - 20)
         return get_visualizer_layout_params(effective_ratio, max_w=max_w, max_h=max_h)
 
     def sync_canvas_size_to_active_ratio(self):
         """現在の実効アスペクト比およびウィンドウサイズに合わせて表示用Canvasのサイズとキャッシュを同期します。"""
         if not hasattr(self, "gui") or not self.gui.canvas:
             return
+        effective_ratio = self.get_effective_canvas_ratio()
+        if hasattr(self.gui, "canvas_frame"):
+            fw = self.gui.canvas_frame.winfo_width()
+            fh = self.gui.canvas_frame.winfo_height()
+            if fw > 200 and fh > 200:
+                self._synced_frame_wh = (fw, fh, effective_ratio)
         w, h, scale = self.get_current_canvas_layout()
         self._current_canvas_scale = scale
         cur_w = int(self.gui.canvas.cget("width"))
@@ -680,11 +686,15 @@ class SettingsController:
             self.gui.canvas.skin_cache.clear()
         self.gui.canvas.delete("static_plate")
 
-    def on_canvas_frame_configure(self, event):
+    def on_canvas_frame_configure(self, event=None):
         """ウィンドウ最大化・リサイズ時にアスペクト比を維持したままCanvasを自動追従フィットさせます。"""
-        if event.widget is not getattr(self.gui, "canvas_frame", None):
+        if not hasattr(self, "gui") or not hasattr(self.gui, "canvas_frame"):
             return
-        new_size = (event.width, event.height)
+        fw = self.gui.canvas_frame.winfo_width()
+        fh = self.gui.canvas_frame.winfo_height()
+        if fw <= 200 or fh <= 200:
+            return
+        new_size = (fw, fh)
         if new_size == getattr(self, "_last_canvas_frame_size", (0, 0)):
             return
         self._last_canvas_frame_size = new_size
@@ -694,7 +704,7 @@ class SettingsController:
                 self.after_cancel(pending)
             except Exception:
                 pass
-        self._resize_after_id = self.after(25, self._apply_canvas_frame_resize)
+        self._resize_after_id = self.after(20, self._apply_canvas_frame_resize)
 
     def _apply_canvas_frame_resize(self):
         self._resize_after_id = None
