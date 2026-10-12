@@ -206,6 +206,55 @@ class SettingsController:
             else:
                 self.gui.yt_limiter_switch.deselect()
 
+        if hasattr(self.gui, "video_edit_enabled_switch"):
+            if loaded.get("動画編集適用", "ON") == "ON":
+                self.gui.video_edit_enabled_switch.select()
+            else:
+                self.gui.video_edit_enabled_switch.deselect()
+        self.update_export_edit_summary_label()
+
+    def is_video_edit_enabled(self):
+        """🎞️ 動画編集タブの一括適用スイッチがONかどうかを返します。"""
+        if hasattr(self, "gui") and hasattr(self.gui, "video_edit_enabled_switch"):
+            return bool(self.gui.video_edit_enabled_switch.get())
+        return True
+
+    def update_export_edit_summary_label(self):
+        """🎬 動画出力タブの下部にある動画編集反映ステータスバッジを更新します。"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "export_edit_summary_lbl"):
+            return
+        if self.is_video_edit_enabled():
+            self.gui.export_edit_summary_lbl.configure(
+                text="✨ 動画編集の適用: ON（🎞️動画編集タブの設定を反映）",
+                text_color="#00ffcc"
+            )
+        else:
+            self.gui.export_edit_summary_lbl.configure(
+                text="⚪ 動画編集の適用: OFF（純粋なビジュアライザー動画を出力）",
+                text_color="#aaaaaa"
+            )
+
+    def on_video_edit_master_toggle(self):
+        """🎞️ 動画編集タブ最上部のマスタースイッチ切替時のハンドラ"""
+        is_on = self.is_video_edit_enabled()
+        self.update_export_edit_summary_label()
+        if getattr(self, "play_state", "stopped") == "playing":
+            if hasattr(self, "_apply_effective_guide_audio_mode"):
+                self._apply_effective_guide_audio_mode()
+            if hasattr(self, "sync_ext_audio_playback"):
+                self.sync_ext_audio_playback()
+        if is_on:
+            self.gui.status_label.configure(
+                text="✨ 動画編集の適用: ON（タイトル・外部音源を動画出力および試聴に反映します）",
+                text_color="#00ffcc"
+            )
+        else:
+            self.gui.status_label.configure(
+                text="⚪ 動画編集の適用: OFF（入力内容を保持したまま、純粋なビジュアライザーとして出力します）",
+                text_color="#aaaaaa"
+            )
+        self.save_user_settings_txt()
+
     def get_intro_outro_seconds(self):
         """イントロ秒数・アウトロ秒数を float タプル (intro_sec, outro_sec) として返します。"""
         in_sec = 0.0
@@ -355,8 +404,10 @@ class SettingsController:
                 "外部音源オフセットms": self.gui.ext_audio_offset_entry.get() if hasattr(self.gui, "ext_audio_offset_entry") else "0",
                 "外部音源音量": self.gui.ext_audio_vol_entry.get() if hasattr(self.gui, "ext_audio_vol_entry") else "100",
                 "YouTube上限リミッター": ("ON" if self.gui.yt_limiter_switch.get() else "OFF") if hasattr(self.gui, "yt_limiter_switch") else "ON",
+                "動画編集適用": ("ON" if self.gui.video_edit_enabled_switch.get() else "OFF") if hasattr(self.gui, "video_edit_enabled_switch") else "ON",
             }
         )
+        self.update_export_edit_summary_label()
 
     def on_setting_changed(self, value=None):
         # トグル表示（ガイド線/ノーツ表示/落下軌道など）切り替え時に

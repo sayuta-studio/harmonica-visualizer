@@ -483,6 +483,10 @@ class PlaybackController:
             self.lock_controls_on_play(True)
             
             self.gui.export_btn.configure(state="disabled")
+            if hasattr(self.gui, "ext_audition_play_btn"):
+                self.gui.ext_audition_play_btn.configure(
+                    text="⏸ 一時停止", fg_color="#e67e22", hover_color="#d35400"
+                )
 
             self._apply_effective_guide_audio_mode()
 
@@ -494,9 +498,10 @@ class PlaybackController:
 
     def _apply_effective_guide_audio_mode(self):
         """外部音源モードが『外部音源のみ』かつ外部音源ロード済みの場合はガイド音を自動ミュートし、それ以外は通常音源設定を適用します。"""
+        edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
         has_ext = (getattr(self, "ext_audio_pcm", None) is not None and len(getattr(self, "ext_audio_pcm", [])) > 0)
         ext_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else ""
-        if has_ext and "外部音源のみ" in ext_mode:
+        if edit_on and has_ext and "外部音源のみ" in ext_mode:
             self.midi_engine.device_muted = True
             self.midi_engine.internal_synth_enabled = False
             self.midi_engine.all_notes_off()
@@ -526,6 +531,10 @@ class PlaybackController:
         except Exception:
             pass
         self.lock_controls_on_play(False)
+        if hasattr(self.gui, "ext_audition_play_btn"):
+            self.gui.ext_audition_play_btn.configure(
+                text="▶ 頭出し試聴", fg_color="#2b8c54", hover_color="#1f6b3e"
+            )
         if not self.fingering_edit_mode:
             self.gui.export_btn.configure(state="normal")
 
@@ -541,6 +550,10 @@ class PlaybackController:
         except Exception:
             pass
         self.lock_controls_on_play(False)
+        if hasattr(self.gui, "ext_audition_play_btn"):
+            self.gui.ext_audition_play_btn.configure(
+                text="▶ 頭出し試聴", fg_color="#2b8c54", hover_color="#1f6b3e"
+            )
         if not self.fingering_edit_mode:
             self.gui.export_btn.configure(state="normal")
         self.draw_harmonica_static()
@@ -847,6 +860,8 @@ class PlaybackController:
         self.stop_ext_audio_playback()
         if self.play_state != "playing":
             return
+        if hasattr(self, "is_video_edit_enabled") and not self.is_video_edit_enabled():
+            return
         pcm = getattr(self, "ext_audio_pcm", None)
         if pcm is None or len(pcm) == 0:
             return
@@ -907,6 +922,38 @@ class PlaybackController:
             self._ext_audio_channel = ch
         except Exception as e:
             print(f"[警告] 外部音源の再生開始失敗: {e}")
+
+    def on_ext_audition_play_pause(self):
+        """🎞️ 動画編集タブの手元『▶ 頭出し試聴 / ⏸ 一時停止』ボタンハンドラ"""
+        if self.play_state == "playing":
+            self.on_pause()
+            return
+        if hasattr(self.gui, "video_edit_enabled_switch") and not self.gui.video_edit_enabled_switch.get():
+            self.gui.video_edit_enabled_switch.select()
+            if hasattr(self, "update_export_edit_summary_label"):
+                self.update_export_edit_summary_label()
+            self.save_user_settings_txt()
+        self.on_play()
+
+    def on_ext_audition_restart(self):
+        """🎞️ 動画編集タブの手元『⏮ 頭から再生』ボタンハンドラ（曲頭またはループA点から即座に再生し、1音目の頭出しを確認）"""
+        if not self.midi_notes:
+            return
+        if hasattr(self.gui, "video_edit_enabled_switch") and not self.gui.video_edit_enabled_switch.get():
+            self.gui.video_edit_enabled_switch.select()
+            if hasattr(self, "update_export_edit_summary_label"):
+                self.update_export_edit_summary_label()
+            self.save_user_settings_txt()
+        self.on_stop()
+        if hasattr(self.gui, "cb_loop") and self.gui.cb_loop.get():
+            try:
+                val_a = max(1, int(self.gui.loop_a_entry.get()))
+            except ValueError:
+                val_a = 1
+            self.midi_engine.seek_to_measure(val_a)
+        else:
+            self.midi_engine.seek(0.0)
+        self.on_play()
 
     def on_ext_audio_mode_changed(self, value=None):
         """外部音源モード変更時にガイド音のミュート状態と外部音源再生を即時同期します。"""

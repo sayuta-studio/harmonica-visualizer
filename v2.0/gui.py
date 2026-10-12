@@ -276,7 +276,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.canvas = tk.Canvas(self.canvas_frame, width=960, height=540, bg=self.canvas_bg_color, highlightthickness=0)
         self.canvas.place(relx=0.5, rely=0.5, anchor="center")
 
-        # 右下：3タブ切替サイドバー (幅360px固定：「🎵 練習」「🎨 デザイン」「🎬 動画出力」)
+        # 右下：4タブ切替サイドバー (幅360px固定：「🎵 練習」「🎨 デザイン」「🎞️ 動画編集」「🎬 動画出力」)
         self.right_frame = ctk.CTkFrame(self.main_lower_frame, width=360, corner_radius=10)
         self.right_frame.pack(side="right", fill="y", padx=(5, 0))
         self.right_frame.pack_propagate(False)
@@ -284,13 +284,13 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         # 最上部：モード切替セグメントボタン
         self.sidebar_mode_seg = ctk.CTkSegmentedButton(
             self.right_frame,
-            values=["🎵 練習", "🎨 デザイン", "🎬 動画出力"],
-            font=self.f_jp_bold,
+            values=["🎵 練習", "🎨 デザイン", "🎞️ 動画編集", "🎬 動画出力"],
+            font=ctk.CTkFont(family="Meiryo", size=11, weight="bold"),
             height=34,
             command=self.switch_sidebar_tab
         )
         self.sidebar_mode_seg.set("🎵 練習")
-        self.sidebar_mode_seg.pack(fill="x", padx=12, pady=(12, 6))
+        self.sidebar_mode_seg.pack(fill="x", padx=10, pady=(12, 6))
 
         # 最下部：ステータスラベル（全タブ共通で常時表示）
         self.status_label = ctk.CTkLabel(self.right_frame, text="待機中...", font=self.f_jp_bold, text_color="#777777")
@@ -299,6 +299,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         # 各タブ用のコンテナフレーム
         self.tab_practice_frame = ctk.CTkFrame(self.right_frame, fg_color="transparent")
         self.tab_design_frame = ctk.CTkFrame(self.right_frame, fg_color="transparent")
+        self.tab_edit_frame = ctk.CTkFrame(self.right_frame, fg_color="transparent")
         self.tab_export_frame = ctk.CTkFrame(self.right_frame, fg_color="transparent")
 
         # ======================================================================
@@ -598,115 +599,39 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.show_lookahead_switch.pack(side="left", expand=True, anchor="w")
 
         # ======================================================================
-        # 🎬 タブ3：【🎬 動画出力】 (フォーマット・範囲・タイトル・外部音源・出力)
+        # 🎞️ タブ3：【🎞️ 動画編集】 (マスターON/OFF・タイトル表示・外部音源・手元試聴)
         # ======================================================================
-        self.export_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.export_group.pack(fill="x", padx=12, pady=(4, 4))
+        # --- ✨ 動画編集マスターON/OFFスイッチ ---
+        self.edit_master_group = ctk.CTkFrame(self.tab_edit_frame, corner_radius=8, border_width=1, border_color="#1f538d", fg_color="#162230")
+        self.edit_master_group.pack(fill="x", padx=12, pady=(4, 5))
 
-        bg_label = ctk.CTkLabel(self.export_group, text="🎬 フォーマット・範囲・尺設定:", font=self.f_jp_bold)
-        bg_label.pack(anchor="w", padx=12, pady=(6, 2))
-
-        ratio_bg_row = ctk.CTkFrame(self.export_group, fg_color="transparent")
-        ratio_bg_row.pack(fill="x", padx=12, pady=2)
-        ctk.CTkLabel(ratio_bg_row, text="比率/背景:", font=self.f_jp_bold, text_color="#aaaaaa", width=72, anchor="w").pack(side="left")
-        self.ratio_menu = ctk.CTkOptionMenu(
-            ratio_bg_row,
-            values=["16:9", "9:16", "4:3"],
-            width=68,
-            height=24,
+        self.video_edit_enabled_switch = ctk.CTkSwitch(
+            self.edit_master_group,
+            text="✨ 動画編集（タイトル・外部音源）を動画出力に適用",
             font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm,
-            command=self.controller.on_ratio_changed
+            command=self.controller.on_video_edit_master_toggle
         )
-        self.ratio_menu.set("16:9")
-        self.ratio_menu.pack(side="left", padx=(0, 4))
-
-        self.bg_menu = ctk.CTkOptionMenu(
-            ratio_bg_row,
-            values=["ノーマル（黒）", "グリーンバック", "ブルーバック", "マゼンタ（ピンク）"],
-            height=24,
-            font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm,
-            command=self.controller.on_bg_change
-        )
-        self.bg_menu.pack(side="right", fill="x", expand=True)
-
-        self.res_fps_frame = ctk.CTkFrame(self.export_group, fg_color="transparent")
-        self.res_fps_frame.pack(fill="x", padx=12, pady=2)
-        ctk.CTkLabel(self.res_fps_frame, text="画質/FPS:", font=self.f_jp_bold, text_color="#aaaaaa", width=72, anchor="w").pack(side="left")
-
-        self.res_menu = ctk.CTkOptionMenu(
-            self.res_fps_frame,
-            values=["4K (3840x2160)", "Full HD (1920x1080)", "HD (1280x720)", "SD (960x540)"],
-            width=120,
-            height=24,
-            font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm,
-            command=self.controller.on_setting_changed
-        )
-        self.res_menu.set("Full HD (1920x1080)")
-        self.res_menu.pack(side="left", fill="x", expand=True, padx=(0, 4))
-
-        self.fps_menu = ctk.CTkOptionMenu(
-            self.res_fps_frame,
-            values=["60 FPS", "30 FPS", "15 FPS"],
-            width=74,
-            height=24,
-            font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm,
-            command=self.controller.on_setting_changed
-        )
-        self.fps_menu.set("60 FPS")
-        self.fps_menu.pack(side="right")
-
-        range_row = ctk.CTkFrame(self.export_group, fg_color="transparent")
-        range_row.pack(fill="x", padx=12, pady=2)
-        ctk.CTkLabel(range_row, text="出力範囲:", font=self.f_jp_bold, text_color="#aaaaaa", width=72, anchor="w").pack(side="left")
-        self.export_range_menu = ctk.CTkOptionMenu(
-            range_row,
-            values=["全曲", "A〜B小節のみ"],
-            height=24,
-            font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm,
-            command=self.controller.on_setting_changed
-        )
-        self.export_range_menu.set("全曲")
-        self.export_range_menu.pack(side="right", fill="x", expand=True)
-
-        in_out_row = ctk.CTkFrame(self.export_group, fg_color="transparent")
-        in_out_row.pack(fill="x", padx=12, pady=(2, 6))
-        ctk.CTkLabel(in_out_row, text="前後の余白:", font=self.f_jp_bold, text_color="#aaaaaa", width=72, anchor="w").pack(side="left")
-        ctk.CTkLabel(in_out_row, text="前", font=self.f_jp_norm, text_color="#cccccc").pack(side="left", padx=(0, 2))
-        self.intro_sec_menu = ctk.CTkOptionMenu(
-            in_out_row,
-            values=["0秒", "1秒", "2秒", "3秒", "5秒"],
-            width=66,
-            height=24,
-            font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm,
-            command=self.controller.on_setting_changed
-        )
-        self.intro_sec_menu.set("0秒")
-        self.intro_sec_menu.pack(side="left", padx=(0, 6))
-
-        ctk.CTkLabel(in_out_row, text="後", font=self.f_jp_norm, text_color="#cccccc").pack(side="left", padx=(0, 2))
-        self.outro_sec_menu = ctk.CTkOptionMenu(
-            in_out_row,
-            values=["0秒", "1秒", "2秒", "3秒", "5秒"],
-            width=66,
-            height=24,
-            font=self.f_jp_bold,
-            dropdown_font=self.f_jp_norm,
-            command=self.controller.on_setting_changed
-        )
-        self.outro_sec_menu.set("2秒")
-        self.outro_sec_menu.pack(side="left")
+        self.video_edit_enabled_switch.select()
+        self.video_edit_enabled_switch.pack(anchor="w", padx=14, pady=8)
 
         # --- 🏷️ タイトル・クレジット表示設定 ---
-        self.title_overlay_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.title_overlay_group.pack(fill="x", padx=12, pady=4)
+        self.title_overlay_group = ctk.CTkFrame(self.tab_edit_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.title_overlay_group.pack(fill="x", padx=12, pady=5)
 
-        ctk.CTkLabel(self.title_overlay_group, text="🏷️ タイトル・クレジット表示:", font=self.f_jp_bold).pack(anchor="w", padx=12, pady=(6, 2))
+        title_hdr_row = ctk.CTkFrame(self.title_overlay_group, fg_color="transparent")
+        title_hdr_row.pack(fill="x", padx=12, pady=(6, 2))
+        ctk.CTkLabel(title_hdr_row, text="🏷️ タイトル・クレジット表示:", font=self.f_jp_bold).pack(side="left")
+        self.edit_preview_btn = ctk.CTkButton(
+            title_hdr_row,
+            text="📸 画面確認",
+            width=78,
+            height=22,
+            font=self.f_jp_bold,
+            fg_color="#1f538d",
+            hover_color="#143963",
+            command=self.controller.execute_single_frame_preview
+        )
+        self.edit_preview_btn.pack(side="right")
 
         tpl_row = ctk.CTkFrame(self.title_overlay_group, fg_color="transparent")
         tpl_row.pack(fill="x", padx=12, pady=2)
@@ -714,7 +639,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.title_template_menu = ctk.CTkOptionMenu(
             tpl_row,
             values=["なし", "イントロ中央のみ", "左上常時", "右上常時", "イントロ中央＋左上常時", "イントロ中央＋右上常時"],
-            height=24,
+            height=26,
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
             command=self.controller.on_setting_changed
@@ -728,7 +653,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.video_title_entry = ctk.CTkEntry(
             title_txt_row,
             placeholder_text="曲名を入力 (空欄時は非表示)",
-            height=24,
+            height=26,
             font=self.f_jp_norm
         )
         self.video_title_entry.pack(side="right", fill="x", expand=True)
@@ -736,12 +661,12 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.video_title_entry.bind("<FocusOut>", lambda e: self.controller.save_user_settings_txt())
 
         credit_txt_row = ctk.CTkFrame(self.title_overlay_group, fg_color="transparent")
-        credit_txt_row.pack(fill="x", padx=12, pady=(2, 6))
+        credit_txt_row.pack(fill="x", padx=12, pady=(2, 8))
         ctk.CTkLabel(credit_txt_row, text="サブ:", font=self.f_jp_bold, text_color="#aaaaaa", width=52, anchor="w").pack(side="left")
         self.video_credit_entry = ctk.CTkEntry(
             credit_txt_row,
             placeholder_text="演奏者・クレジット等 (任意)",
-            height=24,
+            height=26,
             font=self.f_jp_norm
         )
         self.video_credit_entry.pack(side="right", fill="x", expand=True)
@@ -749,8 +674,8 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.video_credit_entry.bind("<FocusOut>", lambda e: self.controller.save_user_settings_txt())
 
         # --- 🎵 外部音源・頭出し同期・音量設定 (YouTube対応) ---
-        self.ext_audio_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.ext_audio_group.pack(fill="x", padx=12, pady=4)
+        self.ext_audio_group = ctk.CTkFrame(self.tab_edit_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.ext_audio_group.pack(fill="x", padx=12, pady=5)
 
         ctk.CTkLabel(self.ext_audio_group, text="🎵 外部音源・頭出し・音量 (YouTube対応):", font=self.f_jp_bold).pack(anchor="w", padx=12, pady=(6, 2))
 
@@ -759,8 +684,8 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.ext_audio_btn = ctk.CTkButton(
             ext_file_row,
             text="📂 音源選択",
-            width=86,
-            height=24,
+            width=88,
+            height=26,
             font=self.f_jp_bold,
             fg_color="#1f538d",
             hover_color="#143963",
@@ -772,7 +697,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             ext_file_row,
             text="✕",
             width=26,
-            height=24,
+            height=26,
             font=self.f_jp_bold,
             fg_color="#555555",
             hover_color="#773333",
@@ -800,7 +725,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
                 "両方ミックス (再生も動画も両方)",
                 "外部音源オフ (ガイド音のみ)"
             ],
-            height=24,
+            height=26,
             font=self.f_jp_bold,
             dropdown_font=self.f_jp_norm,
             command=self.controller.on_ext_audio_mode_changed
@@ -808,25 +733,66 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.ext_audio_mode_menu.set("頭出し確認 (再生:両方 / 動画:外部のみ)")
         self.ext_audio_mode_menu.pack(side="right", fill="x", expand=True)
 
+        # 手元で完結する「頭出し試聴コントロール」行
+        ext_audition_row = ctk.CTkFrame(self.ext_audio_group, fg_color="transparent")
+        ext_audition_row.pack(fill="x", padx=12, pady=(4, 2))
+        ctk.CTkLabel(ext_audition_row, text="試聴:", font=self.f_jp_bold, text_color="#aaaaaa", width=52, anchor="w").pack(side="left")
+
+        self.ext_audition_play_btn = ctk.CTkButton(
+            ext_audition_row,
+            text="▶ 頭出し試聴",
+            width=102,
+            height=26,
+            font=self.f_jp_bold,
+            fg_color="#2b8c54",
+            hover_color="#1f6b3e",
+            command=self.controller.on_ext_audition_play_pause
+        )
+        self.ext_audition_play_btn.pack(side="left", padx=(0, 3))
+
+        self.ext_audition_restart_btn = ctk.CTkButton(
+            ext_audition_row,
+            text="⏮ 頭から再生",
+            width=96,
+            height=26,
+            font=self.f_jp_bold,
+            fg_color="#1f538d",
+            hover_color="#143963",
+            command=self.controller.on_ext_audition_restart
+        )
+        self.ext_audition_restart_btn.pack(side="left", padx=2)
+
+        self.ext_audition_stop_btn = ctk.CTkButton(
+            ext_audition_row,
+            text="⏹ 停止",
+            width=54,
+            height=26,
+            font=self.f_jp_bold,
+            fg_color="#c0392b",
+            hover_color="#962d22",
+            command=self.controller.on_stop
+        )
+        self.ext_audition_stop_btn.pack(side="right")
+
         ext_off_row = ctk.CTkFrame(self.ext_audio_group, fg_color="transparent")
         ext_off_row.pack(fill="x", padx=12, pady=2)
         ctk.CTkLabel(ext_off_row, text="頭出し:", font=self.f_jp_bold, text_color="#aaaaaa", width=52, anchor="w").pack(side="left")
 
         self.ext_offset_m10_btn = ctk.CTkButton(
-            ext_off_row, text="-10", width=32, height=22, font=self.f_jp_bold,
+            ext_off_row, text="-10", width=32, height=24, font=self.f_jp_bold,
             fg_color="#3a3a3a", hover_color="#555555",
             command=lambda: self.controller.step_ext_audio_offset(-10)
         )
         self.ext_offset_m10_btn.pack(side="left", padx=1)
 
         self.ext_offset_m1_btn = ctk.CTkButton(
-            ext_off_row, text="-1", width=26, height=22, font=self.f_jp_bold,
+            ext_off_row, text="-1", width=26, height=24, font=self.f_jp_bold,
             fg_color="#3a3a3a", hover_color="#555555",
             command=lambda: self.controller.step_ext_audio_offset(-1)
         )
         self.ext_offset_m1_btn.pack(side="left", padx=1)
 
-        self.ext_audio_offset_entry = ctk.CTkEntry(ext_off_row, width=54, height=22, justify="center", font=self.f_bold)
+        self.ext_audio_offset_entry = ctk.CTkEntry(ext_off_row, width=54, height=24, justify="center", font=self.f_bold)
         self.ext_audio_offset_entry.insert(0, "0")
         self.ext_audio_offset_entry.pack(side="left", padx=2)
         self.ext_audio_offset_entry.bind("<Return>", lambda e: self.controller.on_ext_audio_offset_changed())
@@ -835,14 +801,14 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         ctk.CTkLabel(ext_off_row, text="ms", font=self.f_jp_norm, text_color="#aaaaaa").pack(side="left", padx=(0, 2))
 
         self.ext_offset_p1_btn = ctk.CTkButton(
-            ext_off_row, text="+1", width=26, height=22, font=self.f_jp_bold,
+            ext_off_row, text="+1", width=26, height=24, font=self.f_jp_bold,
             fg_color="#3a3a3a", hover_color="#555555",
             command=lambda: self.controller.step_ext_audio_offset(1)
         )
         self.ext_offset_p1_btn.pack(side="left", padx=1)
 
         self.ext_offset_p10_btn = ctk.CTkButton(
-            ext_off_row, text="+10", width=32, height=22, font=self.f_jp_bold,
+            ext_off_row, text="+10", width=32, height=24, font=self.f_jp_bold,
             fg_color="#3a3a3a", hover_color="#555555",
             command=lambda: self.controller.step_ext_audio_offset(10)
         )
@@ -851,7 +817,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         ext_vol_row = ctk.CTkFrame(self.ext_audio_group, fg_color="transparent")
         ext_vol_row.pack(fill="x", padx=12, pady=2)
         ctk.CTkLabel(ext_vol_row, text="音量%:", font=self.f_jp_bold, text_color="#aaaaaa", width=52, anchor="w").pack(side="left")
-        self.ext_audio_vol_entry = ctk.CTkEntry(ext_vol_row, width=44, height=22, justify="center", font=self.f_bold)
+        self.ext_audio_vol_entry = ctk.CTkEntry(ext_vol_row, width=44, height=24, justify="center", font=self.f_bold)
         self.ext_audio_vol_entry.insert(0, "100")
         self.ext_audio_vol_entry.pack(side="right", padx=(4, 0))
         self.ext_audio_vol_entry.bind("<Return>", lambda e: self.controller.on_ext_audio_vol_entry_changed())
@@ -869,7 +835,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.ext_audio_vol_slider.pack(side="left", fill="x", expand=True, padx=2)
 
         yt_lim_row = ctk.CTkFrame(self.ext_audio_group, fg_color="transparent")
-        yt_lim_row.pack(fill="x", padx=12, pady=(2, 6))
+        yt_lim_row.pack(fill="x", padx=12, pady=(2, 8))
         self.yt_limiter_switch = ctk.CTkSwitch(
             yt_lim_row,
             text="YouTube上限リミッター (-1.0dB自動保護)",
@@ -879,12 +845,24 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.yt_limiter_switch.select()
         self.yt_limiter_switch.pack(side="left", anchor="w")
 
-        # --- 🚀 レンダリング・出力アクション ---
+        # ======================================================================
+        # 🎬 タブ4：【🎬 動画出力】 (フォーマット・出力範囲・プレビュー/書き出し)
+        # ======================================================================
+        # --- 🚀 レンダリング・出力アクション (下部に最優先で常時固定) ---
         self.export_action_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
-        self.export_action_group.pack(fill="x", padx=12, pady=(4, 6))
+        self.export_action_group.pack(side="bottom", fill="x", padx=12, pady=(4, 8))
+
+        self.export_edit_summary_lbl = ctk.CTkLabel(
+            self.export_action_group,
+            text="✨ 動画編集の適用: ON（🎞️動画編集タブの設定を反映）",
+            font=self.f_jp_bold,
+            text_color="#00ffcc",
+            anchor="w"
+        )
+        self.export_edit_summary_lbl.pack(fill="x", padx=12, pady=(8, 2))
 
         self.action_btn_frame = ctk.CTkFrame(self.export_action_group, fg_color="transparent")
-        self.action_btn_frame.pack(fill="x", padx=10, pady=8)
+        self.action_btn_frame.pack(fill="x", padx=10, pady=(4, 10))
 
         self.preview_btn = ctk.CTkButton(
             self.action_btn_frame,
@@ -893,7 +871,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             hover_color="#143963",
             font=self.f_jp_bold,
             width=88,
-            height=32,
+            height=34,
             command=self.controller.execute_single_frame_preview
         )
         self.preview_btn.pack(side="left", fill="x", expand=True, padx=(0, 2))
@@ -905,7 +883,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             hover_color="#1f6b3e",
             font=self.f_jp_bold,
             width=96,
-            height=32,
+            height=34,
             command=self.controller.execute_video_export
         )
         self.export_btn.pack(side="left", fill="x", expand=True, padx=2)
@@ -917,10 +895,114 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             hover_color="#666666",
             font=self.f_jp_bold,
             width=74,
-            height=32,
+            height=34,
             command=self.controller.on_open_output_dir
         )
         self.open_output_btn.pack(side="right", padx=(2, 0))
+
+        # --- 📐 映像フォーマット・画質設定 ---
+        self.export_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.export_group.pack(fill="x", padx=12, pady=(4, 6))
+
+        bg_label = ctk.CTkLabel(self.export_group, text="📐 映像フォーマット・画質設定:", font=self.f_jp_bold)
+        bg_label.pack(anchor="w", padx=15, pady=(10, 4))
+
+        ratio_row = ctk.CTkFrame(self.export_group, fg_color="transparent")
+        ratio_row.pack(fill="x", padx=15, pady=3)
+        ctk.CTkLabel(ratio_row, text="アスペクト比:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
+        self.ratio_menu = ctk.CTkOptionMenu(
+            ratio_row,
+            values=["16:9", "9:16", "4:3"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_ratio_changed
+        )
+        self.ratio_menu.set("16:9")
+        self.ratio_menu.pack(side="right", fill="x", expand=True)
+
+        bg_row = ctk.CTkFrame(self.export_group, fg_color="transparent")
+        bg_row.pack(fill="x", padx=15, pady=3)
+        ctk.CTkLabel(bg_row, text="動画背景色:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
+        self.bg_menu = ctk.CTkOptionMenu(
+            bg_row,
+            values=["ノーマル（黒）", "グリーンバック", "ブルーバック", "マゼンタ（ピンク）"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_bg_change
+        )
+        self.bg_menu.pack(side="right", fill="x", expand=True)
+
+        res_row = ctk.CTkFrame(self.export_group, fg_color="transparent")
+        res_row.pack(fill="x", padx=15, pady=3)
+        ctk.CTkLabel(res_row, text="出力解像度:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
+        self.res_menu = ctk.CTkOptionMenu(
+            res_row,
+            values=["4K (3840x2160)", "Full HD (1920x1080)", "HD (1280x720)", "SD (960x540)"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.res_menu.set("Full HD (1920x1080)")
+        self.res_menu.pack(side="right", fill="x", expand=True)
+
+        fps_row = ctk.CTkFrame(self.export_group, fg_color="transparent")
+        fps_row.pack(fill="x", padx=15, pady=(3, 10))
+        ctk.CTkLabel(fps_row, text="フレームレート:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
+        self.fps_menu = ctk.CTkOptionMenu(
+            fps_row,
+            values=["60 FPS", "30 FPS", "15 FPS"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.fps_menu.set("60 FPS")
+        self.fps_menu.pack(side="right", fill="x", expand=True)
+
+        # --- ✂️ 出力範囲・前後の余白設定 ---
+        self.export_range_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.export_range_group.pack(fill="x", padx=12, pady=6)
+
+        ctk.CTkLabel(self.export_range_group, text="✂️ 出力範囲・前後の余白設定:", font=self.f_jp_bold).pack(anchor="w", padx=15, pady=(10, 4))
+
+        range_row = ctk.CTkFrame(self.export_range_group, fg_color="transparent")
+        range_row.pack(fill="x", padx=15, pady=3)
+        ctk.CTkLabel(range_row, text="書き出し範囲:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
+        self.export_range_menu = ctk.CTkOptionMenu(
+            range_row,
+            values=["全曲", "A〜B小節のみ"],
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.export_range_menu.set("全曲")
+        self.export_range_menu.pack(side="right", fill="x", expand=True)
+
+        in_out_row = ctk.CTkFrame(self.export_range_group, fg_color="transparent")
+        in_out_row.pack(fill="x", padx=15, pady=(3, 10))
+        ctk.CTkLabel(in_out_row, text="前後の余白:", font=self.f_jp_bold, text_color="#aaaaaa", width=100, anchor="w").pack(side="left")
+        ctk.CTkLabel(in_out_row, text="前", font=self.f_jp_norm, text_color="#cccccc").pack(side="left", padx=(0, 3))
+        self.intro_sec_menu = ctk.CTkOptionMenu(
+            in_out_row,
+            values=["0秒", "1秒", "2秒", "3秒", "5秒"],
+            width=74,
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.intro_sec_menu.set("0秒")
+        self.intro_sec_menu.pack(side="left", padx=(0, 8))
+
+        ctk.CTkLabel(in_out_row, text="後", font=self.f_jp_norm, text_color="#cccccc").pack(side="left", padx=(0, 3))
+        self.outro_sec_menu = ctk.CTkOptionMenu(
+            in_out_row,
+            values=["0秒", "1秒", "2秒", "3秒", "5秒"],
+            width=74,
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.outro_sec_menu.set("2秒")
+        self.outro_sec_menu.pack(side="left")
 
         # 初期表示タブを「🎵 練習」に設定
         self.tab_practice_frame.pack(fill="both", expand=True)
@@ -929,12 +1011,15 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         """右サイドバーの表示タブを切り替えます。"""
         self.tab_practice_frame.pack_forget()
         self.tab_design_frame.pack_forget()
+        self.tab_edit_frame.pack_forget()
         self.tab_export_frame.pack_forget()
 
         if tab_name == "🎵 練習":
             self.tab_practice_frame.pack(fill="both", expand=True)
         elif tab_name == "🎨 デザイン":
             self.tab_design_frame.pack(fill="both", expand=True)
+        elif tab_name == "🎞️ 動画編集":
+            self.tab_edit_frame.pack(fill="both", expand=True)
         elif tab_name == "🎬 動画出力":
             self.tab_export_frame.pack(fill="both", expand=True)
 
