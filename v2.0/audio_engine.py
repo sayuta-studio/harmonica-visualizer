@@ -304,7 +304,7 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
         # すなわち ext_pos_sec = 0 となる video_t は:
         ext_zero_in_video_sec = video_song_start_sec - sec_a_in_song + offset_sec
 
-        dst_min_sample = int(round(intro_sec * sample_rate))
+        dst_min_sample = int(round(video_song_start_sec * sample_rate))
         dst_start = max(dst_min_sample, int(round(ext_zero_in_video_sec * sample_rate)))
         src_start = max(0, int(round((dst_start / float(sample_rate) - ext_zero_in_video_sec) * sample_rate)))
 

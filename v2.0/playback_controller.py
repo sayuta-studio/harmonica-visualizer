@@ -489,25 +489,35 @@ class PlaybackController:
                 )
 
             self._apply_effective_guide_audio_mode()
+            self._refresh_ext_audio_config_cache()
+            self.stop_ext_audio_playback()
 
             now = time.time()
             self.last_update_time = now
             self.midi_engine.play()
-            self.sync_ext_audio_playback()
             self.update_clock()
 
     def _apply_effective_guide_audio_mode(self):
-        """外部音源モードが『外部音源のみ』かつ外部音源ロード済みの場合はガイド音を自動ミュートし、それ以外は通常音源設定を適用します。"""
+        """外部音源設定と通常音源設定を統合し、外部音源との重ね再生時は遅延ゼロの内蔵シンセへ自動ルーティングして動画出力との音ズレを解消します。"""
         edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
         has_ext = (getattr(self, "ext_audio_pcm", None) is not None and len(getattr(self, "ext_audio_pcm", [])) > 0)
         ext_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else ""
-        if edit_on and has_ext and "外部音源のみ" in ext_mode:
-            self.midi_engine.device_muted = True
-            self.midi_engine.internal_synth_enabled = False
-            self.midi_engine.all_notes_off()
-            return
-
         audio_mode = self.gui.audio_mode_menu.get()
+
+        if edit_on and has_ext and "外部音源オフ" not in ext_mode:
+            if "外部音源のみ" in ext_mode:
+                self.midi_engine.device_muted = True
+                self.midi_engine.internal_synth_enabled = False
+                self.midi_engine.all_notes_off()
+                return
+            # 頭出し確認・両方ミックス時は、Windows GS音源の約50ms発音遅延を排除し動画出力と完全一致させるため内蔵シンセを使用
+            if "消音" not in audio_mode or "頭出し確認" in ext_mode:
+                self.midi_engine.device_muted = True
+                self.midi_engine.internal_synth_enabled = True
+                self.midi_engine.metronome_pattern = self.gui.metro_menu.get()
+                self.midi_engine.all_notes_off()
+                return
+
         if "MIDI再生" in audio_mode:
             self.midi_engine.device_muted = False
             self.midi_engine.internal_synth_enabled = False
@@ -752,7 +762,7 @@ class PlaybackController:
             print("[System] 再生ストリームの物理発音を検知 ➔ UIタイマーループ点火")
 
     def on_loop_wrapped(self):
-        """A-BループでB点末尾からA点頭へ折り返した瞬間のコールバック（ステップアップ練習＆外部音源再同期）"""
+        """A-BループでB点末尾からA点頭へ折り返した瞬間のコールバック（ステップアップ練習の速度更新）"""
         if hasattr(self, "gui") and hasattr(self.gui, "stepup_switch") and self.gui.stepup_switch.get():
             start_pct, goal_pct, step_pct = self.get_stepup_params()
             cur_pct = int(round(getattr(self, "speed_percent", start_pct)))
@@ -776,12 +786,23 @@ class PlaybackController:
                     text=f"🎯 目標速度 {goal_pct}% でループ練習中",
                     text_color="#00ffcc"
                 )
+
+    def on_main_playback_start(self):
+        """カウントイン終了または本編再生開始の瞬間にワーカースレッドから直結呼び出しされ、1音目と外部音源を誤差0.0msで同時点火します。"""
         if self.play_state == "playing":
-            self.sync_ext_audio_playback()
+            self.sync_ext_audio_playback(from_worker=True, anchor_tick=self.midi_engine.accumulated_ticks)
 
     # ==============================================================================
     # 外部音源（伴奏・実演録音）の読み込み・リアルタイム頭出し同期・音量制御
     # ==============================================================================
+    def _refresh_ext_audio_config_cache(self):
+        """ワーカースレッドからTkinterウィジェットに触れずに外部音源設定を参照できるようキャッシュを更新します。"""
+        self._ext_cfg_edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
+        self._ext_cfg_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else ""
+        self._ext_cfg_offset_ms = self.get_ext_audio_offset_ms()
+        self._ext_cfg_vol_pct = self.get_ext_audio_vol_pct()
+        self._ext_cfg_yt_lim = bool(self.gui.yt_limiter_switch.get()) if hasattr(self.gui, "yt_limiter_switch") else True
+
     def get_ext_audio_offset_ms(self):
         """外部音源の開始オフセット(ms)を整数として返します（正値＝外部音源を遅らせる、負値＝外部音源の頭を削って早める）。"""
         if not hasattr(self, "gui") or not hasattr(self.gui, "ext_audio_offset_entry"):
@@ -855,17 +876,23 @@ class PlaybackController:
         self._ext_audio_channel = None
         self._ext_audio_sound_ref = None
 
-    def sync_ext_audio_playback(self):
-        """現在の再生ティック位置・ミリ秒オフセット・音量%に合わせて外部音源をサンプル精度で同期再生します。"""
+    def sync_ext_audio_playback(self, from_worker=False, anchor_tick=None):
+        """現在の再生ティック位置・ミリ秒オフセット・音量%に合わせて外部音源をサンプル精度で同期再生し、発音直後にマスタークロックを再ロックします。"""
+        if not from_worker:
+            self._refresh_ext_audio_config_cache()
+
         self.stop_ext_audio_playback()
         if self.play_state != "playing":
             return
-        if hasattr(self, "is_video_edit_enabled") and not self.is_video_edit_enabled():
+        # カウントイン中は外部音源を鳴らさず、本編突入の瞬間（on_main_playback_start）に誤差0msで点火する
+        if self.midi_engine.playing_state != "playing":
+            return
+        if not getattr(self, "_ext_cfg_edit_on", True):
             return
         pcm = getattr(self, "ext_audio_pcm", None)
         if pcm is None or len(pcm) == 0:
             return
-        ext_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else ""
+        ext_mode = getattr(self, "_ext_cfg_mode", "")
         if "外部音源オフ" in ext_mode:
             return
 
@@ -876,14 +903,10 @@ class PlaybackController:
         except Exception:
             return
 
-        cur_tick = self.midi_engine.get_smooth_current_tick()
-        if cur_tick >= 0:
-            song_sec = self.midi_engine.tick_to_sec(cur_tick)
-        else:
-            # カウントイン中（負のティック）：update_clock と同じ tick_to_sec 換算式に統一
-            song_sec = -self.midi_engine.tick_to_sec(-cur_tick)
+        cur_tick = float(self.midi_engine.accumulated_ticks if anchor_tick is not None else self.midi_engine.get_smooth_current_tick())
+        song_sec = self.midi_engine.tick_to_sec(max(0.0, cur_tick))
 
-        offset_sec = self.get_ext_audio_offset_ms() / 1000.0
+        offset_sec = float(getattr(self, "_ext_cfg_offset_ms", 0)) / 1000.0
         ext_pos_sec = song_sec - offset_sec
         sample_rate = 44100
         start_sample = int(round(ext_pos_sec * sample_rate))
@@ -898,8 +921,8 @@ class PlaybackController:
             pad = np.zeros((pad_samples, 2), dtype=np.int16)
             play_pcm = np.vstack((pad, pcm))
 
-        vol_pct = self.get_ext_audio_vol_pct()
-        yt_lim = bool(self.gui.yt_limiter_switch.get()) if hasattr(self.gui, "yt_limiter_switch") else True
+        vol_pct = float(getattr(self, "_ext_cfg_vol_pct", 100.0))
+        yt_lim = bool(getattr(self, "_ext_cfg_yt_lim", True))
 
         if vol_pct > 100.0:
             gain = vol_pct / 100.0
@@ -916,6 +939,9 @@ class PlaybackController:
         try:
             snd = pygame.mixer.Sound(buffer=play_pcm)
             ch = snd.play()
+            # 🚀【解決】：バッファ切り出し・Sound生成に要した数十msのラグを完全に打ち消すため、
+            # 外部音源が物理発音を開始したこの瞬間にマスタークロックの時刻アンカーを再ロック！
+            self.midi_engine.resync_master_clock(anchor_tick=cur_tick)
             if ch is not None:
                 ch.set_volume(hw_vol)
             self._ext_audio_sound_ref = snd

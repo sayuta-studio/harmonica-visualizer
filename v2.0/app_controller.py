@@ -89,6 +89,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         self.midi_engine.stream_start_callback = lambda: self.after(0, self.on_audio_stream_start)
         self.midi_engine.loop_wrap_callback = lambda: self.after(0, self.on_loop_wrapped)
+        self.midi_engine.main_start_callback = self.on_main_playback_start
 
         self.gui = HarmonicaAppGUI(self, self)
 
@@ -268,7 +269,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         now = time.time()
         is_count_in_active = (self.midi_engine.playing_state == "count_in")
-        self.current_tick = self.midi_engine.get_smooth_current_tick()
+        # 画面描画〜モニタ表示までの約10msのフレーム提示遅延を先読み補正し、着地と発音を視覚的に完全一致させる
+        self.current_tick = self.midi_engine.get_smooth_current_tick(lookahead_sec=0.010)
 
         if self.current_tick < 0:
             song_sec = -self.midi_engine.tick_to_sec(-self.current_tick)
@@ -322,7 +324,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         
         self.last_update_time = now
 
-        self.draw_harmonica(active_pitches=self.midi_engine.currently_playing_notes, target_tick=self.current_tick, ticks_per_beat=ticks_per_beat, draw_mode="notes")
+        active_mode = "from_tick" if (not is_count_in_active and self.current_tick >= 0) else set()
+        self.draw_harmonica(active_pitches=active_mode, target_tick=self.current_tick, ticks_per_beat=ticks_per_beat, draw_mode="notes")
         
         # after(30)だったスレッドタイマーを、高精度60FPS周期である after(16) へスライド短縮！
         self.after(16, self.update_clock)

@@ -39,6 +39,10 @@ if os.name == 'nt':
         winmm.midiOutShortMsg.restype = wintypes.UINT
         winmm.midiOutGetNumDevs.argtypes = []
         winmm.midiOutGetNumDevs.restype = wintypes.UINT
+        winmm.timeBeginPeriod.argtypes = [wintypes.UINT]
+        winmm.timeBeginPeriod.restype = wintypes.UINT
+        winmm.timeEndPeriod.argtypes = [wintypes.UINT]
+        winmm.timeEndPeriod.restype = wintypes.UINT
     except Exception as e:
         print(f"[警告] WinMM.dllのバインドに失敗しました: {e}")
         winmm = None
@@ -112,6 +116,7 @@ class MidiEngine:
     def __init__(self):
         self.h_midi_out = HMIDIOUT(0)
         self.device_opened = False
+        self._timer_period_active = False
         self.open_device()
         
         self.mido_file = None
@@ -129,10 +134,15 @@ class MidiEngine:
         self.current_msg_index = 0
         self.accumulated_ticks = 0
         self.total_ticks = 0
-        self._interp_base_tick = 0.0
-        self._interp_max_tick = 0.0
-        self._interp_start_perf = 0.0
-        self._interp_ticks_per_sec = 0.0
+
+        # 絶対時刻マスタークロック（累積ドリフト完全ゼロ化用アンカー）
+        self._clock_anchor_perf = 0.0
+        self._clock_anchor_base_sec = 0.0
+        self._clock_anchor_speed = 1.0
+        self._ci_anchor_perf = 0.0
+        self._ci_origin_tick = 0.0
+        self._ci_target_start_tick = 0.0
+        self._ci_ticks_per_sec = 0.0
         
         self.play_thread = None
         
@@ -165,6 +175,7 @@ class MidiEngine:
         self.error_callback = None
         self.loop_wrap_callback = None
         self.stream_start_callback = None
+        self.main_start_callback = None
 
         # 内蔵軽量ポータブルシンセ
         self.synth_voices = {}          
@@ -178,6 +189,12 @@ class MidiEngine:
         self.init_internal_synth()
 
     def open_device(self):
+        if winmm and not self._timer_period_active:
+            try:
+                winmm.timeBeginPeriod(1)
+                self._timer_period_active = True
+            except Exception:
+                pass
         if winmm and not self.device_opened:
             res = winmm.midiOutOpen(ctypes.byref(self.h_midi_out), 0, 0, 0, 0)
             if res != 0:
@@ -190,6 +207,12 @@ class MidiEngine:
             self.all_notes_off()
             winmm.midiOutClose(self.h_midi_out)
             self.device_opened = False
+        if winmm and self._timer_period_active:
+            try:
+                winmm.timeEndPeriod(1)
+            except Exception:
+                pass
+            self._timer_period_active = False
 
     def init_internal_synth(self):
         try:
@@ -714,10 +737,13 @@ class MidiEngine:
             self.accumulated_ticks = self.merged_messages[self.current_msg_index].abs_tick
         else:
             self.accumulated_ticks = 0
-        self._interp_base_tick = float(self.accumulated_ticks)
-        self._interp_max_tick = float(self.accumulated_ticks)
-        self._interp_start_perf = 0.0
-        self._interp_ticks_per_sec = 0.0
+        self._clock_anchor_perf = 0.0
+        self._clock_anchor_base_sec = self.tick_to_sec(self.accumulated_ticks, speed_ratio=1.0)
+        self._clock_anchor_speed = max(0.05, self.speed_ratio)
+        self._ci_anchor_perf = 0.0
+        self._ci_origin_tick = float(self.accumulated_ticks)
+        self._ci_target_start_tick = float(self.accumulated_ticks)
+        self._ci_ticks_per_sec = 0.0
         self.currently_playing_notes.clear()
 
     def seek(self, pct):
@@ -756,14 +782,13 @@ class MidiEngine:
             self.accumulated_ticks = self.merged_messages[self.current_msg_index].abs_tick
         else:
             self.accumulated_ticks = int(target_tick)
-        self._interp_base_tick = float(self.accumulated_ticks)
-        self._interp_max_tick = float(self.accumulated_ticks)
-        self._interp_start_perf = time.perf_counter()
+        self.resync_master_clock(anchor_tick=self.accumulated_ticks)
             
         self.sync_midi_channel_states(self.current_msg_index)
             
         if was_playing:
             self.playing_state = 'playing'
+            self.resync_master_clock(anchor_tick=self.accumulated_ticks)
             self.play_thread = threading.Thread(target=self._playback_worker, daemon=True)
             self.play_thread.start()
         else:
@@ -933,17 +958,63 @@ class MidiEngine:
         ticks_per_beat_val = int(self.ticks_per_beat * (4.0 / active_den))
         return start_tick - (self.count_in_measures * active_num * ticks_per_beat_val)
 
-    def get_smooth_current_tick(self):
-        """60FPS描画タイマー向けに、現在再生中（カウントイン含む）の連続ティック位置を高精度補間して返します。"""
+    def resync_master_clock(self, anchor_tick=None, anchor_perf=None):
+        """絶対時刻マスタークロックの基準点（アンカー）を指定ティック・現在時刻でロックします。"""
+        now = time.perf_counter() if anchor_perf is None else float(anchor_perf)
+        tick = float(self.accumulated_ticks if anchor_tick is None else anchor_tick)
+        sr = max(0.05, self.speed_ratio)
+        if self.playing_state == 'count_in':
+            self._ci_origin_tick = tick
+            self._ci_anchor_perf = now
+            active_bpm = max(1.0, self.get_bpm_at_tick(max(0.0, self._ci_target_start_tick), sr))
+            self._ci_ticks_per_sec = (active_bpm * self.ticks_per_beat) / 60.0
+        else:
+            self._clock_anchor_base_sec = self.tick_to_sec(tick, speed_ratio=1.0)
+            self._clock_anchor_perf = now
+            self._clock_anchor_speed = sr
+
+    def get_current_base_sec(self, now=None):
+        """本編再生中における100%速度換算の絶対経過秒数を返します（再生中の速度%変更にも連続追従）。"""
+        if now is None:
+            now = time.perf_counter()
+        if self._clock_anchor_perf <= 0.0:
+            return self.tick_to_sec(self.accumulated_ticks, speed_ratio=1.0)
+        sr = max(0.05, self.speed_ratio)
+        if abs(sr - self._clock_anchor_speed) > 1e-6:
+            elapsed = max(0.0, now - self._clock_anchor_perf)
+            self._clock_anchor_base_sec += elapsed * self._clock_anchor_speed
+            self._clock_anchor_perf = now
+            self._clock_anchor_speed = sr
+        elapsed = max(0.0, now - self._clock_anchor_perf)
+        return self._clock_anchor_base_sec + elapsed * self._clock_anchor_speed
+
+    def get_smooth_current_tick(self, lookahead_sec=0.0):
+        """60FPS描画タイマー向けに、現在再生中（カウントイン含む）の連続ティック位置を絶対マスタークロックから直接算出します。"""
         if self.playing_state not in ('playing', 'count_in'):
             return float(self.accumulated_ticks)
-        if self._interp_ticks_per_sec <= 0.0 or self._interp_start_perf <= 0.0:
+        now = time.perf_counter()
+        la = max(0.0, float(lookahead_sec))
+        if self.playing_state == 'count_in':
+            if self._ci_anchor_perf <= 0.0 or self._ci_ticks_per_sec <= 0.0:
+                return float(self.accumulated_ticks)
+            sr = max(0.05, self.speed_ratio)
+            active_bpm = max(1.0, self.get_bpm_at_tick(max(0.0, self._ci_target_start_tick), sr))
+            expected_tps = (active_bpm * self.ticks_per_beat) / 60.0
+            if abs(expected_tps - self._ci_ticks_per_sec) > 1e-4:
+                elapsed = max(0.0, now - self._ci_anchor_perf)
+                self._ci_origin_tick += elapsed * self._ci_ticks_per_sec
+                self._ci_anchor_perf = now
+                self._ci_ticks_per_sec = expected_tps
+            elapsed = max(0.0, now - self._ci_anchor_perf) + la
+            tick = self._ci_origin_tick + elapsed * self._ci_ticks_per_sec
+            return float(min(self._ci_target_start_tick, tick))
+
+        if self._clock_anchor_perf <= 0.0:
             return float(self.accumulated_ticks)
-        elapsed = time.perf_counter() - self._interp_start_perf
-        if elapsed <= 0.0:
-            return float(self._interp_base_tick)
-        tick = self._interp_base_tick + elapsed * self._interp_ticks_per_sec
-        return float(min(self._interp_max_tick, tick))
+        cur_base_sec = self.get_current_base_sec(now) + la * max(0.05, self.speed_ratio)
+        tick = self.sec_to_tick(cur_base_sec, speed_ratio=1.0)
+        max_t = float(self.loop_b_target_tick if (self.loop_enabled and self.loop_b_target_tick is not None) else self.total_ticks)
+        return float(min(max_t, tick))
 
     def play(self):
         if not self.mido_file:
@@ -960,6 +1031,7 @@ class MidiEngine:
                 self.accumulated_ticks = a_tick
 
         start_tick = self.merged_messages[self.current_msg_index].abs_tick if self.current_msg_index < len(self.merged_messages) else 0
+        self._ci_target_start_tick = float(start_tick)
         if self.count_in_measures > 0:
             self.playing_state = 'count_in'
             init_tick = self._get_count_in_origin_tick(start_tick)
@@ -968,9 +1040,7 @@ class MidiEngine:
             init_tick = start_tick
 
         self.accumulated_ticks = init_tick
-        self._interp_base_tick = float(init_tick)
-        self._interp_max_tick = float(init_tick)
-        self._interp_start_perf = time.perf_counter()
+        self.resync_master_clock(anchor_tick=init_tick)
         self.play_thread = threading.Thread(target=self._playback_worker, daemon=True)
         self.play_thread.start()
 
@@ -1016,16 +1086,17 @@ class MidiEngine:
                     active_num = self.time_sig_num
                     active_den = self.time_sig_den
                 
-                # 1. カウントイン（A地点・開始小節の start_tick からカウントイン分だけ手前を起点に等速進行）
+                # 1. カウントイン（絶対時刻アンカーから各拍の終了ティックを監視し、拍間の累積誤差をゼロ化）
+                was_count_in = False
                 if self.playing_state == 'count_in' and self.count_in_measures > 0:
+                    was_count_in = True
                     ticks_per_beat_val = int(self.ticks_per_beat * (4.0 / active_den))
                     total_beats = self.count_in_measures * active_num
                     total_count_in_ticks = total_beats * ticks_per_beat_val
                     count_in_origin_tick = start_tick - total_count_in_ticks
                     self.accumulated_ticks = count_in_origin_tick
-                    self._interp_base_tick = float(count_in_origin_tick)
-                    self._interp_max_tick = float(count_in_origin_tick)
-                    self._interp_start_perf = time.perf_counter()
+                    self._ci_target_start_tick = float(start_tick)
+                    self.resync_master_clock(anchor_tick=count_in_origin_tick)
                     
                     for beat in range(total_beats):
                         if self.playing_state != 'count_in':
@@ -1041,55 +1112,35 @@ class MidiEngine:
                                 self.stream_start_callback()
                         
                         self.play_metronome_tick(beat_in_measure, force_standard=True)
+                        beat_end_tick = float(count_in_origin_tick + (beat + 1) * ticks_per_beat_val)
                         
-                        start_wait = time.perf_counter()
-                        beat_start_tick = count_in_origin_tick + (beat * ticks_per_beat_val)
-                        beat_end_tick = beat_start_tick + ticks_per_beat_val
-                        self._interp_base_tick = float(beat_start_tick)
-                        self._interp_max_tick = float(beat_end_tick)
-                        self._interp_start_perf = start_wait
-                        
-                        while True:
-                            if self.playing_state != 'count_in':
+                        while self.playing_state == 'count_in':
+                            cur_ci_tick = self.get_smooth_current_tick()
+                            self.bpm = round(max(1.0, self.get_bpm_at_tick(max(0, start_tick))))
+                            self.accumulated_ticks = int(min(beat_end_tick, cur_ci_tick))
+                            tps = max(1.0, self._ci_ticks_per_sec)
+                            remaining = (beat_end_tick - cur_ci_tick) / tps
+                            if remaining <= 0.0:
                                 break
-                            
-                            active_bpm = max(1.0, self.get_bpm_at_tick(max(0, start_tick)))
-                            self.bpm = round(active_bpm)
-                            beat_dur = (60.0 / active_bpm) * (4.0 / active_den)
-                            ticks_per_sec = (active_bpm * self.ticks_per_beat) / 60.0
-                            self._interp_ticks_per_sec = ticks_per_sec
-                            
-                            elapsed = time.perf_counter() - start_wait
-                            self.accumulated_ticks = min(beat_end_tick, beat_start_tick + int(elapsed * ticks_per_sec))
-                            
-                            remaining = beat_dur - elapsed
-                            if remaining <= 0:
-                                break
-                            
-                            if remaining > 0.015:
-                                time.sleep(0.005)
-                            elif remaining > 0.001:
+                            if remaining > 0.004:
+                                time.sleep(0.001)
+                            elif remaining > 0.0005:
                                 time.sleep(0)
-                            else:
-                                pass
                     if self.playing_state != 'count_in':
                         break
                     self.accumulated_ticks = start_tick
-                    self._interp_base_tick = float(start_tick)
-                    self._interp_max_tick = float(start_tick)
-                    self._interp_start_perf = time.perf_counter()
                     
                 if self.playing_state not in ('playing', 'count_in'):
                     break
                     
-                # 2. 本編メイン再生（開始位置 start_tick を基準に差分ティックを待機し、A地点開始時の逆戻りワープを完全防止）
+                # 2. 本編メイン再生（絶対時刻マスタークロック方式：曲頭〜曲末まで累積ドリフト 0.0ms）
                 self.playing_state = 'playing'
                 reached_b_or_end = False
                 current_play_tick = start_tick
                 self.accumulated_ticks = start_tick
-                self._interp_base_tick = float(start_tick)
-                self._interp_max_tick = float(start_tick)
-                self._interp_start_perf = time.perf_counter()
+                self.resync_master_clock(anchor_tick=start_tick)
+                if self.main_start_callback:
+                    self.main_start_callback()
                 
                 while self.playing_state == 'playing' and self.current_msg_index < len(self.merged_messages):
                     if self.loop_enabled and self.loop_b_target_tick is not None:
@@ -1108,44 +1159,27 @@ class MidiEngine:
                     if ticks > 0:
                         if self.active_pitches_callback:
                             self.active_pitches_callback(self.currently_playing_notes)
-                            
-                        start_wait = time.perf_counter()
-                        start_tick_base = current_play_tick
-                        base_delta_sec = max(0.0, self.tick_to_sec(event.abs_tick, speed_ratio=1.0) - self.tick_to_sec(start_tick_base, speed_ratio=1.0))
-                        self._interp_base_tick = float(start_tick_base)
-                        self._interp_max_tick = float(event.abs_tick)
-                        self._interp_start_perf = start_wait
                         
-                        while True:
-                            if self.playing_state != 'playing':
-                                break
-                            
-                            speed_r = max(0.05, self.speed_ratio)
-                            dynamic_delay = base_delta_sec / speed_r
-                            
-                            elapsed = time.perf_counter() - start_wait
-                            
-                            cur_bpm = max(1.0, self.get_bpm_at_tick(start_tick_base, speed_r))
-                            self.bpm = round(cur_bpm)
-                            ticks_per_sec = (cur_bpm * self.ticks_per_beat) / 60.0
-                            self._interp_ticks_per_sec = ticks_per_sec
-                            self.accumulated_ticks = min(event.abs_tick, start_tick_base + int(elapsed * ticks_per_sec))
+                        event_base_sec = self.tick_to_sec(event.abs_tick, speed_ratio=1.0)
+                        while self.playing_state == 'playing':
+                            cur_base_sec = self.get_current_base_sec()
+                            cur_tick_f = self.sec_to_tick(cur_base_sec, speed_ratio=1.0)
+                            self.accumulated_ticks = int(min(float(event.abs_tick), cur_tick_f))
+                            self.bpm = round(max(1.0, self.get_bpm_at_tick(self.accumulated_ticks)))
                             
                             if self.loop_enabled and self.loop_b_target_tick is not None:
-                                if self.accumulated_ticks >= self.loop_b_target_tick:
+                                if cur_tick_f >= self.loop_b_target_tick:
+                                    self.accumulated_ticks = int(self.loop_b_target_tick)
                                     reached_b_or_end = True
                                     break
                             
-                            remaining = dynamic_delay - elapsed
-                            if remaining <= 0:
+                            remaining = (event_base_sec - cur_base_sec) / max(0.05, self._clock_anchor_speed)
+                            if remaining <= 0.0:
                                 break
-                            
-                            if remaining > 0.015:
-                                time.sleep(0.005)
-                            elif remaining > 0.001:
+                            if remaining > 0.004:
+                                time.sleep(0.001)
+                            elif remaining > 0.0005:
                                 time.sleep(0)
-                            else:
-                                pass
                                 
                         if reached_b_or_end:
                             break
@@ -1155,9 +1189,6 @@ class MidiEngine:
                     
                     current_play_tick = event.abs_tick
                     self.accumulated_ticks = event.abs_tick
-                    self._interp_base_tick = float(event.abs_tick)
-                    self._interp_max_tick = float(event.abs_tick)
-                    self._interp_start_perf = time.perf_counter()
                     self.bpm = round(self.get_bpm_at_tick(self.accumulated_ticks))
                     measure, beat, num, den, total_measures = self.get_measure_and_beat(self.accumulated_ticks)
                     
@@ -1194,6 +1225,7 @@ class MidiEngine:
                         self.loop_wrap_callback()
                     self.current_msg_index = self.loop_a_index if self.loop_a_index is not None else 0
                     next_a_tick = self.merged_messages[self.current_msg_index].abs_tick if self.current_msg_index < len(self.merged_messages) else 0
+                    self._ci_target_start_tick = float(next_a_tick)
                     if self.count_in_measures > 0:
                         self.playing_state = 'count_in'
                         loop_init_tick = self._get_count_in_origin_tick(next_a_tick)
@@ -1201,9 +1233,7 @@ class MidiEngine:
                         self.playing_state = 'playing'
                         loop_init_tick = next_a_tick
                     self.accumulated_ticks = loop_init_tick
-                    self._interp_base_tick = float(loop_init_tick)
-                    self._interp_max_tick = float(loop_init_tick)
-                    self._interp_start_perf = time.perf_counter()
+                    self.resync_master_clock(anchor_tick=loop_init_tick)
                         
                     if self.progress_callback and self.total_ticks > 0:
                         pct = (max(0, self.accumulated_ticks) / self.total_ticks) * 100
