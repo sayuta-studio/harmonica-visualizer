@@ -69,6 +69,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.ext_audio_pcm = None
         self._ext_audio_channel = None
         self._ext_audio_sound_ref = None
+        self.bg_image_path = None
 
         # 自立進行用の等速累積時間ティック
         self.current_tick = 0.0
@@ -366,6 +367,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
         show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
         note_speed_ratio = self.get_note_speed_ratio() if hasattr(self, "get_note_speed_ratio") else 1.0
+        bg_img_path, bg_bright = self.get_effective_bg_image_info() if hasattr(self, "get_effective_bg_image_info") else (None, 1.0)
 
         draw_harmonica_canvas(
             canvas=self.gui.canvas,
@@ -397,7 +399,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             show_grid4=show_grid4,
             measures_timeline=self.midi_engine.measures_timeline,
             is_glow_on=is_glow_on,
-            note_speed_ratio=note_speed_ratio
+            note_speed_ratio=note_speed_ratio,
+            bg_image_path=bg_img_path,
+            bg_brightness=bg_bright
         )
 
     def draw_harmonica_body_only(self, pitches):
@@ -588,6 +592,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             "ext_audio_vol_slider",
             "ext_audio_vol_entry",
             "yt_limiter_switch",
+            "bg_image_btn",
+            "bg_image_clear_btn",
+            "bg_image_dim_menu",
         ):
             if hasattr(self.gui, attr_name):
                 getattr(self.gui, attr_name).configure(state=state)
@@ -670,6 +677,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         intro_sec, outro_sec = self.get_intro_outro_seconds() if hasattr(self, "get_intro_outro_seconds") else (0.0, 0.0)
 
         edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
+        bg_img_path, bg_bright = self.get_effective_bg_image_info() if hasattr(self, "get_effective_bg_image_info") else (None, 1.0)
         if edit_on:
             title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
             video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
@@ -733,6 +741,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             ext_audio_offset_ms=ext_audio_offset_ms,
             ext_audio_vol_pct=ext_audio_vol_pct,
             yt_limiter=yt_limiter,
+            bg_image_path=bg_img_path,
+            bg_brightness=bg_bright,
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック
@@ -791,6 +801,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
 
         edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
+        bg_img_path, bg_bright = self.get_effective_bg_image_info() if hasattr(self, "get_effective_bg_image_info") else (None, 1.0)
         if edit_on:
             title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
             video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
@@ -828,6 +839,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             title_template=title_template,
             video_title=video_title,
             video_credit=video_credit,
+            bg_image_path=bg_img_path,
+            bg_brightness=bg_bright,
         )
 
     def destroy(self):

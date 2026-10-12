@@ -27,7 +27,7 @@ import math
 try:
     import cv2
     import customtkinter as ctk
-    from PIL import Image, ImageDraw, ImageFont, ImageTk
+    from PIL import Image, ImageDraw, ImageFont, ImageTk, ImageOps, ImageEnhance
     OPENCV_AVAILABLE = True
 except ImportError:
     OPENCV_AVAILABLE = False
@@ -176,7 +176,8 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                                          use_skin=True, trajectory_mode="3段階 (練習標準)",
                                          show_lookahead=True, show_grid4=True, measures_timeline=None,
-                                         use_ring=True, note_speed_ratio=1.0):
+                                         use_ring=True, note_speed_ratio=1.0,
+                                         bg_image_path=None, bg_brightness=1.0):
     """
     オフライン書き出し専用：静止パーツ（背景グリッド・カバープレート・4音グリッド64マス・レバー2状態）と
     発光スタンプを事前キャッシュし、毎フレームは差分（小節線・発音中の穴の発光＆セル点灯）のみを高速合成します。
@@ -218,12 +219,14 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     cell_w = 23 * scale
     cell_h = 15 * scale
 
+    has_bg_img = bool(bg_image_path and os.path.exists(bg_image_path))
     cache_key = (
         inst_type, canvas_bg_color, lang_seg_value,
         is_hole_num_on, is_legend_on, is_notes_on, is_grid_on,
         color_blow_hex, color_draw_hex,
         use_skin, trajectory_mode, show_grid4,
-        width, height, round(scale, 5)
+        width, height, round(scale, 5),
+        bg_image_path if has_bg_img else None, round(float(bg_brightness), 3)
     )
 
     global _CACHE
@@ -231,17 +234,30 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         base_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         base_draw = ImageDraw.Draw(base_img)
 
-        if canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00":
-            base_draw.rectangle([0, 0, width, height], fill=(0, 255, 0, 255))
-        elif canvas_bg_color == "ブルーバック" or canvas_bg_color == "#0000FF":
-            base_draw.rectangle([0, 0, width, height], fill=(0, 0, 255, 255))
-        elif canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF":
-            base_draw.rectangle([0, 0, width, height], fill=(255, 0, 255, 255))
-        else:
-            base_draw.rectangle([0, 0, width, height], fill=(13, 13, 13, 255))
+        bg_pasted = False
+        if has_bg_img:
+            try:
+                pil_bg = Image.open(bg_image_path).convert("RGB")
+                pil_bg_fit = ImageOps.fit(pil_bg, (width, height), Image.Resampling.LANCZOS)
+                if float(bg_brightness) < 0.999:
+                    pil_bg_fit = ImageEnhance.Brightness(pil_bg_fit).enhance(float(bg_brightness))
+                base_img.paste(pil_bg_fit.convert("RGBA"), (0, 0))
+                bg_pasted = True
+            except Exception as ex:
+                print(f"[警告] エクスポート用背景画像の読み込み失敗: {ex}")
+
+        if not bg_pasted:
+            if canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00":
+                base_draw.rectangle([0, 0, width, height], fill=(0, 255, 0, 255))
+            elif canvas_bg_color == "ブルーバック" or canvas_bg_color == "#0000FF":
+                base_draw.rectangle([0, 0, width, height], fill=(0, 0, 255, 255))
+            elif canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF":
+                base_draw.rectangle([0, 0, width, height], fill=(255, 0, 255, 255))
+            else:
+                base_draw.rectangle([0, 0, width, height], fill=(13, 13, 13, 255))
 
         if is_grid_on:
-            is_bright_bg = (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
+            is_bright_bg = (not bg_pasted) and (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
             grid_alpha = 15 if is_bright_bg else 25
             grid_color = (0, 0, 0, grid_alpha) if is_bright_bg else (255, 255, 255, grid_alpha)
             grid_line_color = (0, 0, 0, 40) if is_bright_bg else (255, 255, 255, 25)
@@ -746,7 +762,8 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
                                  aspect_ratio="16:9", use_skin=True, trajectory_mode="3段階 (練習標準)",
                                  show_lookahead=True, show_grid4=True, measures_timeline=None,
                                  use_ring=True, note_speed_ratio=1.0,
-                                 title_template="なし", video_title="", video_credit=""):
+                                 title_template="なし", video_title="", video_credit="",
+                                 bg_image_path=None, bg_brightness=1.0):
     if not OPENCV_AVAILABLE:
         return
 
@@ -794,7 +811,9 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         show_grid4=show_grid4,
         measures_timeline=measures_timeline,
         use_ring=use_ring,
-        note_speed_ratio=note_speed_ratio
+        note_speed_ratio=note_speed_ratio,
+        bg_image_path=bg_image_path,
+        bg_brightness=bg_brightness
     )
 
     if aspect_ratio == "9:16":
@@ -1225,7 +1244,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               export_range="全曲", intro_sec=0.0, outro_sec=2.0,
                               title_template="なし", video_title="", video_credit="",
                               ext_audio_pcm=None, ext_audio_mode="頭出し確認 (再生:両方 / 動画:外部のみ)",
-                              ext_audio_offset_ms=0, ext_audio_vol_pct=100.0, yt_limiter=True):
+                              ext_audio_offset_ms=0, ext_audio_vol_pct=100.0, yt_limiter=True,
+                              bg_image_path=None, bg_brightness=1.0):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -1345,7 +1365,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     show_grid4=show_grid4,
                     measures_timeline=exp_measures,
                     use_ring=use_ring,
-                    note_speed_ratio=note_speed_ratio
+                    note_speed_ratio=note_speed_ratio,
+                    bg_image_path=bg_image_path,
+                    bg_brightness=bg_brightness
                 )
 
                 bgr_frame = cv2.cvtColor(np.asarray(pil_frame), cv2.COLOR_RGBA2BGR)

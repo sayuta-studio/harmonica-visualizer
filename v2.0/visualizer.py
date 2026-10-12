@@ -15,7 +15,7 @@ import math
 import os
 import tkinter as tk
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageTk
+from PIL import Image, ImageDraw, ImageFont, ImageTk, ImageOps, ImageEnhance
 
 from config import (
     COLOR_BLOW_RGB, COLOR_BLOW_INNER, COLOR_DRAW_RGB, COLOR_DRAW_INNER,
@@ -76,7 +76,8 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                           use_ring=True, trajectory_mode="3段階 (練習標準)",
                           show_lookahead=True, show_grid4=True,
                           measures_timeline=None, is_glow_on=False,
-                          note_speed_ratio=1.0):  
+                          note_speed_ratio=1.0,
+                          bg_image_path=None, bg_brightness=1.0):  
     """
     Pillowを一切経由せず、Tkinter Canvasのネイティブ命令と差分キャッシュで超高速描画。
     変化した要素のみを更新し、落下中ノーツは座標移動(coords)のみで60fps安定動作を実現します。
@@ -103,7 +104,8 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
     N_visible = len(visible_indices)
     total_width = N_visible * W_PITCH * scale
     
-    grid_line_color = "#000000" if canvas_bg_color == "#00FF00" else "#252525"
+    has_bg_img = bool(bg_image_path and os.path.exists(bg_image_path))
+    grid_line_color = "#000000" if (not has_bg_img and canvas_bg_color == "#00FF00") else "#252525"
     
     note_color_blow = color_blow_hex
     note_color_draw = color_draw_hex
@@ -162,7 +164,8 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         is_hole_num_on, is_legend_on, is_grid_on,
         color_blow_hex, color_draw_hex,
         use_skin, round(scale, 4), aspect_ratio,
-        trajectory_mode, show_grid4
+        trajectory_mode, show_grid4,
+        bg_image_path if has_bg_img else None, round(float(bg_brightness), 3)
     )
 
     # 1. 静的部分および常駐キャッシュオブジェクトの初期構築（設定変更時・初回のみ実行）
@@ -187,10 +190,24 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         canvas._edit_panel_state_cache = None
             
         canvas.configure(bg=canvas_bg_color)
+
+        # [レイヤー0] 背景画像直合成（指定がある場合、最背面にセンタークロップ＆明るさ調整して配置）
+        if has_bg_img:
+            try:
+                cw = max(1, int(round(CANVAS_WIDTH * scale)))
+                ch = max(1, int(round(canvas_height_full * scale)))
+                pil_bg = Image.open(bg_image_path).convert("RGB")
+                pil_bg_fit = ImageOps.fit(pil_bg, (cw, ch), Image.Resampling.LANCZOS)
+                if float(bg_brightness) < 0.999:
+                    pil_bg_fit = ImageEnhance.Brightness(pil_bg_fit).enhance(float(bg_brightness))
+                canvas._bg_photo_tk = ImageTk.PhotoImage(pil_bg_fit)
+                canvas.create_image(0, 0, image=canvas._bg_photo_tk, anchor="nw", tags="static_bg_img")
+            except Exception as ex:
+                print(f"[警告] 背景画像の読み込み失敗: {ex}")
         
         # [レイヤー1] ガイド線・グリッド
         if is_grid_on:
-            guide_color = "#002200" if canvas_bg_color == "#00FF00" else "#1c1c1c"
+            guide_color = "#002200" if (not has_bg_img and canvas_bg_color == "#00FF00") else "#1c1c1c"
             if is_straight_mode:
                 for k in range(N_visible):
                     hx = X_start_draw + k * W_PITCH * scale

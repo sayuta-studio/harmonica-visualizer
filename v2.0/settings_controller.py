@@ -175,6 +175,25 @@ class SettingsController:
             self.gui.video_credit_entry.delete(0, tk.END)
             self.gui.video_credit_entry.insert(0, str(loaded.get("タイトルサブ", "")))
 
+        if hasattr(self.gui, "bg_image_dim_menu"):
+            bg_dim_val = loaded.get("背景画像の明るさ", "少し暗め (70%・ノーツ強調)")
+            valid_dims = ["少し暗め (70%・ノーツ強調)", "そのまま (100%)", "半分 (50%・くっきり)", "かなり暗め (30%)"]
+            if bg_dim_val not in valid_dims:
+                bg_dim_val = "少し暗め (70%・ノーツ強調)"
+            self.gui.bg_image_dim_menu.set(bg_dim_val)
+
+        saved_bg_path = str(loaded.get("背景画像パス", "")).strip()
+        if saved_bg_path and os.path.exists(saved_bg_path):
+            self.bg_image_path = saved_bg_path
+            if hasattr(self.gui, "bg_image_label"):
+                fname = os.path.basename(saved_bg_path)
+                disp = self._truncate_by_visual_width(fname, max_width=20) if hasattr(self, "_truncate_by_visual_width") else fname[:18]
+                self.gui.bg_image_label.configure(text=disp, text_color="#00ffcc")
+        else:
+            self.bg_image_path = None
+            if hasattr(self.gui, "bg_image_label"):
+                self.gui.bg_image_label.configure(text="未選択 (通常の背景色を使用)", text_color="#888888")
+
         if hasattr(self.gui, "ext_audio_mode_menu"):
             em_val = loaded.get("外部音源モード", "頭出し確認 (再生:両方 / 動画:外部のみ)")
             valid_ems = [
@@ -219,6 +238,62 @@ class SettingsController:
             return bool(self.gui.video_edit_enabled_switch.get())
         return True
 
+    def get_bg_image_brightness_ratio(self):
+        """背景画像の明るさ設定から 0.30〜1.00 の輝度倍率を返します。"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "bg_image_dim_menu"):
+            return 0.70
+        val = str(self.gui.bg_image_dim_menu.get())
+        if "100%" in val:
+            return 1.00
+        if "50%" in val:
+            return 0.50
+        if "30%" in val:
+            return 0.30
+        return 0.70
+
+    def get_effective_bg_image_info(self):
+        """動画編集スイッチがONかつ背景画像が有効な場合に (bg_image_path, brightness_ratio) を返します。"""
+        if not self.is_video_edit_enabled():
+            return None, 1.0
+        bg_path = getattr(self, "bg_image_path", None)
+        if bg_path and os.path.exists(bg_path):
+            return bg_path, self.get_bg_image_brightness_ratio()
+        return None, 1.0
+
+    def on_select_bg_image(self):
+        """🖼️ 背景画像ファイル（PNG/JPG/WebP等）を選択し、プレビューと動画出力へ反映します。"""
+        from tkinter import filedialog
+        from PIL import Image
+        file_path = filedialog.askopenfilename(
+            title="背景に合成する画像ファイルを選択してください",
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All Files", "*.*")]
+        )
+        if not file_path:
+            return
+        try:
+            with Image.open(file_path) as img:
+                img.verify()
+            self.bg_image_path = file_path
+            fname = os.path.basename(file_path)
+            disp = self._truncate_by_visual_width(fname, max_width=20) if hasattr(self, "_truncate_by_visual_width") else fname[:18]
+            if hasattr(self.gui, "bg_image_label"):
+                self.gui.bg_image_label.configure(text=disp, text_color="#00ffcc")
+            self.on_setting_changed()
+            self.gui.status_label.configure(
+                text=f"🖼️ 背景画像をセットしました: {disp}（📸画面確認で合成イメージを確認可能）",
+                text_color="#2b8c54"
+            )
+        except Exception as e:
+            self.gui.status_label.configure(text=f"❌ 背景画像の読み込み失敗: {e}", text_color="#ff5555")
+
+    def on_clear_bg_image(self):
+        """選択中の背景画像を解除し、通常の背景色（黒やグリーンバック等）へ戻します。"""
+        self.bg_image_path = None
+        if hasattr(self.gui, "bg_image_label"):
+            self.gui.bg_image_label.configure(text="未選択 (通常の背景色を使用)", text_color="#888888")
+        self.on_setting_changed()
+        self.gui.status_label.configure(text="背景画像を解除しました（通常の背景色を使用）", text_color="#aaaaaa")
+
     def update_export_edit_summary_label(self):
         """🎬 動画出力タブの下部にある動画編集反映ステータスバッジを更新します。"""
         if not hasattr(self, "gui") or not hasattr(self.gui, "export_edit_summary_lbl"):
@@ -238,14 +313,19 @@ class SettingsController:
         """🎞️ 動画編集タブ最上部のマスタースイッチ切替時のハンドラ"""
         is_on = self.is_video_edit_enabled()
         self.update_export_edit_summary_label()
+        if hasattr(self, "gui") and self.gui.canvas:
+            self.gui.canvas._static_state_key = None
+            self.gui.canvas.delete("static_plate")
         if getattr(self, "play_state", "stopped") == "playing":
             if hasattr(self, "_apply_effective_guide_audio_mode"):
                 self._apply_effective_guide_audio_mode()
             if hasattr(self, "sync_ext_audio_playback"):
                 self.sync_ext_audio_playback()
+        else:
+            self.draw_harmonica_static()
         if is_on:
             self.gui.status_label.configure(
-                text="✨ 動画編集の適用: ON（タイトル・外部音源を動画出力および試聴に反映します）",
+                text="✨ 動画編集の適用: ON（タイトル・背景画像・外部音源を動画出力および試聴に反映します）",
                 text_color="#00ffcc"
             )
         else:
@@ -404,6 +484,8 @@ class SettingsController:
                 "外部音源音量%": self.gui.ext_audio_vol_entry.get() if hasattr(self.gui, "ext_audio_vol_entry") else "100",
                 "YouTube上限リミッター": ("ON" if self.gui.yt_limiter_switch.get() else "OFF") if hasattr(self.gui, "yt_limiter_switch") else "ON",
                 "動画編集を動画出力に適用": ("ON" if self.gui.video_edit_enabled_switch.get() else "OFF") if hasattr(self.gui, "video_edit_enabled_switch") else "ON",
+                "背景画像パス": getattr(self, "bg_image_path", "") or "",
+                "背景画像の明るさ": self.gui.bg_image_dim_menu.get() if hasattr(self.gui, "bg_image_dim_menu") else "少し暗め (70%・ノーツ強調)",
             }
         )
         self.update_export_edit_summary_label()
