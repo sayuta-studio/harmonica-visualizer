@@ -81,7 +81,8 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                           use_skin=True, scale=1.0, aspect_ratio="16:9",
                           use_ring=True, trajectory_mode="3段階 (練習標準)",
                           show_lookahead=True, show_grid4=True,
-                          measures_timeline=None):  
+                          measures_timeline=None, is_glow_on=False,
+                          note_speed_ratio=1.0):  
     """
     Pillowを一切経由せず、Tkinter Canvasのネイティブ命令と差分キャッシュで超高速描画。
     変化した要素のみを更新し、落下中ノーツは座標移動(coords)のみで60fps安定動作を実現します。
@@ -264,12 +265,24 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                 fill="#26282a", outline="#4d4d4d", width=max(1, int(2 * scale)), tags="static_plate"
             )
 
-        # [レイヤー4〜6] 穴・LED・連動レバーリングの常駐オブジェクト構築
+        # [レイヤー4〜6] 穴・LED・連動レバーリング・着地発光の常駐オブジェクト構築
         canvas.led_objects = []
         canvas.ring_objects = []
+        canvas.glow_objects = []
         canvas.text_shadow_objects = []  
         canvas.text_body_objects = []    
         canvas.grid4_objects = []
+
+        # 着地発光（上部扇形グロウ）の半透明PhotoImageスタンプを1回だけ生成
+        r_pie = max(2, int(32 * scale))
+        pie_pad = r_pie + 2
+        pie_size = pie_pad * 2
+        pil_glow_pie = Image.new("RGBA", (pie_size, pie_size), (0, 0, 0, 0))
+        d_pie = ImageDraw.Draw(pil_glow_pie)
+        for r in range(int(r_pie), 0, -2):
+            alpha = int(210 * (1.0 - r / r_pie) ** 1.1)
+            d_pie.pieslice([pie_pad - r, pie_pad - r, pie_pad + r, pie_pad + r], start=180, end=360, fill=(255, 255, 255, alpha))
+        canvas._glow_pie_tk = ImageTk.PhotoImage(pil_glow_pie)
 
         ring_r = 21 * scale
         for k, idx in enumerate(visible_indices):
@@ -294,6 +307,13 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                 state="hidden", tags="dynamic_lever_ring"
             )
             canvas.ring_objects.append(ring_id)
+
+            glow_id = canvas.create_image(
+                x_center, y_hole_line_s,
+                image=canvas._glow_pie_tk,
+                state="hidden", tags="dynamic_glow"
+            )
+            canvas.glow_objects.append(glow_id)
 
         # [レイヤー7〜8] 落下ノーツおよびノーツ音名ラベル用の重なり順アンカー（毎フレームのtag_raiseを不要にするO(1)アンカー）
         canvas.create_line(0, 0, 0, 0, state="hidden", tags="anchor_notes_top")
@@ -396,7 +416,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
             if n_start > target_tick:
                 break
             n_dur = note_data.get("duration_ticks", 0)
-            if note_data["note"] in active_pitches and n_start <= target_tick < (n_start + n_dur):
+            if (active_pitches == "from_tick" or note_data["note"] in active_pitches) and n_start <= target_tick < (n_start + n_dur):
                 fingering = note_data.get("fingering")
                 if fingering:
                     h_num = fingering["hole"]
@@ -430,15 +450,16 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                 canvas.coords(canvas.lever_knob_id, lever_x + 22 * scale, y_center_s - 18 * scale, lever_x + 38 * scale, y_center_s + 18 * scale)
                 canvas.itemconfig(canvas.lever_knob_id, fill="#DCDCDC")
 
-    # 4. 各穴のLED・連動リング・4音グリッド/1音表示の差分更新（状態が変わった穴だけ通信）
+    # 4. 各穴のLED・連動リング・着地発光・4音グリッド/1音表示の差分更新（状態が変わった穴だけ通信）
     for k, idx in enumerate(visible_indices):
         visible_hole_number_absolute = idx + 1
         action = playing_holes_data.get(visible_hole_number_absolute)
         is_led_active = (action is not None)
         ring_visible = bool(is_led_active and use_ring and lever_pressed)
+        glow_visible = bool(is_led_active and is_glow_on)
 
-        # LED・連動リング差分判定
-        new_led_state = (action, ring_visible)
+        # LED・連動リング・着地発光の差分判定
+        new_led_state = (action, ring_visible, glow_visible)
         if canvas._led_state_cache.get(k) != new_led_state:
             canvas._led_state_cache[k] = new_led_state
             if is_led_active:
@@ -448,9 +469,14 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     canvas.itemconfig(canvas.ring_objects[k], state="normal", outline=led_color)
                 else:
                     canvas.itemconfig(canvas.ring_objects[k], state="hidden")
+                if glow_visible:
+                    canvas.itemconfig(canvas.glow_objects[k], state="normal")
+                else:
+                    canvas.itemconfig(canvas.glow_objects[k], state="hidden")
             else:
                 canvas.itemconfig(canvas.led_objects[k], fill="#080808")
                 canvas.itemconfig(canvas.ring_objects[k], state="hidden")
+                canvas.itemconfig(canvas.glow_objects[k], state="hidden")
 
         # 穴下表示（4音グリッド or 1音表示）の差分判定
         if show_grid4:
@@ -490,7 +516,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
 
     # 5. 小節横線（＋小節番号）および落下ノーツ＆追従音名ラベルの描画更新
     if draw_mode in ["all", "notes"]:
-        px_per_tick = 120.0 / ticks_per_beat
+        px_per_tick = (120.0 * max(0.1, float(note_speed_ratio))) / ticks_per_beat
         px_per_tick_s = px_per_tick * scale
 
         # 5-A. 小節ごとの薄い横線＋左端小節番号の落下更新（ガイド線ON時）

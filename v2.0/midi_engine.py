@@ -163,6 +163,7 @@ class MidiEngine:
         self.measure_beat_callback = None
         self.active_pitches_callback = None
         self.error_callback = None
+        self.loop_wrap_callback = None
         self.stream_start_callback = None
 
         # 内蔵軽量ポータブルシンセ
@@ -730,7 +731,8 @@ class MidiEngine:
         m_info = self.measures_timeline[measure_number - 1]
         self.seek_to_tick(m_info['start_tick'])
 
-    def seek_to_tick(self, target_tick):
+    def seek_to_tick(self, target_tick, exact_tick=False):
+        target_tick = max(0, min(int(target_tick), self.total_ticks))
         was_playing = self.playing_state in ['playing', 'count_in']
         if was_playing:
             self.playing_state = 'paused'
@@ -746,7 +748,9 @@ class MidiEngine:
                 closest_index = idx
                 
         self.current_msg_index = closest_index
-        if self.current_msg_index < len(self.merged_messages):
+        if exact_tick:
+            self.accumulated_ticks = int(target_tick)
+        elif self.current_msg_index < len(self.merged_messages):
             self.accumulated_ticks = self.merged_messages[self.current_msg_index].abs_tick
         else:
             self.accumulated_ticks = int(target_tick)
@@ -1194,6 +1198,8 @@ class MidiEngine:
                 # 3. ABループ折り返し
                 if self.loop_enabled and (reached_b_or_end or self.current_msg_index >= len(self.merged_messages)):
                     self.all_notes_off()
+                    if self.loop_wrap_callback:
+                        self.loop_wrap_callback()
                     self.current_msg_index = self.loop_a_index if self.loop_a_index is not None else 0
                     next_a_tick = self.merged_messages[self.current_msg_index].abs_tick if self.current_msg_index < len(self.merged_messages) else 0
                     if self.count_in_measures > 0:

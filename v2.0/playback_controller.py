@@ -461,7 +461,7 @@ class PlaybackController:
         self.apply_bpm()
 
     def lock_controls_on_play(self, lock=True):
-        """再生中のUIコントロールロック（再生速度%・パート再生モード・小節ジャンプ・ABループは再生中も常時操作可能）"""
+        """再生中のUIコントロールロック（表示設定・カラー・速度・パート再生モード・小節ジャンプ・ABループは再生中も常時操作可能）"""
         state = "disabled" if lock else "normal"
         self.gui.bpm_minus_btn.configure(state="normal")
         self.gui.bpm_entry.configure(state="normal")
@@ -473,9 +473,7 @@ class PlaybackController:
         if hasattr(self.gui, "part_play_mode_menu"):
             self.gui.part_play_mode_menu.configure(state="normal")
         
-        # 音声選択メニュー(audio_mode_menu)のロックを追加補完
         self.gui.audio_mode_menu.configure(state=state)
-        
         self.gui.metro_menu.configure(state=state)
         self.gui.count_in_menu.configure(state=state)
         
@@ -488,23 +486,30 @@ class PlaybackController:
         self.gui.btn_set_a.configure(state="normal")
         self.gui.btn_set_b.configure(state="normal")
         self.gui.btn_clear_loop.configure(state="normal")
+        if hasattr(self.gui, "note_speed_menu"):
+            self.gui.note_speed_menu.configure(state="normal")
         
         self.gui.inst_menu.configure(state=state)
-        self.gui.lang_menu.configure(state=state)
+        self.gui.lang_menu.configure(state="normal")
         if hasattr(self.gui, "trajectory_menu"):
             self.gui.trajectory_menu.configure(state="normal")
         
-        self.gui.hole_num_switch.configure(state=state)
-        self.gui.show_legend_switch.configure(state=state)
-        self.gui.show_notes_switch.configure(state=state)
-        self.gui.show_grid_switch.configure(state=state)
-        self.gui.show_ring_switch.configure(state=state)
-        self.gui.show_glow_switch.configure(state=state)
-        self.gui.opacity_entry.configure(state=state)
+        # 再生中も表示パーツ・テーマ・グリッド等はリアルタイム切替可能に常時アンロック
+        self.gui.hole_num_switch.configure(state="normal")
+        self.gui.show_legend_switch.configure(state="normal")
+        self.gui.show_notes_switch.configure(state="normal")
+        self.gui.show_grid_switch.configure(state="normal")
+        self.gui.show_ring_switch.configure(state="normal")
+        self.gui.show_glow_switch.configure(state="normal")
+        if hasattr(self.gui, "show_lookahead_switch"):
+            self.gui.show_lookahead_switch.configure(state="normal")
+        if hasattr(self.gui, "grid4_menu"):
+            self.gui.grid4_menu.configure(state="normal")
+        self.gui.opacity_entry.configure(state="normal")
         if hasattr(self.gui, "reset_fingering_btn"):
             self.gui.reset_fingering_btn.configure(state=state)
-        self.gui.bg_menu.configure(state=state)
-        self.gui.res_menu.configure(state=state)
+        self.gui.bg_menu.configure(state="normal")
+        self.gui.res_menu.configure(state="normal")
         
         if self.fingering_edit_mode:
             self.gui.export_btn.configure(state="disabled")
@@ -513,6 +518,20 @@ class PlaybackController:
 
     def on_play(self):
         if not self.midi_notes: return
+        was_stopped = (self.play_state == "stopped")
+
+        # ステップアップ練習がONかつ停止状態からの新規再生時は、開始速度(%)へ自動セット＆A-Bループ連動ON
+        if was_stopped and hasattr(self.gui, "stepup_switch") and self.gui.stepup_switch.get():
+            if not self.gui.cb_loop.get():
+                self.gui.cb_loop.select()
+            start_pct, goal_pct, step_pct = self.get_stepup_params()
+            self.gui.bpm_entry.delete(0, tk.END)
+            self.gui.bpm_entry.insert(0, str(start_pct))
+            self.gui.status_label.configure(
+                text=f"📈 ステップアップ開始: {start_pct}% ➔ 目標 {goal_pct}% (+{step_pct}%/周)",
+                text_color="#00ffcc"
+            )
+
         self.midi_engine.loop_enabled = bool(self.gui.cb_loop.get())
         self.on_loop_entry_changed()
         self.apply_bpm()
@@ -764,3 +783,101 @@ class PlaybackController:
             self.current_tick = self.midi_engine.accumulated_ticks
             self.update_clock()
             print("[System] 再生ストリームの物理発音を検知 ➔ UIタイマーループ点火")
+
+    def on_loop_wrapped(self):
+        """A-BループでB点末尾からA点頭へ折り返した瞬間のコールバック（ステップアップ練習連動）"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "stepup_switch"):
+            return
+        if not self.gui.stepup_switch.get():
+            return
+        start_pct, goal_pct, step_pct = self.get_stepup_params()
+        cur_pct = int(round(getattr(self, "speed_percent", start_pct)))
+        if cur_pct < goal_pct:
+            new_pct = min(goal_pct, cur_pct + step_pct)
+            self.gui.bpm_entry.delete(0, tk.END)
+            self.gui.bpm_entry.insert(0, str(new_pct))
+            self.apply_bpm()
+            if new_pct >= goal_pct:
+                self.gui.status_label.configure(
+                    text=f"🎯 目標速度 {goal_pct}% に到達しました！（この速度を維持してループ）",
+                    text_color="#00ffcc"
+                )
+            else:
+                self.gui.status_label.configure(
+                    text=f"📈 ステップアップ: {cur_pct}% ➔ {new_pct}% (目標 {goal_pct}%)",
+                    text_color="#ffcc00"
+                )
+        else:
+            self.gui.status_label.configure(
+                text=f"🎯 目標速度 {goal_pct}% でループ練習中",
+                text_color="#00ffcc"
+            )
+
+    def on_canvas_mousewheel(self, event):
+        """停止中・一時停止中にCanvas上でマウスホイールを回すと、1拍単位（Shiftで1/4拍、Ctrlで1小節単位）で前後スクラブ確認"""
+        if self.play_state not in ("stopped", "paused") or not self.midi_notes:
+            return
+        delta = getattr(event, "delta", 0)
+        if not delta:
+            return
+        notches = int(delta / 120) if abs(delta) >= 120 else (1 if delta > 0 else -1)
+        # ホイール手前回転(notches < 0)で時間を前へ進め、奥回転(notches > 0)で巻き戻す
+        steps = -notches
+        tpb = max(1, self.midi_engine.ticks_per_beat)
+        state_flags = getattr(event, "state", 0)
+        if state_flags & 0x0001:  # Shift押下: 1/4拍単位の微細コマ送り
+            step_ticks = max(1, tpb // 4)
+        elif state_flags & 0x0004:  # Ctrl押下: 1小節単位
+            step_ticks = tpb * max(1, self.midi_engine.time_sig_num)
+        else:  # 通常: 1拍単位
+            step_ticks = tpb
+
+        target_tick = max(0, min(self.midi_engine.total_ticks, int(self.midi_engine.accumulated_ticks + steps * step_ticks)))
+        self.midi_engine.seek_to_tick(target_tick, exact_tick=True)
+
+        self.current_tick = self.midi_engine.accumulated_ticks
+        count_in_duration = self.get_count_in_duration()
+        elapsed_sec = self.midi_engine.ticks_to_ms(self.current_tick) / 1000.0
+        self.current_time = elapsed_sec + count_in_duration
+        self.update_time_label()
+        self.draw_harmonica_static(show_active_at_tick=True)
+
+    def on_global_key_press(self, event):
+        """ハンズフリー練習用キーボードショートカット（入力欄フォーカス時・動画書き出し中は無効）"""
+        if self.play_state == "exporting":
+            return
+        focus_w = self.focus_get()
+        if focus_w is not None and (isinstance(focus_w, tk.Entry) or "entry" in str(focus_w).lower()):
+            if event.keysym == "Escape" and hasattr(self, "gui") and self.gui.canvas:
+                self.gui.canvas.focus_set()
+            return
+
+        ks = event.keysym
+        if ks == "space":
+            if self.play_state == "playing":
+                self.on_pause()
+            else:
+                self.on_play()
+        elif ks in ("BackSpace", "Escape"):
+            self.on_stop()
+        elif ks in ("Left", "Right"):
+            if not self.midi_notes:
+                return
+            cur_m, _, _, _, total_m = self.midi_engine.get_measure_and_beat(max(0, self.midi_engine.accumulated_ticks))
+            target_m = max(1, min(total_m, cur_m + (-1 if ks == "Left" else 1)))
+            self.gui.jump_entry.delete(0, tk.END)
+            self.gui.jump_entry.insert(0, str(target_m))
+            self.on_jump_measure()
+            if self.play_state in ("stopped", "paused"):
+                self.draw_harmonica_static(show_active_at_tick=True)
+        elif ks == "Up":
+            self.step_speed_percent(5)
+        elif ks == "Down":
+            self.step_speed_percent(-5)
+        elif ks in ("a", "A"):
+            self.set_loop_a_at_current()
+        elif ks in ("b", "B"):
+            self.set_loop_b_at_current()
+        elif ks in ("l", "L"):
+            self.gui.cb_loop.toggle()
+

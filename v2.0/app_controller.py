@@ -97,6 +97,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.midi_engine.error_callback = lambda err: self.after(0, lambda: self.on_engine_error(err))
 
         self.midi_engine.stream_start_callback = lambda: self.after(0, self.on_audio_stream_start)
+        self.midi_engine.loop_wrap_callback = lambda: self.after(0, self.on_loop_wrapped)
 
         self.gui = HarmonicaAppGUI(self, self)
 
@@ -111,8 +112,10 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             print(f"[システム警告] pygame.mixer的初期化に失敗しました: {ex}")
             PYGAME_AVAILABLE = False
 
-        # Canvasへのマウス左クリックイベントバインディング
+        # Canvasへのマウスイベント・グローバルキーイベントバインディング
         self.gui.canvas.bind("<Button-1>", self.on_canvas_click)
+        self.gui.canvas.bind("<MouseWheel>", self.on_canvas_mousewheel)
+        self.bind("<KeyPress>", self.on_global_key_press)
 
         self.after(100, self.initialize_flow)
 
@@ -411,6 +414,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
         show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
         show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
+        note_speed_ratio = self.get_note_speed_ratio() if hasattr(self, "get_note_speed_ratio") else 1.0
 
         draw_harmonica_canvas(
             canvas=self.gui.canvas,
@@ -440,7 +444,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             trajectory_mode=trajectory_mode,
             show_lookahead=show_lookahead,
             show_grid4=show_grid4,
-            measures_timeline=self.midi_engine.measures_timeline
+            measures_timeline=self.midi_engine.measures_timeline,
+            is_glow_on=is_glow_on,
+            note_speed_ratio=note_speed_ratio
         )
 
     def draw_harmonica_body_only(self, pitches):
@@ -453,7 +459,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             draw_mode="harmonica"
         )
 
-    def draw_harmonica_static(self):
+    def draw_harmonica_static(self, show_active_at_tick=False):
         """再生停止・シーク・ジャンプ時のプレビュー追従"""
         ticks_per_beat = self.midi_engine.ticks_per_beat
         
@@ -462,7 +468,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.current_bpm = self.midi_engine.get_bpm_at_tick(self.midi_engine.accumulated_ticks)
         
         self.draw_harmonica(
-            active_pitches=set(),
+            active_pitches=("from_tick" if show_active_at_tick else set()),
             target_tick=self.midi_engine.accumulated_ticks,
             ticks_per_beat=ticks_per_beat,
             draw_mode="all"
@@ -473,7 +479,11 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
     # Canvasクリックイベントハンドラ
     def on_canvas_click(self, event):
-        """運指変更モード時に、クリックしたノーツの運指設定を循環させ自動セーブします。"""
+        """Canvasクリック時にEntry等からフォーカスを外し、運指変更モード時は対象ノーツの運指設定を循環させます。"""
+        try:
+            self.gui.canvas.focus_set()
+        except Exception:
+            pass
         if not self.fingering_edit_mode:
             return
             
@@ -589,6 +599,16 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.btn_set_a.configure(state=state)
         self.gui.btn_set_b.configure(state=state)
         self.gui.btn_clear_loop.configure(state=state)
+        if hasattr(self.gui, "note_speed_menu"):
+            self.gui.note_speed_menu.configure(state=state)
+        if hasattr(self.gui, "stepup_switch"):
+            self.gui.stepup_switch.configure(state=state)
+        if hasattr(self.gui, "stepup_step_menu"):
+            self.gui.stepup_step_menu.configure(state=state)
+        if hasattr(self.gui, "stepup_start_entry"):
+            self.gui.stepup_start_entry.configure(state=state)
+        if hasattr(self.gui, "stepup_goal_entry"):
+            self.gui.stepup_goal_entry.configure(state=state)
         self.gui.inst_menu.configure(state=state)
         self.gui.lang_menu.configure(state=state)
         if hasattr(self.gui, "trajectory_menu"):
@@ -605,6 +625,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.show_notes_switch.configure(state=state)
         self.gui.show_grid_switch.configure(state=state)
         self.gui.show_ring_switch.configure(state=state)  # 連動リングスイッチもロック
+        if hasattr(self.gui, "show_glow_switch"):
+            self.gui.show_glow_switch.configure(state=state)
         if hasattr(self.gui, "show_lookahead_switch"):
             self.gui.show_lookahead_switch.configure(state=state)
         if hasattr(self.gui, "grid4_menu"):
@@ -675,8 +697,10 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         is_notes_on = bool(self.gui.show_notes_switch.get())
         is_grid_on = bool(self.gui.show_grid_switch.get())
         is_glow_on = bool(self.gui.show_glow_switch.get())
+        use_ring = bool(self.gui.show_ring_switch.get())
         show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
         show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
+        note_speed_ratio = self.get_note_speed_ratio() if hasattr(self, "get_note_speed_ratio") else 1.0
         
         note_opacity = self.gui.opacity_entry.get()
         
@@ -719,7 +743,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             trajectory_mode=trajectory_mode,
             show_lookahead=show_lookahead,
             show_grid4=show_grid4,
-            measures_timeline=self.midi_engine.measures_timeline
+            measures_timeline=self.midi_engine.measures_timeline,
+            use_ring=use_ring,
+            note_speed_ratio=note_speed_ratio
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック
@@ -765,8 +791,10 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         is_notes_on = bool(self.gui.show_notes_switch.get())
         is_grid_on = bool(self.gui.show_grid_switch.get())
         is_glow_on = bool(self.gui.show_glow_switch.get())
+        use_ring = bool(self.gui.show_ring_switch.get())
         show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
         show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
+        note_speed_ratio = self.get_note_speed_ratio() if hasattr(self, "get_note_speed_ratio") else 1.0
         
         note_opacity = self.gui.opacity_entry.get()
 
@@ -796,7 +824,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             trajectory_mode=trajectory_mode,
             show_lookahead=show_lookahead,
             show_grid4=show_grid4,
-            measures_timeline=self.midi_engine.measures_timeline
+            measures_timeline=self.midi_engine.measures_timeline,
+            use_ring=use_ring,
+            note_speed_ratio=note_speed_ratio
         )
 
     def destroy(self):

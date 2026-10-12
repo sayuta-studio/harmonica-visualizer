@@ -244,6 +244,23 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.btn_clear_loop = ctk.CTkButton(self.row3, text="ループ解除", width=70, fg_color="#555555", hover_color="#444444", font=self.f_jp_bold, command=self.controller.reset_loop_points)
         self.btn_clear_loop.pack(side="left", padx=(2, 0))
 
+        self.sep_r3_2 = create_sep(self.row3)
+        self.sep_r3_2.pack(side="left", padx=12)
+
+        self.note_speed_lbl = ctk.CTkLabel(self.row3, text="ノーツ落下速度:", text_color="#aaaaaa", font=self.f_jp_bold)
+        self.note_speed_lbl.pack(side="left", padx=(0, 5))
+
+        self.note_speed_menu = ctk.CTkOptionMenu(
+            self.row3,
+            values=["0.5x", "0.75x", "1.0x (標準)", "1.25x", "1.5x", "2.0x"],
+            width=110,
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_setting_changed
+        )
+        self.note_speed_menu.set("1.0x (標準)")
+        self.note_speed_menu.pack(side="left", padx=(0, 6))
+
 
         # ==========================================
         # 2. メインL字領域 (下部: ctk.CTkFrame)
@@ -387,6 +404,57 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         )
         self.reset_fingering_btn.pack(fill="x", padx=15, pady=(2, 10))
 
+        # --- 📈 ステップアップ練習 (A-Bループ連動) ---
+        self.stepup_group = ctk.CTkFrame(self.tab_practice_frame, corner_radius=8, border_width=1, border_color="#2b2b2b")
+        self.stepup_group.pack(fill="x", padx=12, pady=5)
+
+        stepup_title = ctk.CTkLabel(self.stepup_group, text="📈 ステップアップ練習 (A-Bループ連動):", font=self.f_jp_bold)
+        stepup_title.pack(anchor="w", padx=15, pady=(8, 3))
+
+        stepup_row1 = ctk.CTkFrame(self.stepup_group, fg_color="transparent")
+        stepup_row1.pack(fill="x", padx=15, pady=2)
+
+        self.stepup_switch = ctk.CTkSwitch(
+            stepup_row1,
+            text="ステップアップ有効",
+            font=self.f_jp_bold,
+            command=self.controller.on_stepup_toggle
+        )
+        self.stepup_switch.deselect()
+        self.stepup_switch.pack(side="left")
+
+        self.stepup_step_menu = ctk.CTkOptionMenu(
+            stepup_row1,
+            values=["+1%", "+2%", "+5%", "+10%"],
+            width=72,
+            font=self.f_jp_bold,
+            dropdown_font=self.f_jp_norm,
+            command=self.controller.on_stepup_param_changed
+        )
+        self.stepup_step_menu.set("+5%")
+        self.stepup_step_menu.pack(side="right")
+
+        ctk.CTkLabel(stepup_row1, text="1周増分:", font=self.f_jp_bold, text_color="#aaaaaa").pack(side="right", padx=(0, 4))
+
+        stepup_row2 = ctk.CTkFrame(self.stepup_group, fg_color="transparent")
+        stepup_row2.pack(fill="x", padx=15, pady=(3, 10))
+
+        ctk.CTkLabel(stepup_row2, text="開始:", font=self.f_jp_bold, text_color="#aaaaaa").pack(side="left", padx=(0, 4))
+        self.stepup_start_entry = ctk.CTkEntry(stepup_row2, width=48, font=self.f_norm, justify="center")
+        self.stepup_start_entry.insert(0, "70")
+        self.stepup_start_entry.pack(side="left", padx=2)
+        self.stepup_start_entry.bind("<Return>", lambda e: self.controller.on_stepup_param_changed())
+        self.stepup_start_entry.bind("<FocusOut>", lambda e: self.controller.on_stepup_param_changed())
+        ctk.CTkLabel(stepup_row2, text="%", font=self.f_jp_bold, text_color="#00ffcc").pack(side="left", padx=(2, 10))
+
+        ctk.CTkLabel(stepup_row2, text="➔   目標:", font=self.f_jp_bold, text_color="#aaaaaa").pack(side="left", padx=(4, 4))
+        self.stepup_goal_entry = ctk.CTkEntry(stepup_row2, width=48, font=self.f_norm, justify="center")
+        self.stepup_goal_entry.insert(0, "100")
+        self.stepup_goal_entry.pack(side="left", padx=2)
+        self.stepup_goal_entry.bind("<Return>", lambda e: self.controller.on_stepup_param_changed())
+        self.stepup_goal_entry.bind("<FocusOut>", lambda e: self.controller.on_stepup_param_changed())
+        ctk.CTkLabel(stepup_row2, text="%", font=self.f_jp_bold, text_color="#00ffcc").pack(side="left", padx=(2, 0))
+
         # ======================================================================
         # 🎨 タブ2：【🎨 デザイン】 (カラーテーマ・外部スキン・表示パーツON/OFF)
         # ======================================================================
@@ -451,7 +519,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         self.opacity_lbl = ctk.CTkLabel(
             self.skin_opacity_frame,
-            text="ノーツ不透過度(%):",
+            text="ノーツ不透過度(動画用%):",
             font=self.f_jp_bold,
             text_color="#cccccc"
         )

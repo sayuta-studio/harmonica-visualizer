@@ -111,6 +111,107 @@ class SettingsController:
             else:
                 self.gui.grid4_menu.set("4音グリッド表示")
 
+        # ノーツ落下速度・ステップアップ設定の復元
+        if hasattr(self.gui, "note_speed_menu"):
+            ns_val = loaded.get("ノーツ落下速度", "1.0x (標準)")
+            if ns_val not in ["0.5x", "0.75x", "1.0x (標準)", "1.25x", "1.5x", "2.0x"]:
+                ns_val = "1.0x (標準)"
+            self.gui.note_speed_menu.set(ns_val)
+
+        if hasattr(self.gui, "stepup_step_menu"):
+            st_step = loaded.get("ステップアップ増加", "+5%")
+            if st_step not in ["+1%", "+2%", "+5%", "+10%"]:
+                st_step = "+5%"
+            self.gui.stepup_step_menu.set(st_step)
+
+        if hasattr(self.gui, "stepup_start_entry"):
+            self.gui.stepup_start_entry.delete(0, tk.END)
+            self.gui.stepup_start_entry.insert(0, str(loaded.get("ステップアップ開始", "70")))
+
+        if hasattr(self.gui, "stepup_goal_entry"):
+            self.gui.stepup_goal_entry.delete(0, tk.END)
+            self.gui.stepup_goal_entry.insert(0, str(loaded.get("ステップアップ目標", "100")))
+
+        if hasattr(self.gui, "stepup_switch"):
+            self.gui.stepup_switch.deselect()
+
+    def get_note_speed_ratio(self):
+        """ノーツ落下速度メニュー（0.5x〜2.0x）から数値倍率を返します。"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "note_speed_menu"):
+            return 1.0
+        raw = str(self.gui.note_speed_menu.get()).split("x")[0].strip()
+        try:
+            return max(0.25, min(4.0, float(raw)))
+        except ValueError:
+            return 1.0
+
+    def get_stepup_params(self):
+        """ステップアップ設定（開始%・目標%・1周増分%）を安全に検証して返します。"""
+        start_pct = 70.0
+        goal_pct = 100.0
+        step_pct = 5.0
+        if hasattr(self, "gui"):
+            if hasattr(self.gui, "stepup_start_entry"):
+                try:
+                    start_pct = float(str(self.gui.stepup_start_entry.get()).replace("%", "").strip())
+                except ValueError:
+                    start_pct = 70.0
+            if hasattr(self.gui, "stepup_goal_entry"):
+                try:
+                    goal_pct = float(str(self.gui.stepup_goal_entry.get()).replace("%", "").strip())
+                except ValueError:
+                    goal_pct = 100.0
+            if hasattr(self.gui, "stepup_step_menu"):
+                try:
+                    step_pct = float(str(self.gui.stepup_step_menu.get()).replace("+", "").replace("%", "").strip())
+                except ValueError:
+                    step_pct = 5.0
+        start_pct = max(10.0, min(400.0, start_pct))
+        goal_pct = max(10.0, min(400.0, goal_pct))
+        if goal_pct < start_pct:
+            goal_pct = start_pct
+        return int(round(start_pct)), int(round(goal_pct)), int(round(step_pct))
+
+    def on_stepup_toggle(self):
+        """ステップアップ練習スイッチ切替時のハンドラ（ON時はA-Bループも自動でONに連動）"""
+        is_on = bool(self.gui.stepup_switch.get())
+        start_pct, goal_pct, step_pct = self.get_stepup_params()
+        if is_on:
+            if not self.gui.cb_loop.get():
+                self.gui.cb_loop.select()
+                self.on_loop_toggle()
+            if getattr(self, "play_state", "stopped") == "stopped":
+                self.gui.bpm_entry.delete(0, tk.END)
+                self.gui.bpm_entry.insert(0, str(start_pct))
+                self.apply_bpm()
+            self.gui.status_label.configure(
+                text=f"📈 ステップアップ有効: {start_pct}% ➔ {goal_pct}% (+{step_pct}%/周)",
+                text_color="#00ffcc"
+            )
+        else:
+            self.gui.status_label.configure(text="ステップアップ練習をOFFにしました", text_color="#aaaaaa")
+        self.save_user_settings_txt()
+
+    def on_stepup_param_changed(self, value=None):
+        """ステップアップの開始%・目標%・増分%変更時の正規化と保存"""
+        start_pct, goal_pct, step_pct = self.get_stepup_params()
+        if hasattr(self.gui, "stepup_start_entry"):
+            self.gui.stepup_start_entry.delete(0, tk.END)
+            self.gui.stepup_start_entry.insert(0, str(start_pct))
+        if hasattr(self.gui, "stepup_goal_entry"):
+            self.gui.stepup_goal_entry.delete(0, tk.END)
+            self.gui.stepup_goal_entry.insert(0, str(goal_pct))
+        if hasattr(self.gui, "stepup_switch") and self.gui.stepup_switch.get():
+            if getattr(self, "play_state", "stopped") == "stopped":
+                self.gui.bpm_entry.delete(0, tk.END)
+                self.gui.bpm_entry.insert(0, str(start_pct))
+                self.apply_bpm()
+            self.gui.status_label.configure(
+                text=f"📈 ステップアップ設定: {start_pct}% ➔ {goal_pct}% (+{step_pct}%/周)",
+                text_color="#00ffcc"
+            )
+        self.save_user_settings_txt()
+
     def save_user_settings_txt(self):
         """settings_managerへの設定自動保存"""
         settings_manager.save_settings(
@@ -137,6 +238,12 @@ class SettingsController:
             trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)",
             lookahead=("ON" if self.gui.show_lookahead_switch.get() else "OFF") if hasattr(self.gui, "show_lookahead_switch") else "ON",
             grid4=("ON" if "4音グリッド" in self.gui.grid4_menu.get() else "OFF") if hasattr(self.gui, "grid4_menu") else "ON",
+            **{
+                "ノーツ落下速度": self.gui.note_speed_menu.get() if hasattr(self.gui, "note_speed_menu") else "1.0x (標準)",
+                "ステップアップ増加": self.gui.stepup_step_menu.get() if hasattr(self.gui, "stepup_step_menu") else "+5%",
+                "ステップアップ開始": self.gui.stepup_start_entry.get() if hasattr(self.gui, "stepup_start_entry") else "70",
+                "ステップアップ目標": self.gui.stepup_goal_entry.get() if hasattr(self.gui, "stepup_goal_entry") else "100",
+            }
         )
 
     def on_setting_changed(self, value=None):

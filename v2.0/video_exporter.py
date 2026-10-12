@@ -218,7 +218,8 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          active_pitches=None, show_glow_effect=True,
                                          color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                                          use_skin=True, trajectory_mode="3段階 (練習標準)",
-                                         show_lookahead=True, show_grid4=True, measures_timeline=None):
+                                         show_lookahead=True, show_grid4=True, measures_timeline=None,
+                                         use_ring=True, note_speed_ratio=1.0):
     """
     オフライン書き出し専用：静止パーツ（背景グリッド・カバープレート・4音グリッド64マス・レバー2状態）と
     発光スタンプを事前キャッシュし、毎フレームは差分（小節線・発音中の穴の発光＆セル点灯）のみを高速合成します。
@@ -497,7 +498,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
     playing_holes_note = {}
     
     currently_active_notes = []
-    if midi_notes and active_pitches:
+    if midi_notes:
         start_times, max_dur = _get_exporter_notes_index(midi_notes)
         idx_start = bisect.bisect_left(start_times, current_time - max_dur - 0.05)
         n_total = len(midi_notes)
@@ -507,7 +508,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
             if n_start_time > current_time:
                 break
             n_dur_time = note_data.get("duration", 0.0)
-            if note_data["note"] in active_pitches and n_start_time <= current_time < (n_start_time + n_dur_time):
+            if n_start_time <= current_time < (n_start_time + n_dur_time):
                 currently_active_notes.append(note_data)
 
     for note_data in currently_active_notes:
@@ -533,7 +534,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         m_txt_color = (0, 85, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((80, 0, 80, 255) if is_bright_bg else (85, 85, 85, 255))
         f_m = get_truetype_font("arial.ttf", max(6, int(8 * scale)))
         line_w = max(1, int(1 * scale))
-        pixels_per_second = (220.0 * current_bpm) / 240.0
+        pixels_per_second = (220.0 * current_bpm * max(0.1, float(note_speed_ratio))) / 240.0
         if is_straight_mode:
             x_l = X_start_draw
             x_r = X_start_draw + total_width
@@ -566,7 +567,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         if overlapped_legend and _CACHE["legend_patch"] is not None:
             frame_img.paste(_CACHE["legend_patch"], _CACHE["legend_pos"])
 
-    # 発音中の穴のみ発光スタンプ＆4音グリッド強調セルを差分合成
+    # 発音中の穴のみ発光スタンプ＆レバーリング＆4音グリッド強調セルを差分合成
     if playing_holes_data:
         ring_pad = _CACHE["ring_pad"]
         pie_pad = _CACHE["pie_pad"]
@@ -574,6 +575,8 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         hole_4_maps = _CACHE["hole_4_maps"]
         clean_note_band = _CACHE["clean_note_band"]
         note_band_y0 = _CACHE["note_band_y0"]
+        lever_ring_r = 21.0 * scale
+        lever_ring_w = max(2, int(3 * scale))
 
         for k, idx in enumerate(visible_indices):
             visible_hole_number_absolute = visible_indices[k] + 1
@@ -584,6 +587,14 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
             action = playing_holes_data[visible_hole_number_absolute]
             ring_stamp = _CACHE["glow_ring_blow"] if action == "吹" else _CACHE["glow_ring_draw"]
             frame_img.alpha_composite(ring_stamp, (int(round(x_center)) - ring_pad, int(round(y_center_s)) - ring_pad))
+
+            if use_ring and lever_pressed:
+                l_rgb = color_blow_rgb if action == "吹" else color_draw_rgb
+                draw_img.ellipse(
+                    [x_center - lever_ring_r, y_center_s - lever_ring_r, x_center + lever_ring_r, y_center_s + lever_ring_r],
+                    outline=(l_rgb[0], l_rgb[1], l_rgb[2], 255),
+                    width=lever_ring_w
+                )
 
             if show_glow_effect:
                 frame_img.alpha_composite(glow_pie, (int(round(x_center)) - pie_pad, int(round(y_hole_line_s)) - pie_pad))
@@ -624,7 +635,8 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
                                  is_hole_num_on, is_legend_on, is_notes_on, is_grid_on, is_glow_on, note_opacity,
                                  parent_window, color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                                  aspect_ratio="16:9", use_skin=True, trajectory_mode="3段階 (練習標準)",
-                                 show_lookahead=True, show_grid4=True, measures_timeline=None):
+                                 show_lookahead=True, show_grid4=True, measures_timeline=None,
+                                 use_ring=True, note_speed_ratio=1.0):
     if not OPENCV_AVAILABLE:
         return
 
@@ -670,7 +682,9 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         trajectory_mode=trajectory_mode,
         show_lookahead=show_lookahead,
         show_grid4=show_grid4,
-        measures_timeline=measures_timeline
+        measures_timeline=measures_timeline,
+        use_ring=use_ring,
+        note_speed_ratio=note_speed_ratio
     )
 
     if aspect_ratio == "9:16":
@@ -708,7 +722,8 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
             aspect_ratio=aspect_ratio,
             trajectory_mode=trajectory_mode,
             lang_seg_value=notation_mode,
-            show_lookahead=show_lookahead
+            show_lookahead=show_lookahead,
+            note_speed_ratio=note_speed_ratio
         )
     
     preview_canvas.paste(Image.fromarray(cv2.cvtColor(bgr_notes_part, cv2.COLOR_BGR2RGB)), ((960 - preview_w)//2, (540 - preview_h)//2))
@@ -765,7 +780,8 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                                    current_time, current_bpm, active_pitches, note_opacity_value,
                                    color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                                    aspect_ratio="16:9", trajectory_mode="3段階 (練習標準)",
-                                   lang_seg_value="CDE", show_lookahead=True):
+                                   lang_seg_value="CDE", show_lookahead=True,
+                                   note_speed_ratio=1.0):
     """
     OpenCVの LINE_AA を用いて、斜め面取りされたソリッドでシャープな幾何学多角形ノーツを合成描画。
     「3段階 (練習標準)」「垂直落下 (穴直上)」「2段階 (ビジュアル)」の3モードすべてに対応。
@@ -786,7 +802,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     is_straight_mode = ("垂直落下" in str(trajectory_mode))
 
     _, _, _, X_shift_notes = get_layout_params(inst_type, scale)
-    pixels_per_second = (220.0 * current_bpm) / 240.0
+    pixels_per_second = (220.0 * current_bpm * max(0.1, float(note_speed_ratio))) / 240.0
     px_per_sec_s = pixels_per_second * scale
     note_labels_to_draw = []
     is_jp = ("ドレミ" in str(lang_seg_value))
@@ -987,7 +1003,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                               aspect_ratio="16:9", use_skin=True, controller=None,
                               trajectory_mode="3段階 (練習標準)",
-                              show_lookahead=True, show_grid4=True, measures_timeline=None):
+                              show_lookahead=True, show_grid4=True, measures_timeline=None,
+                              use_ring=True, note_speed_ratio=1.0):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -1100,7 +1117,9 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                     trajectory_mode=trajectory_mode,
                     show_lookahead=show_lookahead,
                     show_grid4=show_grid4,
-                    measures_timeline=measures_timeline
+                    measures_timeline=measures_timeline,
+                    use_ring=use_ring,
+                    note_speed_ratio=note_speed_ratio
                 )
 
                 bgr_frame = cv2.cvtColor(np.asarray(pil_frame), cv2.COLOR_RGBA2BGR)
@@ -1122,7 +1141,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         aspect_ratio=aspect_ratio,
                         trajectory_mode=trajectory_mode,
                         lang_seg_value=notation_mode,
-                        show_lookahead=show_lookahead
+                        show_lookahead=show_lookahead,
+                        note_speed_ratio=note_speed_ratio
                     )
                 
                 video_writer.write(bgr_frame)
