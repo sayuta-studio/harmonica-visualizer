@@ -43,7 +43,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         self.title("Chromatic Harmonica Visualizer & Trainer")
         self.geometry("1400x820")
-        self.resizable(False, False)
+        self.minsize(1400, 820)
+        self.resizable(True, True)
 
         # 状態管理変数
         self.midi_notes = []
@@ -104,9 +105,10 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             print(f"[システム警告] pygame.mixer的初期化に失敗しました: {ex}")
             PYGAME_AVAILABLE = False
 
-        # Canvasへのマウスイベント・グローバルキーイベントバインディング
+        # Canvasへのマウスイベント・リサイズ追従・グローバルキーイベントバインディング
         self.gui.canvas.bind("<Button-1>", self.on_canvas_click)
         self.gui.canvas.bind("<MouseWheel>", self.on_canvas_mousewheel)
+        self.gui.canvas_frame.bind("<Configure>", self.on_canvas_frame_configure)
         self.bind("<KeyPress>", self.on_global_key_press)
 
         self.after(100, self.initialize_flow)
@@ -348,7 +350,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         use_skin = bool(self.gui.use_skin_switch.get())
         
         aspect_ratio = self.get_effective_canvas_ratio()
-        _, _, disp_scale = get_visualizer_layout_params(aspect_ratio)
+        disp_scale = getattr(self, "_current_canvas_scale", None)
+        if disp_scale is None:
+            _, _, disp_scale = self.get_current_canvas_layout()
 
         # 連動リング表示スイッチのON/OFF状態を引き渡す
         use_ring = bool(self.gui.show_ring_switch.get())

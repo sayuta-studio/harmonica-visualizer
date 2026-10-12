@@ -85,25 +85,23 @@ def get_y_trajectory_params(canvas_height, trajectory_mode="3段階 (練習標�
     return y_center, y_collide_line, y_straight_line, y_hole_line, height_diag, height_straight
 
 
-def get_visualizer_layout_params(ratio_str):
+def get_visualizer_layout_params(ratio_str, max_w=960, max_h=540):
     """
-    練習画面の最大表示枠 960x540 内に美しく収まるように、
-    表示用Canvasの物理幅 (width)、物理高さ (height)、および対応する縮小描画スケール (scale) を解決します。
+    親フレームの有効領域 (max_w x max_h) 内にアスペクト比を厳密に維持して最大フィットするように、
+    表示用Canvasの物理幅 (width)、物理高さ (height)、および対応する描画スケール (scale) を解決します。
     """
-    if ratio_str == "9:16":
-        display_h = 540
-        display_w = 304       
-        scale = 304.0 / 960.0 
-    elif ratio_str == "4:3":
-        display_h = 540
-        display_w = 720       
-        scale = 720.0 / 960.0
-    else:
-        display_h = 540
-        display_w = 960
-        scale = 1.0
-        
-    return display_w, display_h, scale
+    base_w = 960.0
+    base_h = float(get_canvas_height_by_ratio(ratio_str))
+
+    avail_w = max(304.0, float(max_w))
+    avail_h = max(240.0, float(max_h))
+
+    scale = min(avail_w / base_w, avail_h / base_h)
+    display_w = max(1, int(round(base_w * scale)))
+    display_h = max(1, int(round(base_h * scale)))
+    exact_scale = display_w / base_w
+
+    return display_w, display_h, exact_scale
 
 # カラーパレット (デフォルト値：SettingsController of テーマ機能によって動的に上書きされます)
 COLOR_BLOW_RGB = (255, 85, 0)     # 吹き：オレンジ

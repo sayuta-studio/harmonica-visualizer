@@ -387,11 +387,12 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         # [レイヤー11] 凡例
         if is_legend_on:
             legend_x_start = 770 * scale
+            f_leg_size = max(6, int(11 * scale))
             canvas.create_rectangle(legend_x_start, 30 * scale, legend_x_start + 140 * scale, 75 * scale, fill="#1c1c1c", outline="#000000", width=max(1, int(2*scale)), tags="static_legend")
             canvas.create_oval(legend_x_start + 12 * scale, 40 * scale, legend_x_start + 22 * scale, 50 * scale, fill=note_color_blow, outline="", tags="static_legend")
-            draw_bordered_text_canvas(canvas, (legend_x_start + 70 * scale, 45 * scale), "吹", "#FFFFFF", border_width=int(2*scale), tags="static_legend")
+            draw_bordered_text_canvas(canvas, (legend_x_start + 70 * scale, 45 * scale), "吹", "#FFFFFF", font=("Arial", f_leg_size, "bold"), border_width=max(1, int(2*scale)), tags="static_legend")
             canvas.create_oval(legend_x_start + 12 * scale, 55 * scale, legend_x_start + 22 * scale, 65 * scale, fill=note_color_draw, outline="", tags="static_legend")
-            draw_bordered_text_canvas(canvas, (legend_x_start + 70 * scale, 60 * scale), "吸", "#FFFFFF", border_width=int(2*scale), tags="static_legend")
+            draw_bordered_text_canvas(canvas, (legend_x_start + 70 * scale, 60 * scale), "吸", "#FFFFFF", font=("Arial", f_leg_size, "bold"), border_width=max(1, int(2*scale)), tags="static_legend")
 
     # 2. 二分探索による高速アクティブ範囲特定
     start_ticks, max_dur_ticks = _get_notes_index(midi_notes)

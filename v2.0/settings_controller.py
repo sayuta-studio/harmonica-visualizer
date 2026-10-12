@@ -652,19 +652,55 @@ class SettingsController:
             return "16:9"
         return self.gui.ratio_menu.get()
 
+    def get_current_canvas_layout(self):
+        """現在の canvas_frame の実寸と実効アスペクト比から、表示用Canvasの (width, height, scale) を返します。"""
+        effective_ratio = self.get_effective_canvas_ratio()
+        max_w, max_h = 960, 540
+        if hasattr(self, "gui") and hasattr(self.gui, "canvas_frame"):
+            fw = self.gui.canvas_frame.winfo_width()
+            fh = self.gui.canvas_frame.winfo_height()
+            if fw > 200 and fh > 200:
+                max_w = max(320, fw - 40)
+                max_h = max(240, fh - 40)
+        return get_visualizer_layout_params(effective_ratio, max_w=max_w, max_h=max_h)
+
     def sync_canvas_size_to_active_ratio(self):
-        """現在の実効アスペクト比に合わせて表示用Canvasのサイズとキャッシュを同期します。"""
+        """現在の実効アスペクト比およびウィンドウサイズに合わせて表示用Canvasのサイズとキャッシュを同期します。"""
         if not hasattr(self, "gui") or not self.gui.canvas:
             return
-        effective_ratio = self.get_effective_canvas_ratio()
-        w, h, _ = get_visualizer_layout_params(effective_ratio)
-        self.gui.canvas.configure(width=w, height=h)
-        self.gui.canvas.place(relx=0.5, rely=0.5, anchor="center")
+        w, h, scale = self.get_current_canvas_layout()
+        self._current_canvas_scale = scale
+        cur_w = int(self.gui.canvas.cget("width"))
+        cur_h = int(self.gui.canvas.cget("height"))
+        if cur_w != w or cur_h != h:
+            self.gui.canvas.configure(width=w, height=h)
+            self.gui.canvas.place(relx=0.5, rely=0.5, anchor="center")
 
         if hasattr(self.gui.canvas, "skin_cache"):
             self.gui.canvas.skin_cache.clear()
         self.gui.canvas.delete("static_plate")
 
+    def on_canvas_frame_configure(self, event):
+        """ウィンドウ最大化・リサイズ時にアスペクト比を維持したままCanvasを自動追従フィットさせます。"""
+        if event.widget is not getattr(self.gui, "canvas_frame", None):
+            return
+        new_size = (event.width, event.height)
+        if new_size == getattr(self, "_last_canvas_frame_size", (0, 0)):
+            return
+        self._last_canvas_frame_size = new_size
+        pending = getattr(self, "_resize_after_id", None)
+        if pending is not None:
+            try:
+                self.after_cancel(pending)
+            except Exception:
+                pass
+        self._resize_after_id = self.after(25, self._apply_canvas_frame_resize)
+
+    def _apply_canvas_frame_resize(self):
+        self._resize_after_id = None
+        self.sync_canvas_size_to_active_ratio()
+        if getattr(self, "play_state", "stopped") != "playing":
+            self.draw_harmonica_static()
 
     def on_sidebar_tab_changed(self, tab_name):
         """右サイドバーのタブ切替時にCanvasの表示比率・描画を即時同期します。"""
@@ -675,7 +711,7 @@ class SettingsController:
     def on_ratio_changed(self, value):
         """
         アスペクト比プルダウン（16:9/9:16/4:3）の変更を検知した瞬間、
-        表示用Canvasの物理サイズを拡大縮小し、最大960x540の親枠内の中央に綺麗にフィット（レターボックス）配置します。
+        表示用Canvasの物理サイズを拡大縮小し、親枠内の中央に綺麗にフィット（レターボックス）配置します。
         """
         self.sync_canvas_size_to_active_ratio()
         self.apply_bpm()
