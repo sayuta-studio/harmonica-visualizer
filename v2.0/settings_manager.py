@@ -18,45 +18,145 @@ def get_portable_base_dir():
 
 
 DEFAULT_SETTINGS = {
-    "楽器タイプ": "16穴 (C3-D7)",
-    "音名表記": "CDE",
-    "穴番号表示": "ON",
-    "凡例表示": "ON",
-    "ノーツ表示": "ON",
-    "ガイド線表示": "ON",
-    "着地発光表示": "OFF",
-    "ノーツ不透明度": "50",
-    "動画背景色": "ノーマル（黒）",
-    "動画解像度": "Full HD (1920x1080)",
-    "軽量プレビュー": "ON",
-    "カラーテーマ": "ノーマル",
-    "吹音色": "#FF9900",
-    "吸音色": "#00FFFF",
-    "動画FPS": "60 FPS",
-    "音響モード": "MIDI再生 (Windows標準音源)",
-    "変え指設定": "スライド最小化",
-    "アスペクト比": "16:9",
-    "外部スキン使用": "ON",
-    "レバーリング表示": "ON",
-    "ノーツ落下軌道": "3段階 (練習標準)",
-    "直上音名予告": "ON",
-    "田の字4音表示": "ON",
+    # --- 🎵 練習タブ ＆ 上部バー ---
+    "ハーモニカ": "16穴 (C3-D7)",
+    "ノーツ軌道": "3段階 (練習標準)",
     "ノーツ落下速度": "1.0x (標準)",
-    "ステップアップ増加": "+5%",
     "ステップアップ開始": "70",
     "ステップアップ目標": "100",
-    "動画出力範囲": "全曲",
-    "動画イントロ秒": "0秒",
-    "動画アウトロ秒": "2秒",
-    "動画タイトル配置": "なし",
-    "動画タイトル文字列": "",
-    "動画クレジット文字列": "",
+    "ステップアップ1周増分": "+5%",
+    "再生音源": "MIDI再生 (Windows標準音源)",
+    "運指プリセット": "スライド最小化",
+
+    # --- 🎨 デザインタブ ---
+    "ノーツカラーテーマ": "ノーマル",
+    "吹音色": "#FF9900",
+    "吸音色": "#00FFFF",
+    "外部スキン": "ON",
+    "ノーツ不透過度": "50",
+    "音名表記": "CDE",
+    "穴下の音名": "4音グリッド表示",
+    "穴番号": "ON",
+    "凡例": "ON",
+    "ノーツ表示": "ON",
+    "ガイド線": "ON",
+    "レバーリング連動": "ON",
+    "着地発光": "OFF",
+    "ノーツ音名表示": "ON",
+
+    # --- 🎞️ 動画編集タブ ---
+    "動画編集を動画出力に適用": "ON",
+    "タイトル配置": "なし",
+    "タイトル曲名": "",
+    "タイトルサブ": "",
     "外部音源モード": "頭出し確認 (再生:両方 / 動画:外部のみ)",
-    "外部音源オフセットms": "0",
-    "外部音源音量": "100",
+    "外部音源頭出しms": "0",
+    "外部音源音量%": "100",
     "YouTube上限リミッター": "ON",
-    "動画編集適用": "ON"
+
+    # --- 🎬 動画出力タブ ---
+    "アスペクト比": "16:9",
+    "動画背景色": "ノーマル（黒）",
+    "出力解像度": "Full HD (1920x1080)",
+    "フレームレート": "60 FPS",
+    "書き出し範囲": "全曲",
+    "前の余白": "0秒",
+    "後の余白": "2秒",
 }
+
+# 旧バージョンの settings.txt キー名を現在のUI表示名へ自動引き継ぎ変換するマップ
+LEGACY_KEY_MAP = {
+    "楽器タイプ": "ハーモニカ",
+    "ノーツ落下軌道": "ノーツ軌道",
+    "ステップアップ増加": "ステップアップ1周増分",
+    "音響モード": "再生音源",
+    "変え指設定": "運指プリセット",
+    "カラーテーマ": "ノーツカラーテーマ",
+    "外部スキン使用": "外部スキン",
+    "ノーツ不透明度": "ノーツ不透過度",
+    "田の字4音表示": "穴下の音名",
+    "穴番号表示": "穴番号",
+    "凡例表示": "凡例",
+    "ガイド線表示": "ガイド線",
+    "レバーリング表示": "レバーリング連動",
+    "着地発光表示": "着地発光",
+    "直上音名予告": "ノーツ音名表示",
+    "動画編集適用": "動画編集を動画出力に適用",
+    "動画タイトル配置": "タイトル配置",
+    "動画タイトル文字列": "タイトル曲名",
+    "動画クレジット文字列": "タイトルサブ",
+    "外部音源オフセットms": "外部音源頭出しms",
+    "外部音源音量": "外部音源音量%",
+    "動画解像度": "出力解像度",
+    "動画FPS": "フレームレート",
+    "動画出力範囲": "書き出し範囲",
+    "動画イントロ秒": "前の余白",
+    "動画アウトロ秒": "後の余白",
+}
+
+SETTINGS_SECTIONS = [
+    ("🎵 練習タブ ＆ 上部バー", [
+        "ハーモニカ",
+        "ノーツ軌道",
+        "ノーツ落下速度",
+        "ステップアップ開始",
+        "ステップアップ目標",
+        "ステップアップ1周増分",
+        "再生音源",
+        "運指プリセット",
+    ]),
+    ("🎨 デザインタブ", [
+        "ノーツカラーテーマ",
+        "吹音色",
+        "吸音色",
+        "外部スキン",
+        "ノーツ不透過度",
+        "音名表記",
+        "穴下の音名",
+        "穴番号",
+        "凡例",
+        "ノーツ表示",
+        "ガイド線",
+        "レバーリング連動",
+        "着地発光",
+        "ノーツ音名表示",
+    ]),
+    ("🎞️ 動画編集タブ", [
+        "動画編集を動画出力に適用",
+        "タイトル配置",
+        "タイトル曲名",
+        "タイトルサブ",
+        "外部音源モード",
+        "外部音源頭出しms",
+        "外部音源音量%",
+        "YouTube上限リミッター",
+    ]),
+    ("🎬 動画出力タブ", [
+        "アスペクト比",
+        "動画背景色",
+        "出力解像度",
+        "フレームレート",
+        "書き出し範囲",
+        "前の余白",
+        "後の余白",
+    ]),
+]
+
+
+def _normalize_loaded_value(key, val):
+    """旧表記の設定値を現在のUI選択肢表記へ正規化します。"""
+    if key == "穴下の音名":
+        if val in ("ON", "4音グリッド表示"):
+            return "4音グリッド表示"
+        if val in ("OFF", "1音表示 (従来)"):
+            return "1音表示 (従来)"
+    elif key == "ノーツ軌道":
+        if val == "3段階収束 (標準)":
+            return "3段階 (練習標準)"
+    elif key == "運指プリセット":
+        if val == "標準運指":
+            return "スライド最小化"
+    return val
 
 
 def load_settings():
@@ -75,10 +175,11 @@ def load_settings():
                 parts = line.split(":", 1) if ":" in line else line.split("：", 1)
                 if len(parts) != 2:
                     continue
-                key = parts[0].strip()
+                raw_key = parts[0].strip()
                 val = parts[1].strip()
+                key = LEGACY_KEY_MAP.get(raw_key, raw_key)
                 if key in loaded:
-                    loaded[key] = val
+                    loaded[key] = _normalize_loaded_value(key, val)
         return loaded
     except Exception as e:
         print(f"[警告] settings.txt のパースに失敗しました: {e}")
@@ -86,54 +187,60 @@ def load_settings():
 
 
 def save_settings_dict(settings_dict):
-    """辞書形式で受け取った設定を settings.txt へ安全に永続化保存します。"""
+    """辞書形式で受け取った設定を、現在の4タブUI構成に揃えて settings.txt へ永続化保存します。"""
     base_dir = get_portable_base_dir()
     settings_path = os.path.join(base_dir, "settings.txt")
     merged = DEFAULT_SETTINGS.copy()
-    merged.update(settings_dict)
+    for raw_k, v in settings_dict.items():
+        k = LEGACY_KEY_MAP.get(raw_k, raw_k)
+        if k in merged:
+            merged[k] = _normalize_loaded_value(k, v)
+
     try:
         with open(settings_path, "w", encoding="utf-8") as f:
             f.write("# ======================================================\n")
-            f.write("#  Chromatic Harmonica Trainer - ユーザー環境設定\n")
+            f.write("#  Chromatic Harmonica Visualizer - ユーザー環境設定\n")
             f.write("#  (このファイルをメモ帳等で直接書き換えて保存することができます)\n")
+            f.write("#  項目名・選択肢は画面上の表示名と一致しています。\n")
             f.write("#  全角・半角のコロンどちらにも対応しています。\n")
-            f.write("# ======================================================\n\n")
-            for k, v in merged.items():
-                f.write(f"{k}: {v}\n")
+            f.write("# ======================================================\n")
+            for sec_title, keys in SETTINGS_SECTIONS:
+                f.write(f"\n# --- [{sec_title}] ---\n")
+                for k in keys:
+                    f.write(f"{k}: {merged.get(k, DEFAULT_SETTINGS[k])}\n")
     except Exception as e:
         print(f"[警告] settings.txt へのセーブに失敗しました: {e}")
 
 
 def save_settings(inst, lang, hole, legend, notes, grid, glow, opacity, bg, res,
-                  simplified="ON", theme="ノーマル", blow="#FF9900", draw="#00FFFF", fps="60 FPS",
+                  theme="ノーマル", blow="#FF9900", draw="#00FFFF", fps="60 FPS",
                   audio_mode="MIDI再生 (Windows標準音源)", fingering_preset="スライド最小化",
                   ratio="16:9", use_skin="ON", ring="ON", trajectory="3段階 (練習標準)",
-                  lookahead="ON", grid4="ON", **extra):
-    """後方互換ラッパー：個別引数を辞書にまとめて save_settings_dict へ委譲します。"""
+                  lookahead="ON", grid4="4音グリッド表示", **extra):
+    """個別引数を辞書にまとめて save_settings_dict へ委譲します。"""
     data = {
-        "楽器タイプ": inst,
+        "ハーモニカ": inst,
         "音名表記": lang,
-        "穴番号表示": hole,
-        "凡例表示": legend,
+        "穴番号": hole,
+        "凡例": legend,
         "ノーツ表示": notes,
-        "ガイド線表示": grid,
-        "着地発光表示": glow,
-        "ノーツ不透明度": opacity,
+        "ガイド線": grid,
+        "着地発光": glow,
+        "ノーツ不透過度": opacity,
         "動画背景色": bg,
-        "動画解像度": res,
-        "軽量プレビュー": simplified,
-        "カラーテーマ": theme,
+        "出力解像度": res,
+        "ノーツカラーテーマ": theme,
         "吹音色": blow,
         "吸音色": draw,
-        "動画FPS": fps,
-        "音響モード": audio_mode,
-        "変え指設定": fingering_preset,
+        "フレームレート": fps,
+        "再生音源": audio_mode,
+        "運指プリセット": fingering_preset,
         "アスペクト比": ratio,
-        "外部スキン使用": use_skin,
-        "レバーリング表示": ring,
-        "ノーツ落下軌道": trajectory,
-        "直上音名予告": lookahead,
-        "田の字4音表示": grid4,
+        "外部スキン": use_skin,
+        "レバーリング連動": ring,
+        "ノーツ軌道": trajectory,
+        "ノーツ音名表示": lookahead,
+        "穴下の音名": grid4,
     }
     data.update(extra)
     save_settings_dict(data)

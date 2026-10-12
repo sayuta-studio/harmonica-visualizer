@@ -25,57 +25,57 @@ class SettingsController:
     def load_user_settings(self):
         """settings_managerを介した設定自動復元"""
         loaded = settings_manager.load_settings()
-        self.gui.inst_menu.set(loaded["楽器タイプ"])
-        self.gui.lang_menu.set(loaded["音名表記"])
+        self.gui.inst_menu.set(loaded.get("ハーモニカ", "16穴 (C3-D7)"))
+        self.gui.lang_menu.set(loaded.get("音名表記", "CDE"))
         
-        if loaded["穴番号表示"] == "ON": self.gui.hole_num_switch.select()
+        if loaded.get("穴番号", "ON") == "ON": self.gui.hole_num_switch.select()
         else: self.gui.hole_num_switch.deselect()
         
-        if loaded["凡例表示"] == "ON": self.gui.show_legend_switch.select()
+        if loaded.get("凡例", "ON") == "ON": self.gui.show_legend_switch.select()
         else: self.gui.show_legend_switch.deselect()
         
-        if loaded["ノーツ表示"] == "ON": self.gui.show_notes_switch.select()
+        if loaded.get("ノーツ表示", "ON") == "ON": self.gui.show_notes_switch.select()
         else: self.gui.show_notes_switch.deselect()
         
-        if loaded["ガイド線表示"] == "ON": self.gui.show_grid_switch.select()
+        if loaded.get("ガイド線", "ON") == "ON": self.gui.show_grid_switch.select()
         else: self.gui.show_grid_switch.deselect()
         
-        if loaded["着地発光表示"] == "ON": self.gui.show_glow_switch.select()
+        if loaded.get("着地発光", "OFF") == "ON": self.gui.show_glow_switch.select()
         else: self.gui.show_glow_switch.deselect()
             
         self.gui.opacity_entry.delete(0, tk.END)
-        self.gui.opacity_entry.insert(0, loaded["ノーツ不透明度"])
+        self.gui.opacity_entry.insert(0, loaded.get("ノーツ不透過度", "50"))
         
-        self.gui.bg_menu.set(loaded["動画背景色"])
-        val = loaded["動画背景色"]
+        val = loaded.get("動画背景色", "ノーマル（黒）")
+        self.gui.bg_menu.set(val)
         # 第3のクロマキー背景マゼンタの復元ロード
         if val == "グリーンバック": self.gui.canvas_bg_color = "#00FF00"
         elif val == "ブルーバック": self.gui.canvas_bg_color = "#0000FF"
         elif val == "マゼンタ（ピンク）": self.gui.canvas_bg_color = "#FF00FF"
         else: self.gui.canvas_bg_color = "#0d0d0d"
         
-        self.gui.res_menu.set(loaded["動画解像度"])
+        self.gui.res_menu.set(loaded.get("出力解像度", "Full HD (1920x1080)"))
         
-        # カラー環境設定、および動画出力FPS設定のサイレント自動復元
-        self.gui.theme_menu.set(loaded.get("カラーテーマ", "ノーマル"))
+        # カラー環境設定、および動画出力フレームレート設定のサイレント自動復元
+        self.gui.theme_menu.set(loaded.get("ノーツカラーテーマ", "ノーマル"))
         self.color_blow_hex = loaded.get("吹音色", "#FF9900")
         self.color_draw_hex = loaded.get("吸音色", "#00FFFF")
-        self.gui.fps_menu.set(loaded.get("動画FPS", "60 FPS"))
+        self.gui.fps_menu.set(loaded.get("フレームレート", "60 FPS"))
 
-        # 音響モードの復元同期
-        audio_mode = loaded.get("音響モード", "MIDI再生 (Windows標準音源)")
+        # 再生音源の復元同期
+        audio_mode = loaded.get("再生音源", "MIDI再生 (Windows標準音源)")
         self.gui.audio_mode_menu.set(audio_mode)
         self.sync_audio_mode_internals(audio_mode)
 
         # アスペクト比 ＆ 外部スキン設定の自動復元
         self.gui.ratio_menu.set(loaded.get("アスペクト比", "16:9"))
-        if loaded.get("外部スキン使用", "ON") == "ON":
+        if loaded.get("外部スキン", "ON") == "ON":
             self.gui.use_skin_switch.select()
         else:
             self.gui.use_skin_switch.deselect()
 
-        # 🚀【追加】：レバーリング設定の自動復元
-        if loaded.get("レバーリング表示", "ON") == "ON":
+        # レバーリング連動の自動復元
+        if loaded.get("レバーリング連動", "ON") == "ON":
             self.gui.show_ring_switch.select()
         else:
             self.gui.show_ring_switch.deselect()
@@ -87,15 +87,15 @@ class SettingsController:
         self.gui.cb_loop.deselect()
         self.midi_engine.loop_enabled = False
 
-        # 変え指（運指プリセット）の初期ロード復元
-        fingering_preset = loaded.get("変え指設定", "スライド最小化")
+        # 運指プリセットの初期ロード復元
+        fingering_preset = loaded.get("運指プリセット", "スライド最小化")
         if fingering_preset == "標準運指":
             fingering_preset = "スライド最小化" 
         self.gui.alt_fingering_menu.set(fingering_preset)
         harmonica_map.apply_fingering_preset(fingering_preset)
 
-        # ノーツ落下軌道の復元
-        traj_mode = loaded.get("ノーツ落下軌道", "3段階 (練習標準)")
+        # ノーツ軌道の復元
+        traj_mode = loaded.get("ノーツ軌道", "3段階 (練習標準)")
         if traj_mode == "3段階収束 (標準)":
             traj_mode = "3段階 (練習標準)"
         if traj_mode not in ["3段階 (練習標準)", "垂直落下 (穴直上)", "2段階 (ビジュアル)"]:
@@ -103,15 +103,15 @@ class SettingsController:
         if hasattr(self.gui, "trajectory_menu"):
             self.gui.trajectory_menu.set(traj_mode)
 
-        # ノーツ音名表示・4音グリッド表示の復元
+        # ノーツ音名表示・穴下の音名（4音グリッド表示）の復元
         if hasattr(self.gui, "show_lookahead_switch"):
-            if loaded.get("直上音名予告", "ON") == "ON":
+            if loaded.get("ノーツ音名表示", "ON") == "ON":
                 self.gui.show_lookahead_switch.select()
             else:
                 self.gui.show_lookahead_switch.deselect()
 
         if hasattr(self.gui, "grid4_menu"):
-            grid4_val = loaded.get("田の字4音表示", "ON")
+            grid4_val = loaded.get("穴下の音名", "4音グリッド表示")
             if grid4_val in ("OFF", "1音表示 (従来)"):
                 self.gui.grid4_menu.set("1音表示 (従来)")
             else:
@@ -125,7 +125,7 @@ class SettingsController:
             self.gui.note_speed_menu.set(ns_val)
 
         if hasattr(self.gui, "stepup_step_menu"):
-            st_step = loaded.get("ステップアップ増加", "+5%")
+            st_step = loaded.get("ステップアップ1周増分", "+5%")
             if st_step not in ["+1%", "+2%", "+5%", "+10%"]:
                 st_step = "+5%"
             self.gui.stepup_step_menu.set(st_step)
@@ -141,27 +141,27 @@ class SettingsController:
         if hasattr(self.gui, "stepup_switch"):
             self.gui.stepup_switch.deselect()
 
-        # 動画範囲・イントロ/アウトロ・タイトル・外部音源設定の復元
+        # 書き出し範囲・前後の余白・タイトル・外部音源設定の復元
         if hasattr(self.gui, "export_range_menu"):
-            rng_val = loaded.get("動画出力範囲", "全曲")
+            rng_val = loaded.get("書き出し範囲", "全曲")
             if rng_val not in ["全曲", "A〜B小節のみ"]:
                 rng_val = "全曲"
             self.gui.export_range_menu.set(rng_val)
 
         if hasattr(self.gui, "intro_sec_menu"):
-            in_val = loaded.get("動画イントロ秒", "0秒")
+            in_val = loaded.get("前の余白", "0秒")
             if in_val not in ["0秒", "1秒", "2秒", "3秒", "5秒"]:
                 in_val = "0秒"
             self.gui.intro_sec_menu.set(in_val)
 
         if hasattr(self.gui, "outro_sec_menu"):
-            out_val = loaded.get("動画アウトロ秒", "2秒")
+            out_val = loaded.get("後の余白", "2秒")
             if out_val not in ["0秒", "1秒", "2秒", "3秒", "5秒"]:
                 out_val = "2秒"
             self.gui.outro_sec_menu.set(out_val)
 
         if hasattr(self.gui, "title_template_menu"):
-            tpl_val = loaded.get("動画タイトル配置", "なし")
+            tpl_val = loaded.get("タイトル配置", "なし")
             valid_tpls = ["なし", "イントロ中央のみ", "左上常時", "右上常時", "イントロ中央＋左上常時", "イントロ中央＋右上常時"]
             if tpl_val not in valid_tpls:
                 tpl_val = "なし"
@@ -169,11 +169,11 @@ class SettingsController:
 
         if hasattr(self.gui, "video_title_entry"):
             self.gui.video_title_entry.delete(0, tk.END)
-            self.gui.video_title_entry.insert(0, str(loaded.get("動画タイトル文字列", "")))
+            self.gui.video_title_entry.insert(0, str(loaded.get("タイトル曲名", "")))
 
         if hasattr(self.gui, "video_credit_entry"):
             self.gui.video_credit_entry.delete(0, tk.END)
-            self.gui.video_credit_entry.insert(0, str(loaded.get("動画クレジット文字列", "")))
+            self.gui.video_credit_entry.insert(0, str(loaded.get("タイトルサブ", "")))
 
         if hasattr(self.gui, "ext_audio_mode_menu"):
             em_val = loaded.get("外部音源モード", "頭出し確認 (再生:両方 / 動画:外部のみ)")
@@ -189,11 +189,11 @@ class SettingsController:
 
         if hasattr(self.gui, "ext_audio_offset_entry"):
             self.gui.ext_audio_offset_entry.delete(0, tk.END)
-            self.gui.ext_audio_offset_entry.insert(0, str(loaded.get("外部音源オフセットms", "0")))
+            self.gui.ext_audio_offset_entry.insert(0, str(loaded.get("外部音源頭出しms", "0")))
 
         if hasattr(self.gui, "ext_audio_vol_entry") and hasattr(self.gui, "ext_audio_vol_slider"):
             try:
-                v_pct = int(max(0, min(200, float(loaded.get("外部音源音量", "100")))))
+                v_pct = int(max(0, min(200, float(loaded.get("外部音源音量%", "100")))))
             except ValueError:
                 v_pct = 100
             self.gui.ext_audio_vol_entry.delete(0, tk.END)
@@ -207,7 +207,7 @@ class SettingsController:
                 self.gui.yt_limiter_switch.deselect()
 
         if hasattr(self.gui, "video_edit_enabled_switch"):
-            if loaded.get("動画編集適用", "ON") == "ON":
+            if loaded.get("動画編集を動画出力に適用", "ON") == "ON":
                 self.gui.video_edit_enabled_switch.select()
             else:
                 self.gui.video_edit_enabled_switch.deselect()
@@ -364,7 +364,7 @@ class SettingsController:
         self.save_user_settings_txt()
 
     def save_user_settings_txt(self):
-        """settings_managerへの設定自動保存"""
+        """settings_managerへの設定自動保存（現在の4タブUI表示名と完全一致）"""
         settings_manager.save_settings(
             inst=self.gui.inst_menu.get(), 
             lang=self.gui.lang_menu.get(),  
@@ -376,7 +376,6 @@ class SettingsController:
             opacity=self.gui.opacity_entry.get(), 
             bg=self.gui.bg_menu.get(), 
             res=self.gui.res_menu.get(),
-            simplified="ON",
             theme=self.gui.theme_menu.get(),       
             blow=self.color_blow_hex,              
             draw=self.color_draw_hex,
@@ -388,23 +387,23 @@ class SettingsController:
             ring="ON" if self.gui.show_ring_switch.get() else "OFF",
             trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)",
             lookahead=("ON" if self.gui.show_lookahead_switch.get() else "OFF") if hasattr(self.gui, "show_lookahead_switch") else "ON",
-            grid4=("ON" if "4音グリッド" in self.gui.grid4_menu.get() else "OFF") if hasattr(self.gui, "grid4_menu") else "ON",
+            grid4=self.gui.grid4_menu.get() if hasattr(self.gui, "grid4_menu") else "4音グリッド表示",
             **{
                 "ノーツ落下速度": self.gui.note_speed_menu.get() if hasattr(self.gui, "note_speed_menu") else "1.0x (標準)",
-                "ステップアップ増加": self.gui.stepup_step_menu.get() if hasattr(self.gui, "stepup_step_menu") else "+5%",
+                "ステップアップ1周増分": self.gui.stepup_step_menu.get() if hasattr(self.gui, "stepup_step_menu") else "+5%",
                 "ステップアップ開始": self.gui.stepup_start_entry.get() if hasattr(self.gui, "stepup_start_entry") else "70",
                 "ステップアップ目標": self.gui.stepup_goal_entry.get() if hasattr(self.gui, "stepup_goal_entry") else "100",
-                "動画出力範囲": self.gui.export_range_menu.get() if hasattr(self.gui, "export_range_menu") else "全曲",
-                "動画イントロ秒": self.gui.intro_sec_menu.get() if hasattr(self.gui, "intro_sec_menu") else "0秒",
-                "動画アウトロ秒": self.gui.outro_sec_menu.get() if hasattr(self.gui, "outro_sec_menu") else "2秒",
-                "動画タイトル配置": self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし",
-                "動画タイトル文字列": self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else "",
-                "動画クレジット文字列": self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else "",
+                "書き出し範囲": self.gui.export_range_menu.get() if hasattr(self.gui, "export_range_menu") else "全曲",
+                "前の余白": self.gui.intro_sec_menu.get() if hasattr(self.gui, "intro_sec_menu") else "0秒",
+                "後の余白": self.gui.outro_sec_menu.get() if hasattr(self.gui, "outro_sec_menu") else "2秒",
+                "タイトル配置": self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし",
+                "タイトル曲名": self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else "",
+                "タイトルサブ": self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else "",
                 "外部音源モード": self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else "頭出し確認 (再生:両方 / 動画:外部のみ)",
-                "外部音源オフセットms": self.gui.ext_audio_offset_entry.get() if hasattr(self.gui, "ext_audio_offset_entry") else "0",
-                "外部音源音量": self.gui.ext_audio_vol_entry.get() if hasattr(self.gui, "ext_audio_vol_entry") else "100",
+                "外部音源頭出しms": self.gui.ext_audio_offset_entry.get() if hasattr(self.gui, "ext_audio_offset_entry") else "0",
+                "外部音源音量%": self.gui.ext_audio_vol_entry.get() if hasattr(self.gui, "ext_audio_vol_entry") else "100",
                 "YouTube上限リミッター": ("ON" if self.gui.yt_limiter_switch.get() else "OFF") if hasattr(self.gui, "yt_limiter_switch") else "ON",
-                "動画編集適用": ("ON" if self.gui.video_edit_enabled_switch.get() else "OFF") if hasattr(self.gui, "video_edit_enabled_switch") else "ON",
+                "動画編集を動画出力に適用": ("ON" if self.gui.video_edit_enabled_switch.get() else "OFF") if hasattr(self.gui, "video_edit_enabled_switch") else "ON",
             }
         )
         self.update_export_edit_summary_label()
