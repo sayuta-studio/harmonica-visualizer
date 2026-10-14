@@ -557,6 +557,10 @@ class PlaybackController:
             self.gui.export_btn.configure(state="normal")
 
     def on_stop(self):
+        if getattr(self, "is_recording", False):
+            self.stop_and_finalize_recording()
+        if getattr(self, "is_auditioning_rec", False):
+            self.stop_rec_audition()
         self.play_state = "stopped"
         self.midi_engine.stop()
         self.stop_ext_audio_playback()
@@ -796,9 +800,172 @@ class PlaybackController:
                 )
 
     def on_main_playback_start(self):
-        """カウントイン終了または本編再生開始の瞬間にワーカースレッドから直結呼び出しされ、1音目と外部音源を誤差0.0msで同時点火します。"""
+        """カウントイン終了または本編再生開始の瞬間にワーカースレッドから直結呼び出しされ、1音目と外部音源・マイク録音を誤差0.0msで同時点火します。"""
+        if getattr(self, "is_recording", False) and hasattr(self, "audio_recorder") and not self.audio_recorder.is_recording:
+            dev_name = self.gui.rec_device_menu.get() if hasattr(self.gui, "rec_device_menu") else None
+            ok = self.audio_recorder.start_recording(dev_name)
+            if hasattr(self.gui, "rec_status_lbl"):
+                self.after(0, lambda: self.gui.rec_status_lbl.configure(text="🔴 録音中...", text_color="#ef4444"))
         if self.play_state == "playing":
             self.sync_ext_audio_playback(from_worker=True, anchor_tick=self.midi_engine.accumulated_ticks)
+
+    # ==============================================================================
+    # 🎙️ マイク直接録音 (DAWワンクリック録音 ＆ 自動セット)
+    # ==============================================================================
+    def on_record_toggle(self):
+        """🔴 録音ボタンのトグルハンドラ（開始 ⇄ 停止＆自動保存・セット）"""
+        if getattr(self, "is_recording", False):
+            self.stop_and_finalize_recording()
+        else:
+            self.start_recording_flow()
+
+    def start_recording_flow(self):
+        """マイク録音準備を行い、カウントイン＋再生を開始（または即時録音開始）"""
+        self.on_stop()
+        self.is_recording = True
+        if hasattr(self.gui, "record_btn"):
+            self.gui.record_btn.configure(
+                text="⏹ 録音停止", fg_color="#ef4444", hover_color="#dc2626"
+            )
+        if hasattr(self.gui, "rec_status_lbl"):
+            self.gui.rec_status_lbl.configure(
+                text="🔴 録音準備中（カウントイン...）", text_color="#ef4444"
+            )
+
+        dev_name = self.gui.rec_device_menu.get() if hasattr(self.gui, "rec_device_menu") else None
+        count_in_dur = self.get_count_in_duration() if hasattr(self, "get_count_in_duration") else 0.0
+
+        if count_in_dur > 0 and self.midi_notes:
+            # カウントインがある場合は再生を点火し、on_main_playback_start で録音開始
+            self.on_play()
+        else:
+            # カウントインなし、またはMIDIがない場合は即時録音点火
+            ok = self.audio_recorder.start_recording(dev_name)
+            if ok:
+                if hasattr(self.gui, "rec_status_lbl"):
+                    self.gui.rec_status_lbl.configure(
+                        text="🔴 録音中...", text_color="#ef4444"
+                    )
+                if self.midi_notes:
+                    self.on_play()
+                else:
+                    self.gui.status_label.configure(
+                        text="🎙️ マイク録音中... 終了時は⏹録音停止を押してください",
+                        text_color="#ef4444"
+                    )
+            else:
+                self.is_recording = False
+                if hasattr(self.gui, "record_btn"):
+                    self.gui.record_btn.configure(
+                        text="🔴 録音", fg_color="#991b1b", hover_color="#dc2626"
+                    )
+                if hasattr(self.gui, "rec_status_lbl"):
+                    self.gui.rec_status_lbl.configure(
+                        text="❌ マイク初期化エラー", text_color="#ff5555"
+                    )
+
+    def stop_and_finalize_recording(self):
+        """マイク録音を終了し、WAVファイルとして保存して伴奏・実演音源に自動セットします。"""
+        if not getattr(self, "is_recording", False):
+            return
+        self.is_recording = False
+        if hasattr(self.gui, "record_btn"):
+            self.gui.record_btn.configure(
+                text="🔴 録音", fg_color="#991b1b", hover_color="#dc2626"
+            )
+
+        t_str = time.strftime("%Y%m%d_%H%M%S")
+        take_dir = os.path.join(self.base_dir, "temp")
+        take_filename = f"take_{t_str}.wav"
+        take_path = os.path.join(take_dir, take_filename)
+
+        saved_path, dur = self.audio_recorder.stop_recording(take_path)
+
+        if getattr(self, "play_state", "stopped") == "playing":
+            self.play_state = "stopped"
+            self.midi_engine.stop()
+            self.stop_ext_audio_playback()
+            self.lock_controls_on_play(False)
+            self.draw_harmonica_static()
+
+        if saved_path and dur > 0.1:
+            self.last_recorded_take_path = saved_path
+            disp_name = f"{take_filename} ({dur:.1f}秒)"
+            if hasattr(self.gui, "rec_file_lbl"):
+                self.gui.rec_file_lbl.configure(text=f"録音テイク: {disp_name}", text_color="#00ffcc")
+            if hasattr(self.gui, "rec_status_lbl"):
+                self.gui.rec_status_lbl.configure(text="✅ 録音完了 (伴奏音源に自動セット済)", text_color="#22c55e")
+
+            # 伴奏・外部音源として即座に自動セット
+            self.load_ext_audio_file(saved_path)
+            self.gui.status_label.configure(
+                text=f"🎙️ 録音テイクを保存し、伴奏・実演音源に自動セットしました！ ({dur:.1f}秒)",
+                text_color="#00ffcc"
+            )
+        else:
+            if hasattr(self.gui, "rec_status_lbl"):
+                self.gui.rec_status_lbl.configure(text="● 待機中 (録音データなし)", text_color="#aaaaaa")
+
+    def on_rec_listen_toggle(self):
+        """録音テイクの試聴（リバーブ適用スイッチがONの場合はリバーブをかけた音で試聴）"""
+        take_path = getattr(self, "last_recorded_take_path", None)
+        if not take_path or not os.path.exists(take_path):
+            self.gui.status_label.configure(text="録音テイクがありません。上部の🔴録音ボタンで録音してください。", text_color="#aaaaaa")
+            return
+
+        import pygame
+        if pygame.mixer.get_init() is None:
+            return
+
+        if getattr(self, "is_auditioning_rec", False):
+            self.stop_rec_audition()
+            return
+
+        play_file = take_path
+        if hasattr(self.gui, "reverb_switch") and self.gui.reverb_switch.get():
+            from audio_engine import apply_harmonica_reverb
+            rev_type = self.gui.reverb_type_menu.get() if hasattr(self.gui, "reverb_type_menu") else "ルーム (自然な部屋鳴り)"
+            wet_pct = int(self.gui.reverb_wet_slider.get()) if hasattr(self.gui, "reverb_wet_slider") else 35
+            rev_path = os.path.join(self.base_dir, "temp", "rec_audition_reverb.wav")
+            self.gui.status_label.configure(text="✨ リバーブ処理中...", text_color="#ffcc00")
+            self.update_idletasks()
+            if apply_harmonica_reverb(take_path, rev_path, rev_type, wet_pct):
+                play_file = rev_path
+
+        try:
+            snd = pygame.mixer.Sound(play_file)
+            self._audition_sound_ref = snd
+            self._audition_channel = snd.play()
+            self.is_auditioning_rec = True
+            self.gui.rec_listen_btn.configure(text="■ 停止", fg_color="#dc2626", hover_color="#b91c1c")
+            self.gui.status_label.configure(text=f"▶ 録音テイクを試聴中: {os.path.basename(play_file)}", text_color="#00ffcc")
+            self._poll_rec_audition()
+        except Exception as e:
+            self.gui.status_label.configure(text=f"❌ 試聴エラー: {e}", text_color="#ff5555")
+
+    def _poll_rec_audition(self):
+        """試聴再生終了を監視"""
+        if not getattr(self, "is_auditioning_rec", False):
+            return
+        ch = getattr(self, "_audition_channel", None)
+        if ch and ch.get_busy():
+            self.after(100, self._poll_rec_audition)
+        else:
+            self.stop_rec_audition()
+
+    def stop_rec_audition(self):
+        """試聴再生を停止"""
+        self.is_auditioning_rec = False
+        ch = getattr(self, "_audition_channel", None)
+        if ch:
+            try:
+                ch.stop()
+            except Exception:
+                pass
+            self._audition_channel = None
+        self._audition_sound_ref = None
+        if hasattr(self, "gui") and hasattr(self.gui, "rec_listen_btn"):
+            self.gui.rec_listen_btn.configure(text="▶ 試聴", fg_color="#3a3a3a", hover_color="#505050")
 
     # ==============================================================================
     # 外部音源（伴奏・実演録音）の読み込み・リアルタイム頭出し同期・音量制御

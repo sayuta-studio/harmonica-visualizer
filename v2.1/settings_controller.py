@@ -280,6 +280,40 @@ class SettingsController:
                 mode = "完成動画 (背景・タイトル合成)" if loaded.get("動画編集を動画出力に適用", "ON") == "ON" else "クロマキー素材 (背景・タイトルなし)"
             if mode in ["完成動画 (背景・タイトル合成)", "クロマキー素材 (背景・タイトルなし)"]:
                 self.gui.export_mode_menu.set(mode)
+
+        # マイク録音デバイス列挙と復元
+        if hasattr(self.gui, "rec_device_menu"):
+            from audio_engine import AudioRecorder
+            dev_list = AudioRecorder.get_input_devices()
+            menu_vals = ["既定の入力マイク (システム標準)"] + dev_list
+            self.gui.rec_device_menu.configure(values=menu_vals)
+            saved_dev = loaded.get("マイクデバイス", "既定の入力マイク (システム標準)")
+            if saved_dev in menu_vals:
+                self.gui.rec_device_menu.set(saved_dev)
+            else:
+                self.gui.rec_device_menu.set("既定の入力マイク (システム標準)")
+
+        # ハーモニカ用リバーブ設定の復元
+        if hasattr(self.gui, "reverb_switch"):
+            if loaded.get("リバーブ適用", "OFF") == "ON":
+                self.gui.reverb_switch.select()
+            else:
+                self.gui.reverb_switch.deselect()
+
+        if hasattr(self.gui, "reverb_type_menu"):
+            saved_type = loaded.get("リバーブ種類", "ルーム (自然な部屋鳴り)")
+            if saved_type in ["ルーム (自然な部屋鳴り)", "ホール (豊かな広がり)", "プレート (透明感のある響き)"]:
+                self.gui.reverb_type_menu.set(saved_type)
+
+        if hasattr(self.gui, "reverb_wet_slider"):
+            try:
+                wet_val = int(max(0, min(100, float(loaded.get("リバーブ深さ%", "35")))))
+            except ValueError:
+                wet_val = 35
+            self.gui.reverb_wet_slider.set(wet_val)
+            if hasattr(self.gui, "reverb_wet_lbl"):
+                self.gui.reverb_wet_lbl.configure(text=f"深さ: {wet_val}%")
+
         self.update_export_edit_summary_label()
 
     def is_video_edit_enabled(self):
@@ -558,6 +592,10 @@ class SettingsController:
                 "YouTube上限リミッター": ("ON" if self.gui.yt_limiter_switch.get() else "OFF") if hasattr(self.gui, "yt_limiter_switch") else "ON",
                 "背景画像の表示": ("ON" if self.gui.bg_image_enable_switch.get() else "OFF") if hasattr(self.gui, "bg_image_enable_switch") else "ON",
                 "出力スタイル": self.gui.export_mode_menu.get() if hasattr(self.gui, "export_mode_menu") else "完成動画 (背景・タイトル合成)",
+                "マイクデバイス": self.gui.rec_device_menu.get() if hasattr(self.gui, "rec_device_menu") else "既定の入力マイク (システム標準)",
+                "リバーブ適用": ("ON" if self.gui.reverb_switch.get() else "OFF") if hasattr(self.gui, "reverb_switch") else "OFF",
+                "リバーブ種類": self.gui.reverb_type_menu.get() if hasattr(self.gui, "reverb_type_menu") else "ルーム (自然な部屋鳴り)",
+                "リバーブ深さ%": str(int(self.gui.reverb_wet_slider.get())) if hasattr(self.gui, "reverb_wet_slider") else "35",
                 "背景画像パス": getattr(self, "bg_image_path", "") or "",
                 "背景画像の配置": self.gui.bg_image_fit_menu.get() if hasattr(self.gui, "bg_image_fit_menu") else "中央トリミング (画面いっぱい)",
                 "背景画像の回転": self.gui.bg_image_rot_menu.get() if hasattr(self.gui, "bg_image_rot_menu") else "0° (自動補正)",
@@ -565,6 +603,13 @@ class SettingsController:
             }
         )
         self.update_export_edit_summary_label()
+
+    def on_reverb_slider_changed(self, value):
+        """✨ リバーブ深さスライダー操作時のハンドラ"""
+        val_int = int(round(float(value)))
+        if hasattr(self.gui, "reverb_wet_lbl"):
+            self.gui.reverb_wet_lbl.configure(text=f"深さ: {val_int}%")
+        self.save_user_settings_txt()
 
     def on_setting_changed(self, value=None):
         # トグル表示（ガイド線/ノーツ表示/落下軌道など）切り替え時に

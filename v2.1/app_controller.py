@@ -47,6 +47,12 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.resizable(True, True)
 
         self.is_recording = False
+        from audio_engine import AudioRecorder
+        self.audio_recorder = AudioRecorder()
+        self.last_recorded_take_path = None
+        self.is_auditioning_rec = False
+        self._audition_sound_ref = None
+        self._audition_channel = None
 
         # 状態管理変数
         self.midi_notes = []
@@ -86,13 +92,20 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         
         self.midi_engine.active_pitches_callback = None
         
-        self.midi_engine.progress_callback = lambda pct: self.after(0, lambda: self.update_progress_from_engine(pct))
-        self.midi_engine.measure_beat_callback = lambda m, b, num, den, tot: self.after(0, lambda: self.update_measure_beat_from_engine(m, b, num, den, tot))
-        self.midi_engine.status_callback = lambda status: self.after(0, lambda: self.update_status_from_engine(status))
-        self.midi_engine.error_callback = lambda err: self.after(0, lambda: self.on_engine_error(err))
+        def _safe_after(fn):
+            try:
+                if self.winfo_exists():
+                    self.after(0, fn)
+            except Exception:
+                pass
 
-        self.midi_engine.stream_start_callback = lambda: self.after(0, self.on_audio_stream_start)
-        self.midi_engine.loop_wrap_callback = lambda: self.after(0, self.on_loop_wrapped)
+        self.midi_engine.progress_callback = lambda pct: _safe_after(lambda: self.update_progress_from_engine(pct))
+        self.midi_engine.measure_beat_callback = lambda m, b, num, den, tot: _safe_after(lambda: self.update_measure_beat_from_engine(m, b, num, den, tot))
+        self.midi_engine.status_callback = lambda status: _safe_after(lambda: self.update_status_from_engine(status))
+        self.midi_engine.error_callback = lambda err: _safe_after(lambda: self.on_engine_error(err))
+
+        self.midi_engine.stream_start_callback = lambda: _safe_after(self.on_audio_stream_start)
+        self.midi_engine.loop_wrap_callback = lambda: _safe_after(self.on_loop_wrapped)
         self.midi_engine.main_start_callback = self.on_main_playback_start
 
         self.gui = HarmonicaAppGUI(self, self)
@@ -116,29 +129,6 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.bind("<KeyPress>", self.on_global_key_press)
 
         self.after(100, self.initialize_flow)
-
-    def on_record_toggle(self):
-        """上部の🔴録音ボタンのトグルハンドラ（Step 2で完全実装）"""
-        if getattr(self, "is_recording", False):
-            self.stop_recording()
-        else:
-            self.start_recording()
-
-    def start_recording(self):
-        self.is_recording = True
-        if hasattr(self.gui, "record_btn"):
-            self.gui.record_btn.configure(text="⏹ 録音停止", fg_color="#dc2626")
-        if hasattr(self.gui, "rec_status_lbl"):
-            self.gui.rec_status_lbl.configure(text="● 録音中...", text_color="#ef4444")
-        self.gui.status_label.configure(text="🎙️ 録音中...", text_color="#ef4444")
-
-    def stop_recording(self):
-        self.is_recording = False
-        if hasattr(self.gui, "record_btn"):
-            self.gui.record_btn.configure(text="🔴 録音", fg_color="#991b1b")
-        if hasattr(self.gui, "rec_status_lbl"):
-            self.gui.rec_status_lbl.configure(text="● 待機中 (上部の🔴録音ボタンで開始)", text_color="#aaaaaa")
-        self.gui.status_label.configure(text="待機中...", text_color="#777777")
 
     def report_callback_exception(self, exc, val, tb):
         """ボタンクリック等のTkinterコールバック例外も自動で error_log.txt に記録し自己診断可能にします。"""
@@ -912,6 +902,9 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             fade_in=fade_in,
             fade_out=fade_out,
             fade_in_title_mode=fade_in_title_mode,
+            reverb_enabled=bool(self.gui.reverb_switch.get()) if hasattr(self.gui, "reverb_switch") else False,
+            reverb_type=self.gui.reverb_type_menu.get() if hasattr(self.gui, "reverb_type_menu") else "ルーム (自然な部屋鳴り)",
+            reverb_wet_pct=int(self.gui.reverb_wet_slider.get()) if hasattr(self.gui, "reverb_wet_slider") else 35,
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック

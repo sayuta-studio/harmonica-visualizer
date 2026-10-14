@@ -1389,7 +1389,10 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               bg_fit_mode="中央トリミング (画面いっぱい)",
                               bg_rotation="0° (自動補正)",
                               fade_in=False, fade_out=False,
-                              fade_in_title_mode="フェード中もタイトル表示"):
+                              fade_in_title_mode="フェード中もタイトル表示",
+                              reverb_enabled=False,
+                              reverb_type="ルーム (自然な部屋鳴り)",
+                              reverb_wet_pct=35):
     if not OPENCV_AVAILABLE:
         status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
         return
@@ -1659,10 +1662,16 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 "-i", temp_audio_path,
                 "-c:v", "copy",
                 "-c:a", "aac",
+            ]
+            if reverb_enabled and reverb_wet_pct > 0:
+                from audio_engine import get_reverb_filter_arg
+                af_str = get_reverb_filter_arg(reverb_type, reverb_wet_pct)
+                ffmpeg_cmd.extend(["-af", af_str])
+            ffmpeg_cmd.extend([
                 "-map", "0:v:0",
                 "-map", "1:a:0",
                 final_output_path
-            ]
+            ])
 
             print(f"[Export] FFmpeg結合キック: {' '.join(ffmpeg_cmd)}")
             

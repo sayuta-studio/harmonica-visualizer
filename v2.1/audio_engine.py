@@ -351,3 +351,149 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
             wav_file.setsampwidth(2)
             wav_file.setframerate(sample_rate)
             wav_file.writeframes(samples_16.tobytes())
+
+
+# ==============================================================================
+# 🎙️ マイク直接録音 ＆ ✨ ハーモニカ専用リバーブエンジン (v2.1新設)
+# ==============================================================================
+
+class AudioRecorder:
+    """pygame._sdl2.audio を利用したネイティブマイク直接録音クラス"""
+    def __init__(self):
+        self.device = None
+        self.buffer = bytearray()
+        self.is_recording = False
+        self.sample_rate = 44100
+        self.channels = 2
+
+    @staticmethod
+    def get_input_devices():
+        """接続されているマイク・オーディオインターフェース名の一覧を取得"""
+        try:
+            import pygame
+            if not pygame.get_init():
+                pygame.init()
+            import pygame._sdl2.audio as sdl2_audio
+            names = sdl2_audio.get_audio_device_names(True)
+            return list(names) if names else []
+        except Exception as e:
+            print(f"[AudioRecorder] デバイス一覧取得失敗: {e}")
+            return []
+
+    def start_recording(self, device_name=None, sample_rate=44100):
+        """マイク録音を開始（バッファ初期化）"""
+        try:
+            import pygame
+            if not pygame.get_init():
+                pygame.init()
+            import pygame._sdl2.audio as sdl2_audio
+
+            self.buffer = bytearray()
+            self.sample_rate = sample_rate
+            self.channels = 2
+
+            # device_name が None または "既定" を含む場合は None (システム標準)
+            dev_target = None
+            if device_name and "既定" not in device_name:
+                dev_target = device_name
+
+            def _callback(audiodevice, memoryview_obj):
+                if self.is_recording:
+                    self.buffer.extend(memoryview_obj)
+
+            self.device = sdl2_audio.AudioDevice(
+                dev_target,
+                True,  # iscapture
+                sample_rate,
+                sdl2_audio.AUDIO_S16,
+                self.channels,
+                1024,  # chunksize
+                0,     # allowed_changes
+                _callback
+            )
+            self.is_recording = True
+            self.device.pause(0)
+            return True
+        except Exception as e:
+            print(f"[AudioRecorder] 録音開始失敗: {e}")
+            self.is_recording = False
+            self.device = None
+            return False
+
+    def stop_recording(self, output_wav_path):
+        """録音を停止し、WAVファイルとして保存"""
+        self.is_recording = False
+        if self.device:
+            try:
+                self.device.pause(1)
+                self.device.close()
+            except Exception:
+                pass
+            self.device = None
+
+        if len(self.buffer) == 0:
+            return None, 0.0
+
+        try:
+            os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
+            with wave.open(output_wav_path, 'wb') as wf:
+                wf.setnchannels(self.channels)
+                wf.setsampwidth(2)
+                wf.setframerate(self.sample_rate)
+                wf.writeframes(bytes(self.buffer))
+
+            dur = len(self.buffer) / (self.sample_rate * self.channels * 2)
+            return output_wav_path, dur
+        except Exception as e:
+            print(f"[AudioRecorder] WAV保存失敗: {e}")
+            return None, 0.0
+
+
+def get_reverb_filter_arg(reverb_type="ルーム (自然な部屋鳴り)", wet_pct=35):
+    """FFmpeg aecho フィルター文字列を生成"""
+    w = max(0.0, min(100.0, float(wet_pct))) / 100.0
+    in_gain = max(0.2, 1.0 - 0.25 * w)
+    out_gain = min(0.95, max(0.1, 0.35 + 0.55 * w))
+
+    if "ホール" in reverb_type:
+        delays = "80|140|210|320"
+        decays = f"{max(0.01, 0.50*w):.2f}|{max(0.01, 0.40*w):.2f}|{max(0.01, 0.30*w):.2f}|{max(0.01, 0.20*w):.2f}"
+    elif "プレート" in reverb_type:
+        delays = "25|45|75|110|160"
+        decays = f"{max(0.01, 0.55*w):.2f}|{max(0.01, 0.45*w):.2f}|{max(0.01, 0.35*w):.2f}|{max(0.01, 0.25*w):.2f}|{max(0.01, 0.15*w):.2f}"
+    else:  # ルーム
+        delays = "35|55|80"
+        decays = f"{max(0.01, 0.35*w):.2f}|{max(0.01, 0.25*w):.2f}|{max(0.01, 0.15*w):.2f}"
+
+    return f"aecho={in_gain:.2f}:{out_gain:.2f}:{delays}:{decays}"
+
+
+def apply_harmonica_reverb(input_wav_path, output_wav_path, reverb_type="ルーム (自然な部屋鳴り)", wet_pct=35):
+    """FFmpeg を呼び出してWAVファイルにハーモニカリバーブを適用"""
+    import subprocess
+    import shutil
+    if not input_wav_path or not os.path.exists(input_wav_path):
+        return False
+    if wet_pct <= 0:
+        os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
+        shutil.copy2(input_wav_path, output_wav_path)
+        return True
+
+    af_arg = get_reverb_filter_arg(reverb_type, wet_pct)
+    cmd = [
+        "ffmpeg", "-y", "-i", input_wav_path,
+        "-af", af_arg,
+        output_wav_path
+    ]
+    startupinfo = None
+    if os.name == 'nt':
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+    try:
+        os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
+        res = subprocess.run(cmd, startupinfo=startupinfo, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return res.returncode == 0 and os.path.exists(output_wav_path)
+    except Exception as e:
+        print(f"[apply_harmonica_reverb] エラー: {e}")
+        return False

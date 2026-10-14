@@ -475,7 +475,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.rec_file_lbl.pack(side="left", fill="x", expand=True)
         self.rec_listen_btn = ctk.CTkButton(
             rec_take_row, text="▶ 試聴", width=58, height=24, font=self.f_jp_bold,
-            fg_color="#3a3a3a", hover_color="#505050"
+            fg_color="#3a3a3a", hover_color="#505050", command=self.controller.on_rec_listen_toggle
         )
         self.rec_listen_btn.pack(side="right")
 
@@ -506,7 +506,10 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         rev_slider_row.pack(fill="x", padx=12, pady=(2, 8))
         self.reverb_wet_lbl = ctk.CTkLabel(rev_slider_row, text="深さ: 35%", text_color="#aaaaaa", font=self.f_jp_bold, width=70, anchor="w")
         self.reverb_wet_lbl.pack(side="left")
-        self.reverb_wet_slider = ctk.CTkSlider(rev_slider_row, from_=0, to=100, number_of_steps=100)
+        self.reverb_wet_slider = ctk.CTkSlider(
+            rev_slider_row, from_=0, to=100, number_of_steps=100,
+            command=self.controller.on_reverb_slider_changed
+        )
         self.reverb_wet_slider.set(35)
         self.reverb_wet_slider.pack(side="left", fill="x", expand=True, padx=4)
 
