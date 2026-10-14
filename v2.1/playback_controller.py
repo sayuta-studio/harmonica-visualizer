@@ -540,11 +540,19 @@ class PlaybackController:
 
     def on_pause(self):
         self.play_state = "paused"
+        self._is_seeking = False
+        if hasattr(self, "_seek_debounce_id") and self._seek_debounce_id:
+            try:
+                self.after_cancel(self._seek_debounce_id)
+            except Exception:
+                pass
+            self._seek_debounce_id = None
         self.midi_engine.pause()
         self.stop_ext_audio_playback()
         try:
             import pygame
             if pygame.mixer.get_init() is not None:
+                pygame.mixer.stop()
                 pygame.mixer.music.pause()
         except Exception:
             pass
@@ -562,11 +570,19 @@ class PlaybackController:
         if getattr(self, "is_auditioning_rec", False):
             self.stop_rec_audition()
         self.play_state = "stopped"
+        self._is_seeking = False
+        if hasattr(self, "_seek_debounce_id") and self._seek_debounce_id:
+            try:
+                self.after_cancel(self._seek_debounce_id)
+            except Exception:
+                pass
+            self._seek_debounce_id = None
         self.midi_engine.stop()
         self.stop_ext_audio_playback()
         try:
             import pygame
             if pygame.mixer.get_init() is not None:
+                pygame.mixer.stop()  # 🚀 全サウンドチャンネル（Sound）を即座に完全停止
                 pygame.mixer.music.stop()
                 pygame.mixer.music.unload()
         except Exception:
@@ -580,9 +596,33 @@ class PlaybackController:
             self.gui.export_btn.configure(state="normal")
         self.draw_harmonica_static()
 
+    def on_seek_start(self, event=None):
+        """シークスライダーのドラッグ（スクラブ）開始"""
+        self._is_seeking = True
+        if self.play_state == "playing":
+            self._resume_after_seek = True
+            # スクラブ中は一時的にMIDIワーカーを停止し、外部音源も消音
+            self.midi_engine.playing_state = "paused"
+            self.midi_engine.all_notes_off()
+            self.stop_ext_audio_playback()
+        else:
+            self._resume_after_seek = False
+
     def on_seek_drag(self, value):
+        """シークスライダーのドラッグ中ハンドラ（高速ビジュアルスクラブ：音は鳴らさず画面位置のみ即座に追従）"""
+        if not getattr(self, "_is_seeking", False):
+            if self.play_state == "playing":
+                self._resume_after_seek = True
+                self.midi_engine.playing_state = "paused"
+                self.midi_engine.all_notes_off()
+                self.stop_ext_audio_playback()
+            else:
+                self._resume_after_seek = False
+            self._is_seeking = True
+
         pct = float(value)
-        self.midi_engine.seek(pct)
+        # auto_resume=False でスレッド起動やスリープを発生させず、内部Tickと音色状態のみを高速更新
+        self.midi_engine.seek(pct, auto_resume=False)
         
         self.current_tick = self.midi_engine.accumulated_ticks
         count_in_duration = self.get_count_in_duration()
@@ -590,9 +630,47 @@ class PlaybackController:
         
         self.current_time = elapsed_sec + count_in_duration
         self.update_time_label()
-        if self.play_state == "playing":
-            self.sync_ext_audio_playback()
         self.draw_harmonica_static()
+
+        # マウスリリースがウィンドウ外等で捕捉できなかった場合のデバウンス保険
+        if hasattr(self, "_seek_debounce_id") and self._seek_debounce_id:
+            try:
+                self.after_cancel(self._seek_debounce_id)
+            except Exception:
+                pass
+        self._seek_debounce_id = self.after(150, self.on_seek_end)
+
+    def on_seek_end(self, event=None):
+        """シークスライダーの操作完了ハンドラ（確定位置から1回だけクリーンに再生を再開）"""
+        if hasattr(self, "_seek_debounce_id") and self._seek_debounce_id:
+            try:
+                self.after_cancel(self._seek_debounce_id)
+            except Exception:
+                pass
+            self._seek_debounce_id = None
+
+        if not getattr(self, "_is_seeking", False):
+            return
+        self._is_seeking = False
+
+        target_tick = self.midi_engine.accumulated_ticks
+        should_resume = getattr(self, "_resume_after_seek", False)
+        self._resume_after_seek = False
+
+        if should_resume and self.play_state == "playing":
+            # 外部音源・MIDIワーカーを1度だけ正常に再開（カウントインを再発動させず、シーク位置から即時再開）
+            self.stop_ext_audio_playback()
+            self.midi_engine.seek_to_tick(target_tick, exact_tick=True, auto_resume=False)
+            self.midi_engine.playing_state = "playing"
+            self.midi_engine.resync_master_clock(anchor_tick=target_tick)
+            import threading
+            self.midi_engine.play_thread = threading.Thread(target=self.midi_engine._playback_worker, daemon=True)
+            self.midi_engine.play_thread.start()
+            self.sync_ext_audio_playback()
+        else:
+            self.midi_engine.seek_to_tick(target_tick, exact_tick=True, auto_resume=False)
+            self.stop_ext_audio_playback()
+            self.draw_harmonica_static()
 
     def on_volume_change(self, value):
         self.midi_engine.volume_factor = float(value)
@@ -734,7 +812,7 @@ class PlaybackController:
     def update_progress_from_engine(self, pct):
         if self.play_state == "playing":
             return
-        if self.gui.seek_slider:
+        if not getattr(self, "_is_seeking", False) and self.gui.seek_slider:
             self._last_slider_pct = pct
             self.gui.seek_slider.set(pct)
         self.current_time = (pct / 100.0) * self.max_duration
@@ -808,7 +886,7 @@ class PlaybackController:
             ok = self.audio_recorder.start_recording(dev_name, channels=num_channels)
             if hasattr(self.gui, "rec_status_lbl"):
                 self.after(0, lambda: self.gui.rec_status_lbl.configure(text=f"🔴 録音中... ({'1chモノラル' if num_channels == 1 else '2chステレオ'})", text_color="#ef4444"))
-        if self.play_state == "playing":
+        if self.play_state == "playing" and not getattr(self, "_is_seeking", False):
             self.sync_ext_audio_playback(from_worker=True, anchor_tick=self.midi_engine.accumulated_ticks)
 
     # ==============================================================================
@@ -940,7 +1018,10 @@ class PlaybackController:
         try:
             snd = pygame.mixer.Sound(play_file)
             self._audition_sound_ref = snd
-            self._audition_channel = snd.play()
+            aud_ch = pygame.mixer.Channel(14)
+            aud_ch.stop()
+            aud_ch.play(snd)
+            self._audition_channel = aud_ch
             self.is_auditioning_rec = True
             self.gui.rec_listen_btn.configure(text="■ 停止", fg_color="#dc2626", hover_color="#b91c1c")
             self.gui.status_label.configure(text=f"▶ 録音テイクを試聴中: {os.path.basename(play_file)}", text_color="#00ffcc")
@@ -961,6 +1042,12 @@ class PlaybackController:
     def stop_rec_audition(self):
         """試聴再生を停止"""
         self.is_auditioning_rec = False
+        try:
+            import pygame
+            if pygame.mixer.get_init() is not None:
+                pygame.mixer.Channel(14).stop()
+        except Exception:
+            pass
         ch = getattr(self, "_audition_channel", None)
         if ch:
             try:
@@ -1060,6 +1147,12 @@ class PlaybackController:
 
     def stop_ext_audio_playback(self):
         """再生中の外部音源チャンネルを即座に停止します。"""
+        try:
+            import pygame
+            if pygame.mixer.get_init() is not None:
+                pygame.mixer.Channel(15).stop()
+        except Exception:
+            pass
         ch = getattr(self, "_ext_audio_channel", None)
         if ch is not None:
             try:
@@ -1130,15 +1223,16 @@ class PlaybackController:
             self._ext_audio_boosted = False
 
         try:
+            ext_ch = pygame.mixer.Channel(15)
+            ext_ch.stop()
             snd = pygame.mixer.Sound(buffer=play_pcm)
-            ch = snd.play()
+            ext_ch.play(snd)
             # 🚀【解決】：バッファ切り出し・Sound生成に要した数十msのラグを完全に打ち消すため、
             # 外部音源が物理発音を開始したこの瞬間にマスタークロックの時刻アンカーを再ロック！
             self.midi_engine.resync_master_clock(anchor_tick=cur_tick)
-            if ch is not None:
-                ch.set_volume(hw_vol)
+            ext_ch.set_volume(hw_vol)
             self._ext_audio_sound_ref = snd
-            self._ext_audio_channel = ch
+            self._ext_audio_channel = ext_ch
         except Exception as e:
             print(f"[警告] 外部音源の再生開始失敗: {e}")
 

@@ -220,7 +220,7 @@ class MidiEngine:
                 # 🚀【解決】：音声割り込み負荷低減のためバッファサイズを 512 から 1024 へ最適化拡大！
                 pygame.mixer.init(44100, -16, 2, 1024)
             
-            pygame.mixer.set_num_channels(16)
+            pygame.mixer.set_num_channels(32)
             sample_rate = 44100
             
             self.metro_sound_strong = self._generate_click_wave(1200.0, sample_rate, 0.05)
@@ -746,26 +746,27 @@ class MidiEngine:
         self._ci_ticks_per_sec = 0.0
         self.currently_playing_notes.clear()
 
-    def seek(self, pct):
+    def seek(self, pct, auto_resume=True):
         if not self.merged_messages:
             return
         target_tick = (pct / 100.0) * self.total_ticks
-        self.seek_to_tick(target_tick)
+        self.seek_to_tick(target_tick, auto_resume=auto_resume)
 
-    def seek_to_measure(self, measure_number):
+    def seek_to_measure(self, measure_number, auto_resume=True):
         if not self.measures_timeline:
             return
         measure_number = max(1, min(measure_number, len(self.measures_timeline)))
         m_info = self.measures_timeline[measure_number - 1]
-        self.seek_to_tick(m_info['start_tick'])
+        self.seek_to_tick(m_info['start_tick'], auto_resume=auto_resume)
 
-    def seek_to_tick(self, target_tick, exact_tick=False):
+    def seek_to_tick(self, target_tick, exact_tick=False, auto_resume=True):
         target_tick = max(0, min(int(target_tick), self.total_ticks))
         was_playing = self.playing_state in ['playing', 'count_in']
         if was_playing:
             self.playing_state = 'paused'
             self.all_notes_off()
-            time.sleep(0.05)
+            if auto_resume:
+                time.sleep(0.05)
             
         closest_index = 0
         min_diff = float('inf')
@@ -786,15 +787,16 @@ class MidiEngine:
             
         self.sync_midi_channel_states(self.current_msg_index)
             
-        if was_playing:
+        if was_playing and auto_resume:
             self.playing_state = 'playing'
             self.resync_master_clock(anchor_tick=self.accumulated_ticks)
             self.play_thread = threading.Thread(target=self._playback_worker, daemon=True)
             self.play_thread.start()
         else:
-            if self.progress_callback and self.total_ticks > 0:
-                pct = (self.accumulated_ticks / self.total_ticks) * 100
-                self.progress_callback(pct)
+            if not was_playing:
+                if self.progress_callback and self.total_ticks > 0:
+                    pct = (self.accumulated_ticks / self.total_ticks) * 100
+                    self.progress_callback(pct)
             
             measure, beat, num, den, total_measures = self.get_measure_and_beat(self.accumulated_ticks)
             if self.measure_beat_callback:

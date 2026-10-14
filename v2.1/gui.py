@@ -148,6 +148,8 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.seek_label.pack(side="left", padx=(4, 6))
 
         self.seek_slider = ctk.CTkSlider(self.row2, from_=0, to=100, command=self.controller.on_seek_drag)
+        self.seek_slider.bind("<Button-1>", lambda e: self.controller.on_seek_start(e))
+        self.seek_slider.bind("<ButtonRelease-1>", lambda e: self.controller.on_seek_end(e))
         self.seek_slider.set(0)
         self.seek_slider.pack(side="left", fill="x", expand=True, padx=(0, 12))
 

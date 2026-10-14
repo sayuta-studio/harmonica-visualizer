@@ -418,7 +418,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         if self.current_time > self.max_duration:
             self.current_time = self.max_duration
 
-        if self.gui.seek_slider and self.max_duration > 0:
+        if not getattr(self, "_is_seeking", False) and self.gui.seek_slider and self.max_duration > 0:
             if self.current_tick <= 0:
                 if getattr(self, "_last_slider_pct", -1.0) != 0.0:
                     self._last_slider_pct = 0.0
@@ -1020,6 +1020,12 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self._teardown_win32_file_drop()
         if hasattr(self, "stop_ext_audio_playback"):
             self.stop_ext_audio_playback()
+        try:
+            import pygame
+            if pygame.mixer.get_init() is not None:
+                pygame.mixer.stop()
+        except Exception:
+            pass
         self.midi_engine.stop()
         self.midi_engine.close_device()
         super().destroy()
