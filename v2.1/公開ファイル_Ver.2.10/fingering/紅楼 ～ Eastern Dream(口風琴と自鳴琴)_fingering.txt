@@ -1,0 +1,9 @@
+# chromatic_harmonica_fingering_config
+PRESET: スライド最小化
+
+# FORMAT -> start_tick_note_val: candidate_index
+36240_72: 0
+48360_84: 1
+63720_84: 1
+79080_84: 1
+94440_84: 1

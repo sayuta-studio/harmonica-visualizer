@@ -16,8 +16,7 @@ echo [2/3] Bundling and packaging with PyInstaller...
 echo (This may take a minute, please wait...)
 
 rem 🚀【解決】：--add-data から --collect-all customtkinter に切り替え！
-rem これによりローカルにフォルダがなくても、site-packagesから全データを安全に自動収集・同梱します。
-python -m PyInstaller --clean --onefile --noconsole --name="Chromatic_Harmonica_Trainer" --collect-all customtkinter main.py
+python -m PyInstaller --clean --onefile --noconsole --name="Chromatic_Harmonica_Trainer" --collect-all customtkinter --hidden-import=pygame._sdl2.audio main.py
 
 rem 3. Build result verification
 echo.
