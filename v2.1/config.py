@@ -302,6 +302,15 @@ def get_lever_highlight_color(hex_color):
     return f"#{int(round(hr * 255.0)):02X}{int(round(hg * 255.0)):02X}{int(round(hb * 255.0)):02X}"
 
 
+def get_lever_highlight_rgb(hex_color):
+    """NumPy/Pillow RGBタプル形式でレバーハイライト色を返します。"""
+    hi_hex = get_lever_highlight_color(hex_color).lstrip("#")
+    r = int(hi_hex[0:2], 16)
+    g = int(hi_hex[2:4], 16)
+    b = int(hi_hex[4:6], 16)
+    return (r, g, b)
+
+
 def get_lever_highlight_bgr(hex_color):
     """OpenCV/NumPy BGRタプル形式でレバーハイライト色を返します。"""
     hi_hex = get_lever_highlight_color(hex_color).lstrip("#")
@@ -309,4 +318,5 @@ def get_lever_highlight_bgr(hex_color):
     g = int(hi_hex[2:4], 16)
     b = int(hi_hex[4:6], 16)
     return (b, g, r)
+
 

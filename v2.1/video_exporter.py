@@ -25,13 +25,13 @@ import numpy as np
 import math
 
 try:
-    import cv2
     import customtkinter as ctk
     from PIL import Image, ImageDraw, ImageFont, ImageTk, ImageOps, ImageEnhance
-    OPENCV_AVAILABLE = True
+    PILLOW_AVAILABLE = True
 except ImportError:
-    OPENCV_AVAILABLE = False
-    print("[警告] opencv-python, pillow または customtkinter が見つかりません。")
+    PILLOW_AVAILABLE = False
+    print("[警告] pillow または customtkinter が見つかりません。")
+OPENCV_AVAILABLE = False
 
 import bisect
 
@@ -91,7 +91,7 @@ from config import (
     get_y_layout_params, get_y_trajectory_params, get_portable_path,
     LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT,
     get_layout_params, get_note_dest_x, hex_to_rgb, draw_metallic_button_pil_flat,
-    get_lever_highlight_bgr
+    get_lever_highlight_rgb, get_lever_highlight_bgr
 )
 from harmonica_map import (
     is_note_in_range, get_note_name, get_note_fingering_for_song, get_hole_4_notes, BLOW_NOTES_MIDI
@@ -186,9 +186,9 @@ def draw_bordered_text_pillow(draw, position, text, text_color, font, border_wid
     draw.text((x, y), text, fill=text_color, font=font, anchor="mm")
 
 
-def _make_premul_bgr_stamp(rgba_img, crop_bbox=True):
+def _make_premul_rgb_stamp(rgba_img, crop_bbox=True):
     """
-    PIL.Image(RGBA) から高速ブレンド用の事前乗算スタンプ (premul_bgr_f32, inv_alpha_f32, bx0, by0) を生成します。
+    PIL.Image(RGBA) から高速ブレンド用の事前乗算スタンプ (premul_rgb_f32, inv_alpha_f32, bx0, by0) を生成します。
     """
     if crop_bbox:
         bbox = rgba_img.getbbox()
@@ -200,22 +200,24 @@ def _make_premul_bgr_stamp(rgba_img, crop_bbox=True):
         bx0, by0 = 0, 0
         arr = np.asarray(rgba_img)
     alpha = (arr[:, :, 3:4].astype(np.float32)) * (1.0 / 255.0)
-    bgr = arr[:, :, 2::-1].astype(np.float32)
-    premul_bgr = bgr * alpha
+    rgb = arr[:, :, :3].astype(np.float32)
+    premul_rgb = rgb * alpha
     inv_alpha = 1.0 - alpha
-    return premul_bgr, inv_alpha, bx0, by0
+    return premul_rgb, inv_alpha, bx0, by0
+
+_make_premul_bgr_stamp = _make_premul_rgb_stamp
 
 
-def _blend_premul_stamp_bgr(bgr_frame, stamp, x0, y0, width, height):
+def _blend_premul_stamp_rgb(rgb_frame, stamp, x0, y0, width, height):
     """
-    事前乗算スタンプ (premul_bgr, inv_alpha, bx0, by0) を bgr_frame の (x0 + bx0, y0 + by0) に高速合成します。
+    事前乗算スタンプ (premul_rgb, inv_alpha, bx0, by0) を rgb_frame の (x0 + bx0, y0 + by0) に高速合成します。
     """
-    premul_bgr, inv_alpha, bx0, by0 = stamp
-    if premul_bgr is None:
+    premul_rgb, inv_alpha, bx0, by0 = stamp
+    if premul_rgb is None:
         return
     px0 = x0 + bx0
     py0 = y0 + by0
-    sh, sw = premul_bgr.shape[:2]
+    sh, sw = premul_rgb.shape[:2]
     dx0 = max(0, px0)
     dy0 = max(0, py0)
     dx1 = min(width, px0 + sw)
@@ -225,10 +227,12 @@ def _blend_premul_stamp_bgr(bgr_frame, stamp, x0, y0, width, height):
         sy0 = dy0 - py0
         sx1 = sx0 + (dx1 - dx0)
         sy1 = sy0 + (dy1 - dy0)
-        sub_bg = bgr_frame[dy0:dy1, dx0:dx1]
-        bgr_frame[dy0:dy1, dx0:dx1] = (
-            sub_bg.astype(np.float32) * inv_alpha[sy0:sy1, sx0:sx1] + premul_bgr[sy0:sy1, sx0:sx1]
+        sub_bg = rgb_frame[dy0:dy1, dx0:dx1]
+        rgb_frame[dy0:dy1, dx0:dx1] = (
+            sub_bg.astype(np.float32) * inv_alpha[sy0:sy1, sx0:sx1] + premul_rgb[sy0:sy1, sx0:sx1]
         ).astype(np.uint8)
+
+_blend_premul_stamp_bgr = _blend_premul_stamp_rgb
 
 
 def _get_measure_label_stamp(text_str, font_size, color_rgba):
@@ -516,17 +520,17 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                     text_color = "#000000" if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF") else "#AAAAAA"
                     draw_bordered_text_pillow(d_full, (x_center, y_center_s + 60 * scale), note_text, text_color, f_note, border_width=2 * scale)
 
-        bgr_static_off = cv2.cvtColor(np.asarray(full_off), cv2.COLOR_RGBA2BGR)
-        bgr_static_on = cv2.cvtColor(np.asarray(full_on), cv2.COLOR_RGBA2BGR)
+        rgb_static_off = np.asarray(full_off.convert("RGB"))
+        rgb_static_on = np.asarray(full_on.convert("RGB"))
 
-        legend_patch_bgr = None
+        legend_patch_rgb = None
         legend_pos = (0, 0)
         if is_legend_on:
             lx0 = max(0, int(766 * scale))
             ly0 = max(0, int(26 * scale))
             lx1 = min(width, int(914 * scale))
             ly1 = min(height, int(79 * scale))
-            legend_patch_bgr = bgr_static_off[ly0:ly1, lx0:lx1].copy()
+            legend_patch_rgb = rgb_static_off[ly0:ly1, lx0:lx1].copy()
             legend_pos = (lx0, ly0)
 
         # 発光スタンプ（Blowリング / Drawリング / 上部扇形）の事前生成
@@ -548,13 +552,16 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         _CACHE["base_image"] = base_img
         _CACHE["full_static_off"] = full_off
         _CACHE["full_static_on"] = full_on
-        _CACHE["bgr_static_off"] = bgr_static_off
-        _CACHE["bgr_static_on"] = bgr_static_on
-        _CACHE["top_strip_off_stamp"] = _make_premul_bgr_stamp(top_strip_off, crop_bbox=True)
-        _CACHE["top_strip_on_stamp"] = _make_premul_bgr_stamp(top_strip_on, crop_bbox=True)
+        _CACHE["bgr_static_off"] = rgb_static_off
+        _CACHE["bgr_static_on"] = rgb_static_on
+        _CACHE["rgb_static_off"] = rgb_static_off
+        _CACHE["rgb_static_on"] = rgb_static_on
+        _CACHE["top_strip_off_stamp"] = _make_premul_rgb_stamp(top_strip_off, crop_bbox=True)
+        _CACHE["top_strip_on_stamp"] = _make_premul_rgb_stamp(top_strip_on, crop_bbox=True)
         _CACHE["strip_y0"] = strip_y0
         _CACHE["strip_y1"] = strip_y1
-        _CACHE["legend_patch_bgr"] = legend_patch_bgr
+        _CACHE["legend_patch_bgr"] = legend_patch_rgb
+        _CACHE["legend_patch_rgb"] = legend_patch_rgb
         _CACHE["legend_pos"] = legend_pos
         _CACHE["clean_note_band"] = clean_note_band
         _CACHE["note_band_y0"] = note_band_y0
@@ -562,7 +569,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         _CACHE["glow_ring_blow"] = glow_ring_blow
         _CACHE["glow_ring_draw"] = glow_ring_draw
         _CACHE["ring_pad"] = ring_pad
-        _CACHE["glow_pie_stamp"] = _make_premul_bgr_stamp(glow_pie, crop_bbox=True)
+        _CACHE["glow_pie_stamp"] = _make_premul_rgb_stamp(glow_pie, crop_bbox=True)
         _CACHE["pie_pad"] = pie_pad
         _CACHE["hole_patches"] = {}
 
@@ -605,7 +612,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         is_bright_bg = (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00" or canvas_bg_color == "マゼンタ（ピンク）" or canvas_bg_color == "#FF00FF")
         m_line_rgba = (0, 51, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((50, 0, 50, 255) if is_bright_bg else (46, 46, 46, 255))
         m_txt_rgba = (0, 85, 0, 255) if (canvas_bg_color == "グリーンバック" or canvas_bg_color == "#00FF00") else ((80, 0, 80, 255) if is_bright_bg else (85, 85, 85, 255))
-        m_line_bgr = (m_line_rgba[2], m_line_rgba[1], m_line_rgba[0])
+        m_line_rgb = m_line_rgba[:3]
         m_font_size = max(6, int(8 * scale))
         line_w = max(1, int(1 * scale))
         pixels_per_second = (220.0 * current_bpm * max(0.1, float(note_speed_ratio))) / 240.0
@@ -634,7 +641,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                 ly0 = max(0, ym_i - line_w // 2)
                 ly1 = min(height, ly0 + line_w)
                 if ly1 > ly0 and xr_i > xl_i:
-                    bgr_frame[ly0:ly1, xl_i:xr_i] = m_line_bgr
+                    bgr_frame[ly0:ly1, xl_i:xr_i] = m_line_rgb
                 m_stamp = _get_measure_label_stamp(str(m["measure_num"]), m_font_size, m_txt_rgba)
                 _blend_premul_stamp_bgr(bgr_frame, m_stamp, int(round(x_l + 4 * scale)), int(round(y_m - 2 * scale)), width, height)
                 if y_m >= strip_y0 - 2:
@@ -728,19 +735,19 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                     note_text = get_note_name(current_note, is_japanese=is_jp)
                     draw_bordered_text_pillow(patch_draw, (x_center - hx0, y_center_s + 60 * scale - hy0), note_text, "#FFFFFF", f_note, border_width=2 * scale)
 
-                patch_bgr = cv2.cvtColor(np.asarray(patch_pil), cv2.COLOR_RGBA2BGR)
-                cached_patch = (hx0, hy0, hx1, hy1, patch_bgr)
+                patch_rgb = np.asarray(patch_pil.convert("RGB"))
+                cached_patch = (hx0, hy0, hx1, hy1, patch_rgb)
                 hole_patches[h_key] = cached_patch
 
-            hx0, hy0, hx1, hy1, patch_bgr = cached_patch
-            bgr_frame[hy0:hy1, hx0:hx1] = patch_bgr
+            hx0, hy0, hx1, hy1, patch_rgb = cached_patch
+            bgr_frame[hy0:hy1, hx0:hx1] = patch_rgb
 
             if show_glow_effect:
-                _blend_premul_stamp_bgr(bgr_frame, glow_pie_stamp, int(round(x_center)) - pie_pad, int(round(y_hole_line_s)) - pie_pad, width, height)
+                _blend_premul_stamp_rgb(bgr_frame, glow_pie_stamp, int(round(x_center)) - pie_pad, int(round(y_hole_line_s)) - pie_pad, width, height)
 
     if return_bgr:
         return bgr_frame
-    return Image.fromarray(cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
+    return Image.fromarray(bgr_frame).convert("RGBA")
 
 
 _TITLE_STAMP_CACHE = {}
@@ -833,9 +840,9 @@ def _get_title_overlay_stamp(width, height, scale, title_text, credit_text, mode
         y0 = margin_y
 
     arr = np.asarray(img)
-    bgr_stamp = arr[:, :, [2, 1, 0]].astype(np.float32)
+    rgb_stamp = arr[:, :, :3].astype(np.float32)
     alpha_stamp = (arr[:, :, 3:4].astype(np.float32)) / 255.0
-    res = (bgr_stamp, alpha_stamp, x0, y0)
+    res = (rgb_stamp, alpha_stamp, x0, y0)
     _TITLE_STAMP_CACHE[key] = res
     return res
 
@@ -911,7 +918,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
                                  bg_image_path=None, bg_brightness=1.0,
                                  bg_fit_mode="中央トリミング (画面いっぱい)",
                                  bg_rotation="0° (自動補正)"):
-    if not OPENCV_AVAILABLE:
+    if not PILLOW_AVAILABLE:
         return
 
     width, height, scale = resolve_resolution_and_scale(res_mode, aspect_ratio)
@@ -965,7 +972,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         preview_w = 960
 
     if (width, height) != (preview_w, preview_h):
-        bgr_notes_part = cv2.resize(bgr_base, (preview_w, preview_h), interpolation=cv2.INTER_AREA)
+        bgr_notes_part = np.asarray(Image.fromarray(bgr_base).resize((preview_w, preview_h), Image.Resampling.BILINEAR))
     else:
         bgr_notes_part = bgr_base
 
@@ -1004,7 +1011,7 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         is_single_preview=True
     )
     
-    preview_canvas.paste(Image.fromarray(cv2.cvtColor(bgr_notes_part, cv2.COLOR_BGR2RGB)), ((960 - preview_w)//2, (540 - preview_h)//2))
+    preview_canvas.paste(Image.fromarray(bgr_notes_part), ((960 - preview_w)//2, (540 - preview_h)//2))
     pil_final_preview = preview_canvas
     
     pop_win = ctk.CTkToplevel(parent_window)
@@ -1045,11 +1052,11 @@ def _get_note_label_stamp(text_str, font_size, bw):
         return res
     bx0, by0, bx1, by1 = bbox
     cropped = np.asarray(img.crop(bbox))
-    bgr_stamp = cropped[:, :, 2::-1].astype(np.float32)
+    rgb_stamp = cropped[:, :, :3].astype(np.float32)
     alpha_stamp = (cropped[:, :, 3:4].astype(np.float32)) * (1.0 / 255.0)
-    premul_bgr = bgr_stamp * alpha_stamp
+    premul_rgb = rgb_stamp * alpha_stamp
     inv_alpha = 1.0 - alpha_stamp
-    res = (premul_bgr, inv_alpha, cx - bx0, cy - by0)
+    res = (premul_rgb, inv_alpha, cx - bx0, cy - by0)
     _LABEL_STAMP_CACHE[key] = res
     return res
 
@@ -1063,13 +1070,13 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     """
     OpenCVの LINE_AA を用いて、斜め面取りされたソリッドでシャープな幾何学多角形ノーツを合成描画。
     「3段階 (練習標準)」「垂直落下 (穴直上)」「2段階 (ビジュアル)」の3モードすべてに対応。
-    二分探索ウィンドウ抽出・cv2.addWeightedによる高速C++ ROIブレンド・事前乗算音名ラベルスタンプにより高速化。
+    二分探索ウィンドウ抽出・Pillow & NumPyによる高速ROIブレンド・事前乗算音名ラベルスタンプにより高速化。
     """
     if not midi_notes:
         return bgr_frame
 
-    color_blow_bgr = hex_to_rgb(color_blow_hex)[::-1]
-    color_draw_bgr = hex_to_rgb(color_draw_hex)[::-1]
+    color_blow_rgb = hex_to_rgb(color_blow_hex)
+    color_draw_rgb = hex_to_rgb(color_draw_hex)
 
     y_center_full, y_collide_full, y_straight_full, y_hole_line_full, height_diag_full, height_straight_full = get_y_trajectory_params(height / scale, trajectory_mode)
     y_collide_s = y_collide_full * scale
@@ -1113,7 +1120,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
             if not fing: 
                 continue
             
-            col_bgr = color_blow_bgr if fing["action"] == "吹" else color_draw_bgr
+            col_rgb = color_blow_rgb if fing["action"] == "吹" else color_draw_rgb
             
             simulated_note = note_data["note"]
             if "バス" in inst_type:
@@ -1204,7 +1211,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
 
             if len(pts_accum) >= 3:
                 pts = np.array(pts_accum, dtype=np.int32)
-                polys_to_draw.append((pts, col_bgr))
+                polys_to_draw.append((pts, col_rgb))
                 px_min = int(pts[:, 0].min()) - 2
                 px_max = int(pts[:, 0].max()) + 3
                 py_min = int(pts[:, 1].min()) - 2
@@ -1219,7 +1226,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 if is_lever_on:
                     stripe_w = min(4.5 * scale, max(2.5, 3.2 * scale))
                     cur_hex = color_blow_hex if fing["action"] == "吹" else color_draw_hex
-                    hi_bgr = get_lever_highlight_bgr(cur_hex)
+                    hi_rgb = get_lever_highlight_rgb(cur_hex)
                     stripe_accum = []
                     # 右上角（面取り開始または右上端）
                     if ch_top > 0.5:
@@ -1255,7 +1262,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
 
                     if len(stripe_accum) >= 3:
                         pts_s = np.array(stripe_accum, dtype=np.int32)
-                        stripes_to_draw.append((pts_s, hi_bgr))
+                        stripes_to_draw.append((pts_s, hi_rgb))
 
             # 案A：落下ノーツ追従音名ラベルの座標収集
             if show_lookahead and lang_seg_value != "なし" and (y_vis_bot - y_vis_top >= 6.0 * scale) and y_vis_bot >= 8.0 * scale:
@@ -1278,28 +1285,36 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
         ry1 = min(zone_h, max_y)
         if rx1 > rx0 and ry1 > ry0:
             op_val = max(0.0, min(1.0, float(note_opacity_value)))
-            roi_bg = bgr_frame[ry0:ry1, rx0:rx1]
-            if op_val >= 0.999:
-                for pts, col_bgr in polys_to_draw:
-                    cv2.fillPoly(roi_bg, [pts], col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
-                for s_pts, s_col_bgr in stripes_to_draw:
-                    cv2.fillPoly(roi_bg, [s_pts], s_col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
-            elif op_val > 0.001:
-                roi_ov = roi_bg.copy()
-                for pts, col_bgr in polys_to_draw:
-                    cv2.fillPoly(roi_ov, [pts], col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
-                for s_pts, s_col_bgr in stripes_to_draw:
-                    cv2.fillPoly(roi_ov, [s_pts], s_col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
-                cv2.addWeighted(roi_ov, op_val, roi_bg, 1.0 - op_val, 0.0, dst=roi_bg)
+            roi_w = rx1 - rx0
+            roi_h = ry1 - ry0
+            roi_overlay = Image.new("RGBA", (roi_w, roi_h), (0, 0, 0, 0))
+            roi_draw = ImageDraw.Draw(roi_overlay)
+            alpha_int = int(round(255 * op_val))
+
+            for pts, col_rgb in polys_to_draw:
+                poly_pts = [(int(p[0] - rx0), int(p[1] - ry0)) for p in pts]
+                if len(poly_pts) >= 3:
+                    roi_draw.polygon(poly_pts, fill=(col_rgb[0], col_rgb[1], col_rgb[2], alpha_int))
+
+            for s_pts, s_col_rgb in stripes_to_draw:
+                s_poly_pts = [(int(p[0] - rx0), int(p[1] - ry0)) for p in s_pts]
+                if len(s_poly_pts) >= 3:
+                    roi_draw.polygon(s_poly_pts, fill=(s_col_rgb[0], s_col_rgb[1], s_col_rgb[2], alpha_int))
+
+            arr_overlay = np.asarray(roi_overlay)
+            ov_alpha = (arr_overlay[:, :, 3:4].astype(np.float32)) * (1.0 / 255.0)
+            ov_rgb = arr_overlay[:, :, :3].astype(np.float32)
+            sub_bg = bgr_frame[ry0:ry1, rx0:rx1].astype(np.float32)
+            bgr_frame[ry0:ry1, rx0:rx1] = (sub_bg * (1.0 - ov_alpha) + ov_rgb * ov_alpha).astype(np.uint8)
 
     if note_labels_to_draw:
         f_size = max(6, int(9 * scale))
         bw = max(1, int(1.5 * scale))
         for lx, ly, l_str in note_labels_to_draw:
-            premul_bgr, inv_alpha, cx_off, cy_off = _get_note_label_stamp(l_str, f_size, bw)
-            if premul_bgr is None:
+            premul_rgb, inv_alpha, cx_off, cy_off = _get_note_label_stamp(l_str, f_size, bw)
+            if premul_rgb is None:
                 continue
-            sh, sw = premul_bgr.shape[:2]
+            sh, sw = premul_rgb.shape[:2]
             x0 = int(round(lx)) - cx_off
             y0 = int(round(ly)) - cy_off
             x1 = x0 + sw
@@ -1315,7 +1330,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 sy1 = sy0 + (dy1 - dy0)
                 sub_bg = bgr_frame[dy0:dy1, dx0:dx1]
                 bgr_frame[dy0:dy1, dx0:dx1] = (
-                    sub_bg.astype(np.float32) * inv_alpha[sy0:sy1, sx0:sx1] + premul_bgr[sy0:sy1, sx0:sx1]
+                    sub_bg.astype(np.float32) * inv_alpha[sy0:sy1, sx0:sx1] + premul_rgb[sy0:sy1, sx0:sx1]
                 ).astype(np.uint8)
 
     return bgr_frame
@@ -1442,8 +1457,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               reverb_enabled=False,
                               reverb_type="ルーム (自然な部屋鳴り)",
                               reverb_wet_pct=35):
-    if not OPENCV_AVAILABLE:
-        status_label.configure(text="エラー: OpenCVライブラリが不足しています", text_color="#ff5555")
+    if not PILLOW_AVAILABLE:
+        status_label.configure(text="エラー: 描画ライブラリが不足しています", text_color="#ff5555")
         return
 
     status_label.configure(text="🎬 動画エクスポートの準備中...", text_color="#ffcc00")
@@ -1506,10 +1521,33 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
             if total_frames <= 0:
                 total_frames = 600 
                 
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            video_writer = cv2.VideoWriter(temp_video_path, fourcc, fps, (width, height))
+            ffmpeg_video_cmd = [
+                "ffmpeg", "-y",
+                "-f", "rawvideo",
+                "-vcodec", "rawvideo",
+                "-s", f"{width}x{height}",
+                "-pix_fmt", "rgb24",
+                "-r", str(fps),
+                "-i", "-",
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-preset", "veryfast",
+                "-crf", "18",
+                temp_video_path
+            ]
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            video_proc = subprocess.Popen(
+                ffmpeg_video_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                startupinfo=startupinfo
+            )
 
-            print(f"[Export] OpenCV高解像度ベクトル描画レンダリング開始: {width}x{height} (Scale: {scale}, FPS: {fps}), 総フレーム: {total_frames}")
+            print(f"[Export] 高解像度ベクトル描画レンダリング開始 (FFmpeg RawPipe): {width}x{height} (Scale: {scale}, FPS: {fps}), 総フレーム: {total_frames}")
 
             _get_exporter_notes_index(exp_notes, inst_type)
             last_percent = -1
@@ -1518,8 +1556,13 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 try:
                     if ctrl and getattr(ctrl, "video_export_cancelled", False):
                         print("[Export] レンダリングがユーザーによって正常に中止されました。")
-                        video_writer.release()
-                        if os.path.exists(temp_video_path): os.remove(temp_video_path)
+                        try:
+                            video_proc.kill()
+                        except Exception:
+                            pass
+                        if os.path.exists(temp_video_path):
+                            try: os.remove(temp_video_path)
+                            except Exception: pass
                         root_after(0, lambda: ctrl.on_export_finished_or_cancelled("cancelled"))
                         return
                 except Exception:
@@ -1607,11 +1650,11 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                             intro_display_dur=intro_display_dur,
                             is_single_preview=False
                         )
-                    if in_alpha < 1.0:
-                        cv2.convertScaleAbs(bgr_frame, alpha=in_alpha, dst=bgr_frame)
+                    if in_alpha < 0.999:
+                        np.multiply(bgr_frame, in_alpha, out=bgr_frame, casting="unsafe")
                 elif "非表示" in title_mode_str:
-                    if in_alpha < 1.0:
-                        cv2.convertScaleAbs(bgr_frame, alpha=in_alpha, dst=bgr_frame)
+                    if in_alpha < 0.999:
+                        np.multiply(bgr_frame, in_alpha, out=bgr_frame, casting="unsafe")
                     elif title_template != "なし":
                         bgr_frame = apply_title_overlay_bgr(
                             bgr_frame=bgr_frame,
@@ -1626,8 +1669,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                             is_single_preview=False
                         )
                 else:
-                    if in_alpha < 1.0:
-                        cv2.convertScaleAbs(bgr_frame, alpha=in_alpha, dst=bgr_frame)
+                    if in_alpha < 0.999:
+                        np.multiply(bgr_frame, in_alpha, out=bgr_frame, casting="unsafe")
                     if title_template != "なし":
                         bgr_frame = apply_title_overlay_bgr(
                             bgr_frame=bgr_frame,
@@ -1642,10 +1685,10 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                             is_single_preview=False
                         )
 
-                if out_alpha < 1.0:
-                    cv2.convertScaleAbs(bgr_frame, alpha=out_alpha, dst=bgr_frame)
+                if out_alpha < 0.999:
+                    np.multiply(bgr_frame, out_alpha, out=bgr_frame, casting="unsafe")
                 
-                video_writer.write(bgr_frame)
+                video_proc.stdin.write(bgr_frame.tobytes())
 
                 percent = int((frame_idx + 1) / total_frames * 100)
                 if percent != last_percent:
@@ -1654,7 +1697,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         text=f"🎬 映像レンダリング中... {p}%", text_color="#ffcc00"
                     ))
 
-            video_writer.release()
+            video_proc.stdin.close()
+            video_proc.wait()
             print("[Export] 無音動画の生成が完了。続いて高音質WAV物理合成を開始します。")
 
             root_after(0, lambda: status_label.configure(
