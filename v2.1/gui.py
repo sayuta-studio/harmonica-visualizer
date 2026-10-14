@@ -638,19 +638,9 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         # ======================================================================
         # 🎨 タブ3：【🎨 画面作り】（比率 ➔ 背景 ➔ タイトル ➔ ノーツ色 ➔ パーツ）
         # ======================================================================
-        # マスター演出トグル
-        self.edit_master_group = ctk.CTkFrame(self.tab_design_frame, corner_radius=8, border_width=1, border_color="#1f538d", fg_color="#142332")
-        self.edit_master_group.pack(fill="x", padx=6, pady=(2, 4))
-        self.video_edit_enabled_switch = ctk.CTkSwitch(
-            self.edit_master_group, text="✨ 動画演出（背景・タイトル・音源）を適用",
-            font=self.f_jp_bold, command=self.controller.on_video_edit_master_toggle
-        )
-        self.video_edit_enabled_switch.select()
-        self.video_edit_enabled_switch.pack(anchor="w", padx=12, pady=5)
-
         # 1. 📐 画面アスペクト比 ＆ 🖼️ 背景画像設定
         self.bg_canvas_group = ctk.CTkFrame(self.tab_design_frame, corner_radius=8, border_width=1, border_color="#2b2b2b", fg_color="#1e1e1e")
-        self.bg_canvas_group.pack(fill="x", padx=6, pady=4)
+        self.bg_canvas_group.pack(fill="x", padx=6, pady=(2, 4))
 
         ctk.CTkLabel(self.bg_canvas_group, text="📐 画面比率 ＆ 背景画像:", font=self.f_jp_bold).pack(anchor="w", padx=12, pady=(6, 2))
 
@@ -665,7 +655,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.ratio_menu.set("16:9")
         self.ratio_menu.pack(side="right", fill="x", expand=True)
 
-        # 背景画像ファイル選択
+        # 背景画像ファイル選択 ＆ 表示ON/OFFスイッチ
         bg_img_file_row = ctk.CTkFrame(self.bg_canvas_group, fg_color="transparent")
         bg_img_file_row.pack(fill="x", padx=12, pady=2)
         self.bg_image_btn = ctk.CTkButton(
@@ -673,11 +663,16 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             fg_color="#1f538d", hover_color="#143963", command=self.controller.on_select_bg_image
         )
         self.bg_image_btn.pack(side="left", padx=(0, 4))
+        self.bg_image_enable_switch = ctk.CTkSwitch(
+            bg_img_file_row, text="表示", width=52, font=self.f_jp_bold, command=self.controller.on_setting_changed
+        )
+        self.bg_image_enable_switch.select()
+        self.bg_image_enable_switch.pack(side="right", padx=(4, 0))
         self.bg_image_clear_btn = ctk.CTkButton(
             bg_img_file_row, text="✕", width=26, height=24, font=self.f_jp_bold,
             fg_color="#444444", hover_color="#773333", command=self.controller.on_clear_bg_image
         )
-        self.bg_image_clear_btn.pack(side="right", padx=(4, 0))
+        self.bg_image_clear_btn.pack(side="right", padx=(2, 0))
         self.bg_image_label = ctk.CTkLabel(
             bg_img_file_row, text="未選択 (ここに画像D&D可)", font=self.f_jp_norm, text_color="#888888", anchor="w"
         )
@@ -827,7 +822,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         self.export_edit_summary_lbl = ctk.CTkLabel(
             self.export_action_group,
-            text="✨ 動画演出: 🎨画面作りタブの設定を反映",
+            text="✨ 出力スタイル: 完成動画（背景画像・タイトル・音源合成）",
             font=self.f_jp_bold, text_color="#00ffcc", anchor="w"
         )
         self.export_edit_summary_lbl.pack(fill="x", padx=12, pady=(6, 2))
@@ -853,7 +848,25 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         )
         self.open_output_btn.pack(side="right", padx=(2, 0))
 
-        # 1. 🏷️ タイトル・クレジット表示 (動画出力用)
+        # 1. 🎬 出力スタイル (完成動画 vs クロマキー素材)
+        self.export_mode_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#1f538d", fg_color="#142332")
+        self.export_mode_group.pack(fill="x", padx=6, pady=(2, 4))
+
+        mode_hdr_row = ctk.CTkFrame(self.export_mode_group, fg_color="transparent")
+        mode_hdr_row.pack(fill="x", padx=12, pady=(6, 2))
+        ctk.CTkLabel(mode_hdr_row, text="🎬 出力スタイル:", font=self.f_jp_bold).pack(side="left")
+
+        mode_row = ctk.CTkFrame(self.export_mode_group, fg_color="transparent")
+        mode_row.pack(fill="x", padx=12, pady=(2, 6))
+        self.export_mode_menu = ctk.CTkOptionMenu(
+            mode_row,
+            values=["完成動画 (背景・タイトル合成)", "クロマキー素材 (背景・タイトルなし)"],
+            height=26, font=self.f_jp_bold, dropdown_font=self.f_jp_norm, command=self.controller.on_export_mode_changed
+        )
+        self.export_mode_menu.set("完成動画 (背景・タイトル合成)")
+        self.export_mode_menu.pack(fill="x", expand=True)
+
+        # 2. 🏷️ タイトル・クレジット表示 (動画出力用)
         self.title_overlay_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b", fg_color="#1e1e1e")
         self.title_overlay_group.pack(fill="x", padx=6, pady=4)
 
@@ -893,7 +906,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.video_credit_entry.bind("<Return>", lambda e: self.controller.save_user_settings_txt())
         self.video_credit_entry.bind("<FocusOut>", lambda e: self.controller.save_user_settings_txt())
 
-        # 2. 映像フォーマット・画質設定
+        # 3. 映像フォーマット・画質設定
         self.export_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b", fg_color="#1e1e1e")
         self.export_group.pack(fill="x", padx=6, pady=4)
 
@@ -928,7 +941,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.fps_menu.set("60 FPS")
         self.fps_menu.pack(side="right", fill="x", expand=True)
 
-        # 3. 出力範囲・余白・フェード演出
+        # 4. 出力範囲・余白・フェード演出
         self.export_range_group = ctk.CTkFrame(self.tab_export_frame, corner_radius=8, border_width=1, border_color="#2b2b2b", fg_color="#1e1e1e")
         self.export_range_group.pack(fill="x", padx=6, pady=4)
 

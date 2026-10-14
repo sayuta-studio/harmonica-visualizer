@@ -268,17 +268,24 @@ class SettingsController:
             else:
                 self.gui.yt_limiter_switch.deselect()
 
-        if hasattr(self.gui, "video_edit_enabled_switch"):
-            if loaded.get("動画編集を動画出力に適用", "ON") == "ON":
-                self.gui.video_edit_enabled_switch.select()
+        if hasattr(self.gui, "bg_image_enable_switch"):
+            if loaded.get("背景画像の表示", "ON") == "ON":
+                self.gui.bg_image_enable_switch.select()
             else:
-                self.gui.video_edit_enabled_switch.deselect()
+                self.gui.bg_image_enable_switch.deselect()
+
+        if hasattr(self.gui, "export_mode_menu"):
+            mode = loaded.get("出力スタイル", "")
+            if not mode:
+                mode = "完成動画 (背景・タイトル合成)" if loaded.get("動画編集を動画出力に適用", "ON") == "ON" else "クロマキー素材 (背景・タイトルなし)"
+            if mode in ["完成動画 (背景・タイトル合成)", "クロマキー素材 (背景・タイトルなし)"]:
+                self.gui.export_mode_menu.set(mode)
         self.update_export_edit_summary_label()
 
     def is_video_edit_enabled(self):
-        """🎞️ 動画編集タブの一括適用スイッチがONかどうかを返します。"""
-        if hasattr(self, "gui") and hasattr(self.gui, "video_edit_enabled_switch"):
-            return bool(self.gui.video_edit_enabled_switch.get())
+        """🎬 出力スタイルが『完成動画』であるかどうかを返します（クロマキー素材時はFalse）。"""
+        if hasattr(self, "gui") and hasattr(self.gui, "export_mode_menu"):
+            return "完成動画" in self.gui.export_mode_menu.get()
         return True
 
     def get_bg_image_brightness_ratio(self):
@@ -295,11 +302,12 @@ class SettingsController:
         return 0.70
 
     def get_effective_bg_image_info(self):
-        """動画編集スイッチがONかつ背景画像が有効な場合に (bg_image_path, brightness_ratio, fit_mode, rotation_mode) を返します。"""
+        """背景画像が設定され、かつ表示スイッチがONの場合に (bg_image_path, brightness_ratio, fit_mode, rotation_mode) を返します。"""
         fit_mode = self.gui.bg_image_fit_menu.get() if (hasattr(self, "gui") and hasattr(self.gui, "bg_image_fit_menu")) else "中央トリミング (画面いっぱい)"
         rot_mode = self.gui.bg_image_rot_menu.get() if (hasattr(self, "gui") and hasattr(self.gui, "bg_image_rot_menu")) else "0° (自動補正)"
-        if not self.is_video_edit_enabled():
-            return None, 1.0, fit_mode, rot_mode
+        if hasattr(self, "gui") and hasattr(self.gui, "bg_image_enable_switch"):
+            if not self.gui.bg_image_enable_switch.get():
+                return None, 1.0, fit_mode, rot_mode
         bg_path = getattr(self, "bg_image_path", None)
         if bg_path and os.path.exists(bg_path):
             return bg_path, self.get_bg_image_brightness_ratio(), fit_mode, rot_mode
@@ -330,9 +338,8 @@ class SettingsController:
             disp = self._truncate_by_visual_width(fname, max_width=20) if hasattr(self, "_truncate_by_visual_width") else fname[:18]
             if hasattr(self.gui, "bg_image_label"):
                 self.gui.bg_image_label.configure(text=disp, text_color="#00ffcc")
-            if hasattr(self.gui, "video_edit_enabled_switch") and not self.gui.video_edit_enabled_switch.get():
-                self.gui.video_edit_enabled_switch.select()
-                self.update_export_edit_summary_label()
+            if hasattr(self.gui, "bg_image_enable_switch") and not self.gui.bg_image_enable_switch.get():
+                self.gui.bg_image_enable_switch.select()
             self.on_setting_changed()
             self.gui.status_label.configure(
                 text=f"🖼️ 背景画像をセットしました: {disp}（配置・回転・明るさを調整可能）",
@@ -366,42 +373,37 @@ class SettingsController:
         """🎬 動画出力タブの下部にある動画編集反映ステータスバッジを更新します。"""
         if not hasattr(self, "gui") or not hasattr(self.gui, "export_edit_summary_lbl"):
             return
-        if self.is_video_edit_enabled():
+        mode = self.gui.export_mode_menu.get() if hasattr(self.gui, "export_mode_menu") else "完成動画"
+        if "完成動画" in mode:
             self.gui.export_edit_summary_lbl.configure(
-                text="✨ 動画編集の適用: ON（🎞️動画編集タブの設定を反映）",
+                text="✨ 出力スタイル: 完成動画（背景画像・タイトル・音源合成）",
                 text_color="#00ffcc"
             )
         else:
             self.gui.export_edit_summary_lbl.configure(
-                text="⚪ 動画編集の適用: OFF（純粋なビジュアライザー動画を出力）",
+                text="🟩 出力スタイル: クロマキー素材（背景・タイトルなし / 単色背景）",
                 text_color="#aaaaaa"
             )
 
-    def on_video_edit_master_toggle(self):
-        """🎞️ 動画編集タブ最上部のマスタースイッチ切替時のハンドラ"""
-        is_on = self.is_video_edit_enabled()
+    def on_export_mode_changed(self, value=None):
+        """🎬 出力スタイル（完成動画 vs クロマキー素材）切替時のハンドラ"""
         self.update_export_edit_summary_label()
-        if hasattr(self, "gui") and self.gui.canvas:
-            self.gui.canvas._static_state_key = None
-            self.gui.canvas.delete("static_plate")
-        if getattr(self, "play_state", "stopped") == "playing":
-            if hasattr(self, "_apply_effective_guide_audio_mode"):
-                self._apply_effective_guide_audio_mode()
-            if hasattr(self, "sync_ext_audio_playback"):
-                self.sync_ext_audio_playback()
-        else:
-            self.draw_harmonica_static()
-        if is_on:
+        mode = self.gui.export_mode_menu.get() if hasattr(self.gui, "export_mode_menu") else "完成動画"
+        if "クロマキー素材" in mode:
             self.gui.status_label.configure(
-                text="✨ 動画編集の適用: ON（タイトル・背景画像・外部音源を動画出力および試聴に反映します）",
+                text="🟩 出力スタイル: クロマキー素材（背景画像・タイトルなし / 動画編集ソフト合成用）",
                 text_color="#00ffcc"
             )
         else:
             self.gui.status_label.configure(
-                text="⚪ 動画編集の適用: OFF（入力内容を保持したまま、純粋なビジュアライザーとして出力します）",
-                text_color="#aaaaaa"
+                text="✨ 出力スタイル: 完成動画（画面作りの背景画像・タイトル・音源を合成して書き出し）",
+                text_color="#00ffcc"
             )
         self.save_user_settings_txt()
+
+    def on_video_edit_master_toggle(self):
+        """互換性のためのハンドラ"""
+        self.on_export_mode_changed()
 
     def get_intro_outro_seconds(self):
         """イントロ秒数・アウトロ秒数を float タプル (intro_sec, outro_sec) として返します。"""
@@ -554,7 +556,8 @@ class SettingsController:
                 "外部音源頭出しms": self.gui.ext_audio_offset_entry.get() if hasattr(self.gui, "ext_audio_offset_entry") else "0",
                 "外部音源音量%": self.gui.ext_audio_vol_entry.get() if hasattr(self.gui, "ext_audio_vol_entry") else "100",
                 "YouTube上限リミッター": ("ON" if self.gui.yt_limiter_switch.get() else "OFF") if hasattr(self.gui, "yt_limiter_switch") else "ON",
-                "動画編集を動画出力に適用": ("ON" if self.gui.video_edit_enabled_switch.get() else "OFF") if hasattr(self.gui, "video_edit_enabled_switch") else "ON",
+                "背景画像の表示": ("ON" if self.gui.bg_image_enable_switch.get() else "OFF") if hasattr(self.gui, "bg_image_enable_switch") else "ON",
+                "出力スタイル": self.gui.export_mode_menu.get() if hasattr(self.gui, "export_mode_menu") else "完成動画 (背景・タイトル合成)",
                 "背景画像パス": getattr(self, "bg_image_path", "") or "",
                 "背景画像の配置": self.gui.bg_image_fit_menu.get() if hasattr(self.gui, "bg_image_fit_menu") else "中央トリミング (画面いっぱい)",
                 "背景画像の回転": self.gui.bg_image_rot_menu.get() if hasattr(self.gui, "bg_image_rot_menu") else "0° (自動補正)",

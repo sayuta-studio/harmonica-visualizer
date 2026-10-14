@@ -508,12 +508,11 @@ class PlaybackController:
 
     def _apply_effective_guide_audio_mode(self):
         """外部音源設定と通常音源設定を統合し、外部音源との重ね再生時は遅延ゼロの内蔵シンセへ自動ルーティングして動画出力との音ズレを解消します。"""
-        edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
         has_ext = (getattr(self, "ext_audio_pcm", None) is not None and len(getattr(self, "ext_audio_pcm", [])) > 0)
         ext_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else ""
         audio_mode = self.gui.audio_mode_menu.get()
 
-        if edit_on and has_ext and "外部音源オフ" not in ext_mode:
+        if has_ext and "外部音源オフ" not in ext_mode:
             if "外部音源のみ" in ext_mode:
                 self.midi_engine.device_muted = True
                 self.midi_engine.internal_synth_enabled = False
@@ -806,7 +805,7 @@ class PlaybackController:
     # ==============================================================================
     def _refresh_ext_audio_config_cache(self):
         """ワーカースレッドからTkinterウィジェットに触れずに外部音源設定を参照できるようキャッシュを更新します。"""
-        self._ext_cfg_edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
+        self._ext_cfg_edit_on = True
         self._ext_cfg_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else ""
         self._ext_cfg_offset_ms = self.get_ext_audio_offset_ms()
         self._ext_cfg_vol_pct = self.get_ext_audio_vol_pct()

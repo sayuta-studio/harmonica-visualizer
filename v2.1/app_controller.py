@@ -834,30 +834,32 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         fade_out = bool(self.gui.fade_out_switch.get()) if hasattr(self.gui, "fade_out_switch") else False
         fade_in_title_mode = self.gui.fade_in_title_menu.get() if hasattr(self.gui, "fade_in_title_menu") else "フェード中もタイトル表示"
 
-        edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
-        bg_img_path, bg_bright, bg_fit, bg_rot = (
-            self.get_effective_bg_image_info()
-            if hasattr(self, "get_effective_bg_image_info")
-            else (None, 1.0, "中央トリミング (画面いっぱい)", "0° (自動補正)")
-        )
-        if edit_on:
-            title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
-            video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
-            video_credit = self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else ""
-            ext_audio_pcm = getattr(self, "ext_audio_pcm", None)
-            ext_audio_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else "頭出し確認 (再生:両方 / 動画:外部のみ)"
-            ext_audio_offset_ms = self.get_ext_audio_offset_ms() if hasattr(self, "get_ext_audio_offset_ms") else 0
-            ext_audio_vol_pct = self.get_ext_audio_vol_pct() if hasattr(self, "get_ext_audio_vol_pct") else 100
-            yt_limiter = bool(self.gui.yt_limiter_switch.get()) if hasattr(self.gui, "yt_limiter_switch") else True
-        else:
+        export_mode = self.gui.export_mode_menu.get() if hasattr(self.gui, "export_mode_menu") else "完成動画 (背景・タイトル合成)"
+        is_chroma = ("クロマキー素材" in export_mode)
+
+        if is_chroma:
+            bg_img_path = None
+            bg_bright = 1.0
+            bg_fit = "中央トリミング (画面いっぱい)"
+            bg_rot = "0° (自動補正)"
             title_template = "なし"
             video_title = ""
             video_credit = ""
-            ext_audio_pcm = None
-            ext_audio_mode = "外部音源オフ (ガイド音のみ)"
-            ext_audio_offset_ms = 0
-            ext_audio_vol_pct = 100
-            yt_limiter = True
+        else:
+            bg_img_path, bg_bright, bg_fit, bg_rot = (
+                self.get_effective_bg_image_info()
+                if hasattr(self, "get_effective_bg_image_info")
+                else (None, 1.0, "中央トリミング (画面いっぱい)", "0° (自動補正)")
+            )
+            title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
+            video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
+            video_credit = self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else ""
+
+        ext_audio_pcm = getattr(self, "ext_audio_pcm", None)
+        ext_audio_mode = self.gui.ext_audio_mode_menu.get() if hasattr(self.gui, "ext_audio_mode_menu") else "頭出し確認 (再生:両方 / 動画:外部のみ)"
+        ext_audio_offset_ms = self.get_ext_audio_offset_ms() if hasattr(self, "get_ext_audio_offset_ms") else 0
+        ext_audio_vol_pct = self.get_ext_audio_vol_pct() if hasattr(self, "get_ext_audio_vol_pct") else 100
+        yt_limiter = bool(self.gui.yt_limiter_switch.get()) if hasattr(self.gui, "yt_limiter_switch") else True
 
         execute_video_export_core(
             midi_notes=midi_notes,
@@ -967,20 +969,26 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         use_skin = bool(self.gui.use_skin_switch.get())
         trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
 
-        edit_on = self.is_video_edit_enabled() if hasattr(self, "is_video_edit_enabled") else True
-        bg_img_path, bg_bright, bg_fit, bg_rot = (
-            self.get_effective_bg_image_info()
-            if hasattr(self, "get_effective_bg_image_info")
-            else (None, 1.0, "中央トリミング (画面いっぱい)", "0° (自動補正)")
-        )
-        if edit_on:
-            title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
-            video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
-            video_credit = self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else ""
-        else:
+        export_mode = self.gui.export_mode_menu.get() if hasattr(self.gui, "export_mode_menu") else "完成動画 (背景・タイトル合成)"
+        is_chroma = ("クロマキー素材" in export_mode)
+
+        if is_chroma:
+            bg_img_path = None
+            bg_bright = 1.0
+            bg_fit = "中央トリミング (画面いっぱい)"
+            bg_rot = "0° (自動補正)"
             title_template = "なし"
             video_title = ""
             video_credit = ""
+        else:
+            bg_img_path, bg_bright, bg_fit, bg_rot = (
+                self.get_effective_bg_image_info()
+                if hasattr(self, "get_effective_bg_image_info")
+                else (None, 1.0, "中央トリミング (画面いっぱい)", "0° (自動補正)")
+            )
+            title_template = self.gui.title_template_menu.get() if hasattr(self.gui, "title_template_menu") else "なし"
+            video_title = self.gui.video_title_entry.get() if hasattr(self.gui, "video_title_entry") else ""
+            video_credit = self.gui.video_credit_entry.get() if hasattr(self.gui, "video_credit_entry") else ""
 
         execute_single_frame_preview(
             midi_notes=midi_notes,
