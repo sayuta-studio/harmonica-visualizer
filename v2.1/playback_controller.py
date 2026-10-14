@@ -803,9 +803,11 @@ class PlaybackController:
         """カウントイン終了または本編再生開始の瞬間にワーカースレッドから直結呼び出しされ、1音目と外部音源・マイク録音を誤差0.0msで同時点火します。"""
         if getattr(self, "is_recording", False) and hasattr(self, "audio_recorder") and not self.audio_recorder.is_recording:
             dev_name = self.gui.rec_device_menu.get() if hasattr(self.gui, "rec_device_menu") else None
-            ok = self.audio_recorder.start_recording(dev_name)
+            ch_val = self.gui.rec_channel_menu.get() if hasattr(self.gui, "rec_channel_menu") else "モノラル"
+            num_channels = 1 if "モノラル" in ch_val else 2
+            ok = self.audio_recorder.start_recording(dev_name, channels=num_channels)
             if hasattr(self.gui, "rec_status_lbl"):
-                self.after(0, lambda: self.gui.rec_status_lbl.configure(text="🔴 録音中...", text_color="#ef4444"))
+                self.after(0, lambda: self.gui.rec_status_lbl.configure(text=f"🔴 録音中... ({'1chモノラル' if num_channels == 1 else '2chステレオ'})", text_color="#ef4444"))
         if self.play_state == "playing":
             self.sync_ext_audio_playback(from_worker=True, anchor_tick=self.midi_engine.accumulated_ticks)
 
@@ -833,6 +835,8 @@ class PlaybackController:
             )
 
         dev_name = self.gui.rec_device_menu.get() if hasattr(self.gui, "rec_device_menu") else None
+        ch_val = self.gui.rec_channel_menu.get() if hasattr(self.gui, "rec_channel_menu") else "モノラル"
+        num_channels = 1 if "モノラル" in ch_val else 2
         count_in_dur = self.get_count_in_duration() if hasattr(self, "get_count_in_duration") else 0.0
 
         if count_in_dur > 0 and self.midi_notes:
@@ -840,17 +844,17 @@ class PlaybackController:
             self.on_play()
         else:
             # カウントインなし、またはMIDIがない場合は即時録音点火
-            ok = self.audio_recorder.start_recording(dev_name)
+            ok = self.audio_recorder.start_recording(dev_name, channels=num_channels)
             if ok:
                 if hasattr(self.gui, "rec_status_lbl"):
                     self.gui.rec_status_lbl.configure(
-                        text="🔴 録音中...", text_color="#ef4444"
+                        text=f"🔴 録音中... ({'1chモノラル' if num_channels == 1 else '2chステレオ'})", text_color="#ef4444"
                     )
                 if self.midi_notes:
                     self.on_play()
                 else:
                     self.gui.status_label.configure(
-                        text="🎙️ マイク録音中... 終了時は⏹録音停止を押してください",
+                        text=f"🎙️ マイク録音中 ({'1chモノラル' if num_channels == 1 else '2chステレオ'})... 終了時は⏹録音停止を押してください",
                         text_color="#ef4444"
                     )
             else:
@@ -890,7 +894,8 @@ class PlaybackController:
 
         if saved_path and dur > 0.1:
             self.last_recorded_take_path = saved_path
-            disp_name = f"{take_filename} ({dur:.1f}秒)"
+            ch_str = "1chモノラル" if getattr(self.audio_recorder, "channels", 2) == 1 else "2chステレオ"
+            disp_name = f"{take_filename} ({dur:.1f}秒 / {ch_str})"
             if hasattr(self.gui, "rec_file_lbl"):
                 self.gui.rec_file_lbl.configure(text=f"録音テイク: {disp_name}", text_color="#00ffcc")
             if hasattr(self.gui, "rec_status_lbl"):
@@ -899,7 +904,7 @@ class PlaybackController:
             # 伴奏・外部音源として即座に自動セット
             self.load_ext_audio_file(saved_path)
             self.gui.status_label.configure(
-                text=f"🎙️ 録音テイクを保存し、伴奏・実演音源に自動セットしました！ ({dur:.1f}秒)",
+                text=f"🎙️ 録音テイクを保存し、伴奏・実演音源に自動セットしました！ ({dur:.1f}秒 / {ch_str})",
                 text_color="#00ffcc"
             )
         else:

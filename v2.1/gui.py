@@ -469,6 +469,16 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         )
         self.rec_device_menu.pack(side="right", fill="x", expand=True)
 
+        rec_ch_row = ctk.CTkFrame(self.rec_group, fg_color="transparent")
+        rec_ch_row.pack(fill="x", padx=12, pady=2)
+        ctk.CTkLabel(rec_ch_row, text="チャンネル:", font=self.f_jp_bold, text_color="#aaaaaa", width=52, anchor="w").pack(side="left")
+        self.rec_channel_menu = ctk.CTkOptionMenu(
+            rec_ch_row, values=["モノラル (1ch・DAW編集向き)", "ステレオ (2ch)"],
+            height=25, font=self.f_jp_bold, dropdown_font=self.f_jp_norm, command=self.controller.on_setting_changed
+        )
+        self.rec_channel_menu.set("モノラル (1ch・DAW編集向き)")
+        self.rec_channel_menu.pack(side="right", fill="x", expand=True)
+
         rec_take_row = ctk.CTkFrame(self.rec_group, fg_color="transparent")
         rec_take_row.pack(fill="x", padx=12, pady=(2, 8))
         self.rec_file_lbl = ctk.CTkLabel(rec_take_row, text="録音テイク: 未録音", font=self.f_jp_norm, text_color="#888888", anchor="w")

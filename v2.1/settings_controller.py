@@ -293,6 +293,14 @@ class SettingsController:
             else:
                 self.gui.rec_device_menu.set("既定の入力マイク (システム標準)")
 
+        # 録音チャンネル（モノラル / ステレオ）の復元
+        if hasattr(self.gui, "rec_channel_menu"):
+            saved_ch = loaded.get("録音チャンネル", "モノラル (1ch・DAW編集向き)")
+            if saved_ch in ["モノラル (1ch・DAW編集向き)", "ステレオ (2ch)"]:
+                self.gui.rec_channel_menu.set(saved_ch)
+            else:
+                self.gui.rec_channel_menu.set("モノラル (1ch・DAW編集向き)")
+
         # ハーモニカ用リバーブ設定の復元
         if hasattr(self.gui, "reverb_switch"):
             if loaded.get("リバーブ適用", "OFF") == "ON":
@@ -593,6 +601,7 @@ class SettingsController:
                 "背景画像の表示": ("ON" if self.gui.bg_image_enable_switch.get() else "OFF") if hasattr(self.gui, "bg_image_enable_switch") else "ON",
                 "出力スタイル": self.gui.export_mode_menu.get() if hasattr(self.gui, "export_mode_menu") else "完成動画 (背景・タイトル合成)",
                 "マイクデバイス": self.gui.rec_device_menu.get() if hasattr(self.gui, "rec_device_menu") else "既定の入力マイク (システム標準)",
+                "録音チャンネル": self.gui.rec_channel_menu.get() if hasattr(self.gui, "rec_channel_menu") else "モノラル (1ch・DAW編集向き)",
                 "リバーブ適用": ("ON" if self.gui.reverb_switch.get() else "OFF") if hasattr(self.gui, "reverb_switch") else "OFF",
                 "リバーブ種類": self.gui.reverb_type_menu.get() if hasattr(self.gui, "reverb_type_menu") else "ルーム (自然な部屋鳴り)",
                 "リバーブ深さ%": str(int(self.gui.reverb_wet_slider.get())) if hasattr(self.gui, "reverb_wet_slider") else "35",

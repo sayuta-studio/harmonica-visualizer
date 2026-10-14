@@ -380,7 +380,7 @@ class AudioRecorder:
             print(f"[AudioRecorder] デバイス一覧取得失敗: {e}")
             return []
 
-    def start_recording(self, device_name=None, sample_rate=44100):
+    def start_recording(self, device_name=None, sample_rate=44100, channels=1):
         """マイク録音を開始（バッファ初期化）"""
         try:
             import pygame
@@ -390,7 +390,7 @@ class AudioRecorder:
 
             self.buffer = bytearray()
             self.sample_rate = sample_rate
-            self.channels = 2
+            self.channels = 1 if channels == 1 else 2
 
             # device_name が None または "既定" を含む場合は None (システム標準)
             dev_target = None
