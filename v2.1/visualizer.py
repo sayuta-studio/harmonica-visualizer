@@ -22,7 +22,7 @@ from config import (
     W_PITCH, D_HOLE, CANVAS_WIDTH, CANVAS_HEIGHT,
     get_canvas_height_by_ratio, get_y_layout_params, get_y_trajectory_params, get_portable_path,
     LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT,
-    get_layout_params, get_note_dest_x
+    get_layout_params, get_note_dest_x, get_lever_highlight_color
 )
 from harmonica_map import (
     is_note_in_range, get_note_fingering, get_note_name, FINGERING_CANDIDATES,
@@ -696,13 +696,19 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     bound_ok = (note_data.get("_bound_inst") == inst_type)
                     is_editable = note_data["is_editable"] if bound_ok else is_note_editable(note_val, inst_type)
                     
+                    is_blow = (fing.get("action") == "吹")
+                    is_lever_on = (fing.get("lever") == "ON")
+                    col_hex = note_color_blow if is_blow else note_color_draw
+
                     if edit_mode_active and is_editable:
-                        col_hex = "#FF0000" 
+                        has_edit_border = True
                         edit_tag = f"note_edit_{note_start}_{note_val}"
                     else:
-                        col_hex = note_color_blow if fing["action"] == "吹" else note_color_draw
-                        edit_tag = "" 
-                    
+                        has_edit_border = False
+                        edit_tag = ""
+
+                    hi_hex = get_lever_highlight_color(col_hex) if is_lever_on else None
+
                     simulated_note = note_val + 36 if "バス" in inst_type else note_val
                     lane_idx = simulated_note - 48
                     lane_x_left = (72 + lane_idx * 16) * scale - X_shift_notes
@@ -714,12 +720,14 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     dest_right = dest_x_center + 6 * scale
 
                     lbl_str = (note_data["name_jp"] if is_jp else note_data["name_cde"]) if bound_ok else get_note_name(note_val, is_japanese=is_jp)
-                    style_key = (col_hex, edit_tag, lbl_str, f_lbl_size)
+                    style_key = (col_hex, edit_tag, has_edit_border, is_lever_on, hi_hex, lbl_str, f_lbl_size)
                     
                     pool_item = canvas.note_pool.get(key)
                     if pool_item is None:
                         pool_item = {
                             "poly_id": None,
+                            "border_outer_id": None,
+                            "stripe_id": None,
                             "lbl_s1_id": None, "lbl_s2_id": None, "lbl_txt_id": None,
                             "style_key": style_key
                         }
@@ -807,21 +815,105 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                         if ch_top > 0.5:
                             coords_flat.extend((x_left_at(y_r_start), y_r_start))
 
+                        outer_border_w = max(3, int(round(4.0 * scale)))
+                        inner_border_w = max(1, int(round(2.0 * scale)))
+
+                        # A. 運指エディタ時のハイコントラスト二重枠（外側黒枠）
+                        if has_edit_border:
+                            if pool_item.get("border_outer_id") is None:
+                                bid = canvas.create_polygon(
+                                    *coords_flat,
+                                    fill="", outline="#000000", width=outer_border_w, tags=tag_tuple
+                                )
+                                canvas.tag_lower(bid, "anchor_notes_top")
+                                pool_item["border_outer_id"] = bid
+                            else:
+                                canvas.coords(pool_item["border_outer_id"], *coords_flat)
+                                if style_changed:
+                                    canvas.itemconfig(pool_item["border_outer_id"], width=outer_border_w, tags=tag_tuple)
+                        else:
+                            if pool_item.get("border_outer_id") is not None:
+                                canvas.delete(pool_item["border_outer_id"])
+                                pool_item["border_outer_id"] = None
+
+                        # B. ノーツ本体ポリゴン（エディタ時は内側白枠、通常時は枠なし）
+                        poly_outline = "#FFFFFF" if has_edit_border else ""
+                        poly_outline_w = inner_border_w if has_edit_border else 0
                         if pool_item["poly_id"] is None:
                             cid = canvas.create_polygon(
                                 *coords_flat,
-                                fill=col_hex, outline="", tags=tag_tuple
+                                fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple
                             )
                             canvas.tag_lower(cid, "anchor_notes_top")
+                            if pool_item.get("border_outer_id") is not None:
+                                canvas.tag_lower(pool_item["border_outer_id"], cid)
                             pool_item["poly_id"] = cid
                         else:
                             canvas.coords(pool_item["poly_id"], *coords_flat)
                             if style_changed:
-                                canvas.itemconfig(pool_item["poly_id"], fill=col_hex, tags=tag_tuple)
+                                canvas.itemconfig(
+                                    pool_item["poly_id"],
+                                    fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple
+                                )
+
+                        # C. スライドレバーON時の右エッジ・同系色ハイライト帯（白時は黒ライン）
+                        if is_lever_on:
+                            stripe_w = min(4.5 * scale, max(2.5, 3.2 * scale))
+                            stripe_flat = []
+                            if ch_top > 0.5:
+                                stripe_flat.extend((x_right_at(y_vis_top) - ch_top, y_vis_top,
+                                                    x_right_at(y_r_start), y_r_start))
+                            else:
+                                stripe_flat.extend((x_right_at(y_vis_top), y_vis_top))
+
+                            for by in active_bends:
+                                stripe_flat.extend((x_right_at(by), by))
+
+                            if ch_bot > 0.5:
+                                stripe_flat.extend((x_right_at(y_r_end), y_r_end,
+                                                    x_right_at(y_vis_bot) - ch_bot, y_vis_bot,
+                                                    x_right_at(y_vis_bot) - ch_bot - stripe_w, y_vis_bot,
+                                                    x_right_at(y_r_end) - stripe_w, y_r_end))
+                            else:
+                                stripe_flat.extend((x_right_at(y_vis_bot), y_vis_bot,
+                                                    x_right_at(y_vis_bot) - stripe_w, y_vis_bot))
+
+                            for by in reversed(active_bends):
+                                stripe_flat.extend((x_right_at(by) - stripe_w, by))
+
+                            if ch_top > 0.5:
+                                stripe_flat.extend((x_right_at(y_r_start) - stripe_w, y_r_start,
+                                                    x_right_at(y_vis_top) - ch_top - stripe_w, y_vis_top))
+                            else:
+                                stripe_flat.extend((x_right_at(y_vis_top) - stripe_w, y_vis_top))
+
+                            if pool_item.get("stripe_id") is None:
+                                sid = canvas.create_polygon(
+                                    *stripe_flat,
+                                    fill=hi_hex, outline="", tags=tag_tuple
+                                )
+                                canvas.tag_lower(sid, "anchor_notes_top")
+                                if pool_item.get("poly_id") is not None:
+                                    canvas.tag_raise(sid, pool_item["poly_id"])
+                                pool_item["stripe_id"] = sid
+                            else:
+                                canvas.coords(pool_item["stripe_id"], *stripe_flat)
+                                if style_changed:
+                                    canvas.itemconfig(pool_item["stripe_id"], fill=hi_hex, tags=tag_tuple)
+                        else:
+                            if pool_item.get("stripe_id") is not None:
+                                canvas.delete(pool_item["stripe_id"])
+                                pool_item["stripe_id"] = None
                     else:
                         if pool_item["poly_id"] is not None:
                             canvas.delete(pool_item["poly_id"])
                             pool_item["poly_id"] = None
+                        if pool_item.get("border_outer_id") is not None:
+                            canvas.delete(pool_item["border_outer_id"])
+                            pool_item["border_outer_id"] = None
+                        if pool_item.get("stripe_id") is not None:
+                            canvas.delete(pool_item["stripe_id"])
+                            pool_item["stripe_id"] = None
 
                     # 落下ノーツ追従音名ラベル（生成時のみ属性設定、落下中はcoords移動のみ）
                     show_note_label = bool(

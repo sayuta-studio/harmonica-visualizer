@@ -728,8 +728,8 @@ class SettingsController:
         if self.fingering_edit_mode:
             self.gui.export_btn.configure(state="disabled")
             self.gui.status_label.configure(
-                text="🎯 運指変更モード：有効（赤色ノーツをクリックで循環）", 
-                text_color="#ff3333"
+                text="🎯 運指変更モード：有効（二重枠ノーツをクリックで吹吸・運指を切替）", 
+                text_color="#00ffcc"
             )
         else:
             self.gui.export_btn.configure(state="normal")

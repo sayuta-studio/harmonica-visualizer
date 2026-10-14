@@ -268,3 +268,45 @@ def draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False):
 
                 pixels[x_idx, y_idx] = (val, val, val, alpha)
     return img
+
+
+def get_lever_highlight_color(hex_color):
+    """
+    スライドレバーONノーツ用の同系色ハイライト色を算出します。
+    - 通常色: ユーザーが設定した色相を保持しつつ、明度と彩度を引き上げた鮮やかな発光色（同系色ネオンハイライト）。
+    - 白色・超明色時: 白の上では明度アップができないため、視認性抜群の反転色（漆黒 #151515）のアクセントラインを生成。
+    """
+    import colorsys
+    if not hex_color or not str(hex_color).startswith("#"):
+        return "#FFFFFF"
+    h_str = str(hex_color).lstrip("#")
+    if len(h_str) < 6:
+        return "#FFFFFF"
+    try:
+        r = int(h_str[0:2], 16) / 255.0
+        g = int(h_str[2:4], 16) / 255.0
+        b = int(h_str[4:6], 16) / 255.0
+    except ValueError:
+        return "#FFFFFF"
+
+    lum = 0.299 * r * 255.0 + 0.587 * g * 255.0 + 0.114 * b * 255.0
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+
+    # ユーザー要望：「白の時だけ黒いラインが入るようにする（明暗しかないので反対色の黒が出るように）」
+    if lum > 225.0 or l > 0.88:
+        return "#151515"
+
+    new_l = min(0.93, max(0.82, l + (1.0 - l) * 0.65))
+    new_s = max(0.40, min(1.0, s * 0.90)) if s > 0.05 else 0.0
+    hr, hg, hb = colorsys.hls_to_rgb(h, new_l, new_s)
+    return f"#{int(round(hr * 255.0)):02X}{int(round(hg * 255.0)):02X}{int(round(hb * 255.0)):02X}"
+
+
+def get_lever_highlight_bgr(hex_color):
+    """OpenCV/NumPy BGRタプル形式でレバーハイライト色を返します。"""
+    hi_hex = get_lever_highlight_color(hex_color).lstrip("#")
+    r = int(hi_hex[0:2], 16)
+    g = int(hi_hex[2:4], 16)
+    b = int(hi_hex[4:6], 16)
+    return (b, g, r)
+

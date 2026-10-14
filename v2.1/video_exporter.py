@@ -90,7 +90,8 @@ from config import (
     W_PITCH, D_HOLE, CANVAS_WIDTH, CANVAS_HEIGHT,
     get_y_layout_params, get_y_trajectory_params, get_portable_path,
     LEVER_WIDTH_DEFAULT, LEVER_HEIGHT_DEFAULT,
-    get_layout_params, get_note_dest_x, hex_to_rgb, draw_metallic_button_pil_flat
+    get_layout_params, get_note_dest_x, hex_to_rgb, draw_metallic_button_pil_flat,
+    get_lever_highlight_bgr
 )
 from harmonica_map import (
     is_note_in_range, get_note_name, get_note_fingering_for_song, get_hole_4_notes, BLOW_NOTES_MIDI
@@ -1083,6 +1084,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     px_per_sec_s = pixels_per_second * scale
     note_labels_to_draw = []
     polys_to_draw = []
+    stripes_to_draw = []
     is_jp = ("ドレミ" in str(lang_seg_value))
 
     start_times, max_dur = _get_exporter_notes_index(midi_notes, inst_type)
@@ -1212,6 +1214,49 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 if py_min < min_y: min_y = py_min
                 if py_max > max_y: max_y = py_max
 
+                # レバーON時：右端同系色ハイライトストライプ（白のときは黒ライン）
+                is_lever_on = (fing.get("lever") == "押す" or fing.get("lever") is True)
+                if is_lever_on:
+                    stripe_w = min(4.5 * scale, max(2.5, 3.2 * scale))
+                    cur_hex = color_blow_hex if fing["action"] == "吹" else color_draw_hex
+                    hi_bgr = get_lever_highlight_bgr(cur_hex)
+                    stripe_accum = []
+                    # 右上角（面取り開始または右上端）
+                    if ch_top > 0.5:
+                        stripe_accum.append([int(round(x_right_at(y_vis_top) - ch_top)), int(round(y_vis_top))])
+                        stripe_accum.append([int(round(x_right_at(y_r_start))), int(round(y_r_start))])
+                    else:
+                        stripe_accum.append([int(round(x_right_at(y_vis_top))), int(round(y_vis_top))])
+
+                    # 右辺の屈曲点（上から下）
+                    for by in active_bends:
+                        stripe_accum.append([int(round(x_right_at(by))), int(round(by))])
+
+                    # 右下角（面取り）
+                    if ch_bot > 0.5:
+                        stripe_accum.append([int(round(x_right_at(y_r_end))), int(round(y_r_end))])
+                        stripe_accum.append([int(round(x_right_at(y_vis_bot) - ch_bot)), int(round(y_vis_bot))])
+                        stripe_accum.append([int(round(max(x_left_at(y_vis_bot) + ch_bot, x_right_at(y_vis_bot) - ch_bot - stripe_w))), int(round(y_vis_bot))])
+                        stripe_accum.append([int(round(max(x_left_at(y_r_end), x_right_at(y_r_end) - stripe_w))), int(round(y_r_end))])
+                    else:
+                        stripe_accum.append([int(round(x_right_at(y_vis_bot))), int(round(y_vis_bot))])
+                        stripe_accum.append([int(round(max(x_left_at(y_vis_bot), x_right_at(y_vis_bot) - stripe_w))), int(round(y_vis_bot))])
+
+                    # 内側を上へ遡る（下から上）
+                    for by in reversed(active_bends):
+                        stripe_accum.append([int(round(max(x_left_at(by), x_right_at(by) - stripe_w))), int(round(by))])
+
+                    # 内側上端
+                    if ch_top > 0.5:
+                        stripe_accum.append([int(round(max(x_left_at(y_r_start), x_right_at(y_r_start) - stripe_w))), int(round(y_r_start))])
+                        stripe_accum.append([int(round(max(x_left_at(y_vis_top) + ch_top, x_right_at(y_vis_top) - ch_top - stripe_w))), int(round(y_vis_top))])
+                    else:
+                        stripe_accum.append([int(round(max(x_left_at(y_vis_top), x_right_at(y_vis_top) - stripe_w))), int(round(y_vis_top))])
+
+                    if len(stripe_accum) >= 3:
+                        pts_s = np.array(stripe_accum, dtype=np.int32)
+                        stripes_to_draw.append((pts_s, hi_bgr))
+
             # 案A：落下ノーツ追従音名ラベルの座標収集
             if show_lookahead and lang_seg_value != "なし" and (y_vis_bot - y_vis_top >= 6.0 * scale) and y_vis_bot >= 8.0 * scale:
                 label_y = y_vis_bot - 8.5 * scale if (y_vis_bot - y_vis_top >= 17.0 * scale) else (y_vis_top + y_vis_bot) / 2.0
@@ -1237,10 +1282,14 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
             if op_val >= 0.999:
                 for pts, col_bgr in polys_to_draw:
                     cv2.fillPoly(roi_bg, [pts], col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
+                for s_pts, s_col_bgr in stripes_to_draw:
+                    cv2.fillPoly(roi_bg, [s_pts], s_col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
             elif op_val > 0.001:
                 roi_ov = roi_bg.copy()
                 for pts, col_bgr in polys_to_draw:
                     cv2.fillPoly(roi_ov, [pts], col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
+                for s_pts, s_col_bgr in stripes_to_draw:
+                    cv2.fillPoly(roi_ov, [s_pts], s_col_bgr, lineType=cv2.LINE_AA, shift=0, offset=(-rx0, -ry0))
                 cv2.addWeighted(roi_ov, op_val, roi_bg, 1.0 - op_val, 0.0, dst=roi_bg)
 
     if note_labels_to_draw:

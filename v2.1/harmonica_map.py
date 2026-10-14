@@ -271,7 +271,7 @@ def get_note_fingering_for_song(start_tick, note, inst_type):
 
 def is_note_editable(note, inst_type):
     """
-    指定されたnote（MIDI番号）が変更可能（赤色）ノーツであるかを判定します。
+    指定されたnote（MIDI番号）が変更可能（二重枠表示）ノーツであるかを判定します。
     """
     lookup_note = note
     if "バス" in inst_type:
@@ -357,4 +357,4 @@ BLOW_NOTES_MIDI = {
     "16穴": [48, 52, 55, 60, 60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96],
     "12穴 標準": [60, 64, 67, 72, 72, 76, 79, 84, 84, 88, 91, 96],
     "12穴 バス": [24, 28, 31, 35, 36, 40, 43, 47, 48, 52, 55, 59],
-}
+}
