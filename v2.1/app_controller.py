@@ -932,14 +932,12 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         """📸 レンダリングを試すボタンと、video_exporterのポップアッププレビュー処理を完全結合！"""
         from video_exporter import execute_single_frame_preview
         
-        if not self.midi_notes:
-            return
-
-        midi_notes = self.midi_notes
-        current_bpm = self.midi_engine.get_bpm_at_tick(self.midi_engine.accumulated_ticks)
+        midi_notes = self.midi_notes or []
+        current_bpm = self.midi_engine.get_bpm_at_tick(self.midi_engine.accumulated_ticks) if self.midi_engine else 120.0
         
-        count_in_duration = self.get_count_in_duration()
-        current_time_sec = self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks) + count_in_duration
+        count_in_duration = self.get_count_in_duration() if hasattr(self, "get_count_in_duration") else 0.0
+        current_time_sec = (self.midi_engine.tick_to_sec(self.midi_engine.accumulated_ticks) if (self.midi_engine and hasattr(self.midi_engine, "tick_to_sec")) else 0.0) + count_in_duration
+        measures_timeline = self.midi_engine.measures_timeline if (self.midi_engine and hasattr(self.midi_engine, "measures_timeline")) else None
 
         res_mode = self.gui.res_menu.get()
         inst_type = self.gui.inst_menu.get()
@@ -1005,7 +1003,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             trajectory_mode=trajectory_mode,
             show_lookahead=show_lookahead,
             show_grid4=show_grid4,
-            measures_timeline=self.midi_engine.measures_timeline,
+            measures_timeline=measures_timeline,
             use_ring=use_ring,
             note_speed_ratio=note_speed_ratio,
             title_template=title_template,

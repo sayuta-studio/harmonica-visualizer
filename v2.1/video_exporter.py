@@ -859,6 +859,9 @@ def apply_title_overlay_bgr(bgr_frame, width, height, scale, title_template, tit
     if not str(title_text or "").strip() and not str(credit_text or "").strip():
         return bgr_frame
 
+    if not bgr_frame.flags.writeable:
+        bgr_frame = bgr_frame.copy()
+
     def _blend_stamp(stamp_tuple, fade_mul=1.0):
         bgr_st, al_st, x0, y0 = stamp_tuple
         if bgr_st is None or fade_mul <= 0.01:
@@ -972,9 +975,9 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
         preview_w = 960
 
     if (width, height) != (preview_w, preview_h):
-        bgr_notes_part = np.asarray(Image.fromarray(bgr_base).resize((preview_w, preview_h), Image.Resampling.BILINEAR))
+        bgr_notes_part = np.array(Image.fromarray(bgr_base).resize((preview_w, preview_h), Image.Resampling.BILINEAR))
     else:
-        bgr_notes_part = bgr_base
+        bgr_notes_part = bgr_base.copy()
 
     preview_canvas = Image.new("RGB", (960, 540), (20, 20, 20))
     if is_notes_on:
@@ -1074,6 +1077,9 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     """
     if not midi_notes:
         return bgr_frame
+
+    if not bgr_frame.flags.writeable:
+        bgr_frame = bgr_frame.copy()
 
     color_blow_rgb = hex_to_rgb(color_blow_hex)
     color_draw_rgb = hex_to_rgb(color_draw_hex)
