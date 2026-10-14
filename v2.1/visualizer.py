@@ -697,7 +697,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     is_editable = note_data["is_editable"] if bound_ok else is_note_editable(note_val, inst_type)
                     
                     is_blow = (fing.get("action") == "吹")
-                    is_lever_on = (fing.get("lever") == "ON")
+                    is_lever_on = (fing.get("lever") in ("ON", "押す", True))
                     col_hex = note_color_blow if is_blow else note_color_draw
 
                     if edit_mode_active and is_editable:

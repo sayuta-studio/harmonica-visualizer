@@ -1228,7 +1228,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
                 if py_max > max_y: max_y = py_max
 
                 # レバーON時：右端同系色ハイライトストライプ（白のときは黒ライン）
-                is_lever_on = (fing.get("lever") == "押す" or fing.get("lever") is True)
+                is_lever_on = (fing.get("lever") in ("ON", "押す", True))
                 if is_lever_on:
                     stripe_w = min(4.5 * scale, max(2.5, 3.2 * scale))
                     cur_hex = color_blow_hex if fing["action"] == "吹" else color_draw_hex
