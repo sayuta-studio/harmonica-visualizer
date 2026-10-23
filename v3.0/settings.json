@@ -7,6 +7,7 @@
   "show_bar_lines": true,
   "show_legend": true,
   "show_hole_num": true,
+  "hole_num_style": "実機標準 (低音ドット付)",
   "show_notes": true,
   "show_lookahead": true,
   "grid4_mode": "4音グリッド表示",

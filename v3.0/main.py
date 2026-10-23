@@ -343,6 +343,153 @@ class HarmonicaSeekSlider(QSlider):
             p.end()
 
 
+class MarqueeLabel(QLabel):
+    """
+    電光掲示板（マーキースクロール）対応ステータスラベル
+    - 表示枠に収まる場合は静止表示
+    - 表示枠を超える長文の場合:
+      1. 先頭で約1.6秒静止
+      2. 左へスムーズにスクロール
+      3. 末尾で約1.2秒静止
+      4. 最大2周スクロール後、先頭位置に戻って自動停止（静止）
+      5. 停止中にマウスを乗せるとスクロールを再開
+      6. setTextで新しい文言が設定されたら周回カウントをリセットして再判定
+    """
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(parent)
+        self._full_text = ""
+        self._scroll_x = 0.0
+        self._loop_count = 0
+        self._max_loops = 2
+        self._is_stopped = False
+        self._state = "idle"
+        self._pause_frames = 0
+        self._padding_x = 8
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(30)
+        self._timer.timeout.connect(self._on_tick)
+
+        if text:
+            self.setText(text)
+
+    def setText(self, text: str):
+        self._full_text = str(text) if text is not None else ""
+        self._scroll_x = 0.0
+        self._loop_count = 0
+        self._is_stopped = False
+        self._state = "pause_start"
+        self._pause_frames = 55  # 55 * 30ms ≈ 1.65秒
+        super().setText("")  # super側を空文字にしてQLabel既定のテキスト描画を抑止
+        self.setToolTip(self._full_text)
+        self._check_overflow()
+        self.update()
+
+    def text(self) -> str:
+        return self._full_text
+
+    def _check_overflow(self):
+        fm = self.fontMetrics()
+        text_w = fm.horizontalAdvance(self._full_text)
+        avail_w = max(1, self.width() - self._padding_x * 2)
+        if text_w > avail_w:
+            if not self._is_stopped and not self._timer.isActive():
+                self._timer.start()
+        else:
+            self._timer.stop()
+            self._scroll_x = 0.0
+            self._state = "idle"
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._check_overflow()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        fm = self.fontMetrics()
+        text_w = fm.horizontalAdvance(self._full_text)
+        avail_w = max(1, self.width() - self._padding_x * 2)
+        if text_w > avail_w:
+            if self._is_stopped:
+                # 2周完了して停止している場合、マウスホバーでスクロール再開！
+                self._is_stopped = False
+                self._loop_count = 0
+                self._scroll_x = 0.0
+                self._state = "pause_start"
+                self._pause_frames = 20  # ホバー時は少し短めの待機
+                if not self._timer.isActive():
+                    self._timer.start()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+
+    def _on_tick(self):
+        fm = self.fontMetrics()
+        text_w = fm.horizontalAdvance(self._full_text)
+        avail_w = max(1, self.width() - self._padding_x * 2)
+
+        if text_w <= avail_w:
+            self._scroll_x = 0.0
+            self._timer.stop()
+            self._state = "idle"
+            self.update()
+            return
+
+        max_scroll = text_w - avail_w + 14
+
+        if self._state == "pause_start":
+            self._pause_frames -= 1
+            if self._pause_frames <= 0:
+                self._state = "scrolling"
+
+        elif self._state == "scrolling":
+            self._scroll_x += 1.2
+            if self._scroll_x >= max_scroll:
+                self._scroll_x = max_scroll
+                self._state = "pause_end"
+                self._pause_frames = 40  # 末尾で約1.2秒待機
+
+        elif self._state == "pause_end":
+            self._pause_frames -= 1
+            if self._pause_frames <= 0:
+                self._loop_count += 1
+                if self._loop_count >= self._max_loops:
+                    # 2周完了：先頭に戻して停止
+                    self._is_stopped = True
+                    self._scroll_x = 0.0
+                    self._timer.stop()
+                    self._state = "idle"
+                else:
+                    # 2周目へ
+                    self._scroll_x = 0.0
+                    self._state = "pause_start"
+                    self._pause_frames = 40
+
+        self.update()
+
+    def paintEvent(self, event):
+        # スタイルシートの背景・角丸・枠線を描画
+        super().paintEvent(event)
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        clip_rect = self.rect().adjusted(self._padding_x, 1, -self._padding_x, -1)
+        p.setClipRect(clip_rect)
+
+        font = self.font()
+        font.setBold(True)
+        p.setFont(font)
+        p.setPen(QColor("#FBBF24"))
+
+        fm = p.fontMetrics()
+        text_y = int((self.height() + fm.ascent() - fm.descent()) / 2)
+        text_x = self._padding_x - int(self._scroll_x)
+
+        p.drawText(text_x, text_y, self._full_text)
+        p.end()
+
+
 class HarmonicaMainWindow(QMainWindow):
     """v3.0 メインアプリケーションウィンドウ (クラシックL型レイアウト)"""
 
@@ -745,8 +892,8 @@ class HarmonicaMainWindow(QMainWindow):
         self.chk_transpose_accomp.toggled.connect(self._on_transpose_changed)
         row3.addWidget(self.chk_transpose_accomp)
 
-        # ステータス即時メッセージ (大幅拡張 stretch=1)
-        self.lbl_status_msg = QLabel("準備完了", self)
+        # ステータス即時メッセージ (大幅拡張 stretch=1 / 電光掲示板マーキー対応)
+        self.lbl_status_msg = MarqueeLabel("準備完了", self)
         self.lbl_status_msg.setObjectName("statusMsg")
         self.lbl_status_msg.setMinimumWidth(140)
         self.lbl_status_msg.setStyleSheet("background-color: #101016; border: 1px solid #282836; border-radius: 4px; padding: 2px 8px; color: #FBBF24; font-weight: bold;")
@@ -2669,18 +2816,41 @@ class HarmonicaMainWindow(QMainWindow):
             save_song_profile(self.timeline.filepath, extra)
 
     def _check_out_of_range_and_notify(self):
-        """音域外ノーツの存在を検出してステータスバー等に通知"""
+        """音域外ノーツの存在を検出してステータスバー等に通知 (A案スリム化＋詳細ツールチップ)"""
         if hasattr(self, "timeline") and self.timeline:
             diag = self.timeline.diagnose_pitch_range()
             status = diag.get("status")
             if status in ("out_of_range", "exceeds_instrument"):
                 out_cnt = diag.get("out_count", 0)
                 rec = diag.get("recommendation_text", "")
-                self.lbl_status_msg.setText(f"⚠ 音域外: {out_cnt}音 | {rec}")
+                r_min = diag.get("song_cur_min_name", "")
+                r_max = diag.get("song_cur_max_name", "")
+                rng_str = f"{r_min}〜{r_max}" if r_min and r_max else ""
+
+                if status == "exceeds_instrument":
+                    sub = "モデル音域超過"
+                else:
+                    targets = diag.get("target_transposes", [])
+                    if targets:
+                        best_t = targets[0]
+                        sign_t = f"+{best_t}" if best_t > 0 else str(best_t)
+                        sub = f"移調 {sign_t}stで解消可"
+                    else:
+                        sub = "移調で調整可"
+
+                if rng_str:
+                    short_msg = f"⚠ 音域外: {out_cnt}音 ({rng_str} / {sub})"
+                else:
+                    short_msg = f"⚠ 音域外: {out_cnt}音 ({sub})"
+
+                self.lbl_status_msg.setText(short_msg)
+                if rec:
+                    self.lbl_status_msg.setToolTip(f"{short_msg}\n\n【詳細診断】\n{rec}")
             elif status == "ok":
                 cur_text = self.lbl_status_msg.text()
                 if "音域外" in cur_text:
                     self.lbl_status_msg.setText("✅ 全音域クリア (演奏可能)")
+                    self.lbl_status_msg.setToolTip("全ノーツが選択中ハーモニカの音域内に収まっています。")
 
     def _on_check_pitch_range(self):
         """音域チェックボタン押下時の詳細診断ダイアログ表示"""
@@ -2723,7 +2893,10 @@ class HarmonicaMainWindow(QMainWindow):
             msg.setText("<br>".join(info_lines))
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
-            self.lbl_status_msg.setText(f"⚠ 音域外: {diag['out_count']}音 (曲の音域がモデルの上限/下限を超過)")
+            r_min = diag.get("song_cur_min_name", "")
+            r_max = diag.get("song_cur_max_name", "")
+            rng_str = f" ({r_min}〜{r_max} / モデル音域超過)" if r_min and r_max else " (モデル音域超過)"
+            self.lbl_status_msg.setText(f"⚠ 音域外: {diag['out_count']}音{rng_str}")
             return
 
         # out_of_range (移調で解決可能)
