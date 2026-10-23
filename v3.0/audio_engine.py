@@ -67,6 +67,7 @@ class AudioEngine:
         self.force_main_harmonica = True
         self.volume_ratio = 1.0  # 0.0 〜 1.0
         self.is_muted = False
+        self.is_midi_notes_muted = False
         self.transpose_semitones = 0
         self.timeline = None
 
@@ -266,6 +267,12 @@ class AudioEngine:
     def set_muted(self, muted: bool):
         self.is_muted = bool(muted)
         self.set_volume(self.volume_ratio)
+
+    def set_midi_notes_muted(self, muted: bool):
+        """メトロノーム/カウントイン拍は生かしたまま、楽曲MIDIノーツのみを消音/復帰 (伴奏のみモード等)"""
+        self.is_midi_notes_muted = bool(muted)
+        if self.is_midi_notes_muted:
+            self.all_notes_off()
 
     def set_part_mode(self, mode: str):
         """全パート再生 / 主旋律ソロ / 伴奏カラオケ切替"""
@@ -825,7 +832,7 @@ class AudioEngine:
                 while self._next_ev_idx < len(self.events):
                     ev = self.events[self._next_ev_idx]
                     if ev["sec"] <= cur_sec:
-                        if not self.is_muted and self.is_track_audible(ev["track_idx"]):
+                        if not self.is_muted and not getattr(self, "is_midi_notes_muted", False) and self.is_track_audible(ev["track_idx"]):
                             if ev.get("is_muted_note", False):
                                 # 除外されたノーツは主旋律としては発音しない
                                 self._next_ev_idx += 1
@@ -1289,9 +1296,9 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
     num_samples = int(extended_duration * sample_rate)
     samples = np.zeros(num_samples, dtype=np.float32)
 
-    has_ext_audio = (ext_audio_pcm is not None and len(ext_audio_pcm) > 0 and "外部音源オフ" not in str(ext_audio_mode))
+    has_ext_audio = (ext_audio_pcm is not None and len(ext_audio_pcm) > 0 and "外部音源オフ" not in str(ext_audio_mode) and "ガイド音のみ" not in str(ext_audio_mode))
     include_guide_synth = True
-    if has_ext_audio and ("動画:外部のみ" in str(ext_audio_mode) or "外部音源のみ" in str(ext_audio_mode)):
+    if has_ext_audio and ("動画:外部のみ" in str(ext_audio_mode) or "外部音源のみ" in str(ext_audio_mode) or "外部伴奏音源" in str(ext_audio_mode) or "伴奏のみ" in str(ext_audio_mode)):
         include_guide_synth = False
 
     first_time_sig_num = 4
@@ -1326,19 +1333,20 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
                 m_base_time = m.get('start_sec', m.get('start_time', None))
 
                 for b in range(num):
-                    if m_base_time is not None:
+                    if tick_to_sec_fn is not None:
+                        beat_tick = m.get('start_tick', 0) + b * beat_len_ticks
+                        beat_time_in_midi = tick_to_sec_fn(beat_tick) - sec_a_in_song
+                    elif m_base_time is not None:
                         sec_per_tick = 60.0 / (max(1.0, current_bpm) * ticks_per_beat)
-                        beat_time = m_base_time + (b * beat_len_ticks) * sec_per_tick
+                        beat_time_in_midi = (m_base_time - sec_a_in_song) + (b * beat_len_ticks) * sec_per_tick
                     else:
                         beat_tick = m.get('start_tick', 0) + b * beat_len_ticks
-                        if tick_to_sec_fn is not None:
-                            beat_time_in_midi = tick_to_sec_fn(beat_tick) - sec_a_in_song
-                        else:
-                            sec_per_tick = 60.0 / (max(1.0, current_bpm) * ticks_per_beat)
-                            beat_time_in_midi = beat_tick * sec_per_tick - sec_a_in_song
-                        beat_time = intro_sec + count_in_duration + beat_time_in_midi
+                        sec_per_tick = 60.0 / (max(1.0, current_bpm) * ticks_per_beat)
+                        beat_time_in_midi = beat_tick * sec_per_tick - sec_a_in_song
+                    beat_time = intro_sec + count_in_duration + beat_time_in_midi
 
-                    if beat_time < intro_sec or beat_time >= extended_duration:
+                    # 本編メトロノームは曲の開始〜max_duration の間のみ鳴らす（前奏余白や後余白outro_secでは鳴らさない）
+                    if beat_time < (intro_sec + count_in_duration) or beat_time >= (intro_sec + count_in_duration + max_duration):
                         continue
 
                     is_click_playable = True
@@ -1360,6 +1368,9 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
                             samples[start_sample:end_sample] += click_wave[:end_sample - start_sample]
 
         # C-1. 主旋律ハーモニカ音符の合成
+        max_music_sec = intro_sec + count_in_duration + max_duration
+        max_music_sample = int(max_music_sec * sample_rate)
+
         if part_play_mode in ("全パート再生", "主旋律ソロ", "主旋律のみ") and midi_notes:
             for note_data in midi_notes:
                 if note_data.get("is_muted", False):
@@ -1368,14 +1379,16 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
                 start = note_data.get('start_sec', note_data.get('start_time', 0.0))
                 dur = note_data.get('dur_sec', note_data.get('duration', 0.5))
 
+                if (start - sec_a_in_song) >= max_duration:
+                    continue
+
                 start_in_video = intro_sec + count_in_duration + (start - sec_a_in_song)
                 if start_in_video < 0:
                     continue
                 start_sample = max(0, int(start_in_video * sample_rate))
-                end_sample = int((start_in_video + dur) * sample_rate)
-                if start_sample >= num_samples:
+                end_sample = min(int((start_in_video + dur) * sample_rate), max_music_sample, num_samples)
+                if start_sample >= max_music_sample or start_sample >= num_samples:
                     continue
-                end_sample = min(end_sample, num_samples)
 
                 freq = 440.0 * (2.0 ** ((note - 69) / 12.0))
                 target_length = end_sample - start_sample
@@ -1391,14 +1404,16 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
                 dur = acc_data.get('dur_sec', acc_data.get('duration', 0.5))
                 vel_scale = max(0.2, min(1.0, acc_data.get('velocity', 80) / 100.0))
 
+                if (start - sec_a_in_song) >= max_duration:
+                    continue
+
                 start_in_video = intro_sec + count_in_duration + (start - sec_a_in_song)
                 if start_in_video < 0:
                     continue
                 start_sample = max(0, int(start_in_video * sample_rate))
-                end_sample = int((start_in_video + dur) * sample_rate)
-                if start_sample >= num_samples:
+                end_sample = min(int((start_in_video + dur) * sample_rate), max_music_sample, num_samples)
+                if start_sample >= max_music_sample or start_sample >= num_samples:
                     continue
-                end_sample = min(end_sample, num_samples)
 
                 freq = 440.0 * (2.0 ** ((note - 69) / 12.0))
                 target_length = end_sample - start_sample
@@ -1419,16 +1434,21 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
             out_stereo[:, 1] = samples * 0.85
 
         video_song_start_sec = intro_sec + count_in_duration
+        video_song_end_sec = video_song_start_sec + max_duration
         offset_sec = float(ext_audio_offset_ms) / 1000.0
         ext_zero_in_video_sec = video_song_start_sec - sec_a_in_song + offset_sec
 
         dst_min_sample = int(round(video_song_start_sec * sample_rate))
+        dst_max_sample = int(round(min(num_samples, video_song_end_sec * sample_rate)))
         dst_start = max(dst_min_sample, int(round(ext_zero_in_video_sec * sample_rate)))
         src_start = max(0, int(round((dst_start / float(sample_rate) - ext_zero_in_video_sec) * sample_rate)))
 
-        avail_src = max(0, len(ext_audio_pcm) - src_start)
-        avail_dst = max(0, num_samples - dst_start)
-        copy_len = min(avail_src, avail_dst)
+        if dst_start >= dst_max_sample:
+            copy_len = 0
+        else:
+            avail_src = max(0, len(ext_audio_pcm) - src_start)
+            avail_dst = max(0, dst_max_sample - dst_start)
+            copy_len = min(avail_src, avail_dst)
 
         if copy_len > 0:
             vol_gain = max(0.0, min(2.5, float(ext_audio_vol_pct) / 100.0))

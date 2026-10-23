@@ -1004,6 +1004,7 @@ class VideoExportThread(QThread):
                     metronome_pattern=metronome_pattern,
                     ticks_per_beat=getattr(self.timeline, "ticks_per_beat", 480) if self.timeline else 480,
                     sample_rate=44100,
+                    tick_to_sec_fn=getattr(self.timeline, "tick_to_sec", None),
                     accompaniment_notes=acc_notes,
                     part_play_mode=self.config.get("part_mode", "全パート再生"),
                     intro_sec=intro_sec,
