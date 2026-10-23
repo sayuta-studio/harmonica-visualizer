@@ -2823,7 +2823,11 @@ class HarmonicaMainWindow(QMainWindow):
         self._stepup_running = False
         if checked:
             self.chk_loop.setChecked(True)
-            self.speed_slider.setValue(self.spin_sp_start.value())
+            self._is_stepup_auto_adjusting = True
+            try:
+                self.speed_slider.setValue(self.spin_sp_start.value())
+            finally:
+                self._is_stepup_auto_adjusting = False
             self._stepup_running = True
         self.lbl_status_msg.setText(f"📈 ステップアップ練習: {'ON' if checked else 'OFF'}")
         self._save_current_settings()
@@ -2849,7 +2853,11 @@ class HarmonicaMainWindow(QMainWindow):
             cur_pct = self.speed_slider.value()
             if cur_pct < target_pct:
                 new_pct = min(target_pct, cur_pct + step_pct)
-                self.speed_slider.setValue(new_pct)
+                self._is_stepup_auto_adjusting = True
+                try:
+                    self.speed_slider.setValue(new_pct)
+                finally:
+                    self._is_stepup_auto_adjusting = False
                 if new_pct >= target_pct:
                     self.lbl_status_msg.setText(f"🎯 目標速度 {target_pct}% に到達しました！（ループ継続）")
                 else:
@@ -3257,7 +3265,11 @@ class HarmonicaMainWindow(QMainWindow):
             if st == SharedClockBridge.STATE_STOPPED:
                 if hasattr(self, "chk_stepup") and self.chk_stepup.isChecked():
                     if not getattr(self, "_stepup_running", False):
-                        self.speed_slider.setValue(self.spin_sp_start.value())
+                        self._is_stepup_auto_adjusting = True
+                        try:
+                            self.speed_slider.setValue(self.spin_sp_start.value())
+                        finally:
+                            self._is_stepup_auto_adjusting = False
                         self._stepup_running = True
                 if 0.0 <= cur_sec <= 0.05:
                     ci_dur = self._get_count_in_duration()
@@ -3334,12 +3346,13 @@ class HarmonicaMainWindow(QMainWindow):
         self.lbl_speed_val.setText(f"{val}%")
         self.clock.set_speed_ratio(spd)
         if hasattr(self, "chk_stepup") and self.chk_stepup.isChecked():
-            self._stepup_running = False
-            self.chk_stepup.blockSignals(True)
-            self.chk_stepup.setChecked(False)
-            self.chk_stepup.blockSignals(False)
-            self.user_settings["stepup_enabled"] = False
-            self.lbl_status_msg.setText(f"⏩ 速度: {val}% (ステップアップ練習を解除しました)")
+            if not getattr(self, "_is_stepup_auto_adjusting", False):
+                self._stepup_running = False
+                self.chk_stepup.blockSignals(True)
+                self.chk_stepup.setChecked(False)
+                self.chk_stepup.blockSignals(False)
+                self.user_settings["stepup_enabled"] = False
+                self.lbl_status_msg.setText(f"⏩ 速度: {val}% (ステップアップ練習を解除しました)")
         self._save_current_settings()
 
     def _adjust_speed(self, delta: int):

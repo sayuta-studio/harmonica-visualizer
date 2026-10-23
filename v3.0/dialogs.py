@@ -634,7 +634,8 @@ class FingeringEditorDialog(QDialog):
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(8, 96)
 
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -667,17 +668,17 @@ class FingeringEditorDialog(QDialog):
         foot_layout = QHBoxLayout()
         foot_layout.setSpacing(10)
 
-        btn_reset_fing = QPushButton("🎯 運指カスタムを全初期化", self)
-        btn_reset_fing.setStyleSheet("background-color: #372B10; color: #FDE68A; border: 1px solid #92400E; font-weight: bold; padding: 6px 12px; border-radius: 4px;")
-        btn_reset_fing.setToolTip("個別設定したすべての変え指を解除し、プリセット標準に戻します（除外ノーツは維持）")
-        btn_reset_fing.clicked.connect(self._on_reset_custom_only)
-        foot_layout.addWidget(btn_reset_fing)
-
         btn_reset_mutes = QPushButton("🔔 除外ノーツを全復活", self)
         btn_reset_mutes.setStyleSheet("background-color: #1E2D3D; color: #93C5FD; border: 1px solid #1E40AF; font-weight: bold; padding: 6px 12px; border-radius: 4px;")
         btn_reset_mutes.setToolTip("除外（ミュート）されているすべてのノーツを有効（発音）状態に戻します（運指カスタムは維持）")
         btn_reset_mutes.clicked.connect(self._on_reset_muted_only)
         foot_layout.addWidget(btn_reset_mutes)
+
+        btn_reset_fing = QPushButton("🎯 運指カスタムを全初期化", self)
+        btn_reset_fing.setStyleSheet("background-color: #372B10; color: #FDE68A; border: 1px solid #92400E; font-weight: bold; padding: 6px 12px; border-radius: 4px;")
+        btn_reset_fing.setToolTip("個別設定したすべての変え指を解除し、プリセット標準に戻します（除外ノーツは維持）")
+        btn_reset_fing.clicked.connect(self._on_reset_custom_only)
+        foot_layout.addWidget(btn_reset_fing)
 
         btn_jump = QPushButton("▶ 選択位置へジャンプ", self)
         btn_jump.setToolTip("選択されているノーツの再生位置へシークします (行のダブルクリックでもジャンプ可能)")
@@ -911,14 +912,15 @@ class FingeringEditorDialog(QDialog):
                 it_stat.setFlags(it_stat.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(r, 8, it_stat)
             elif is_custom:
-                btn_rev = QPushButton("★ カスタム (戻す)", self)
+                btn_rev = QPushButton("★ カスタム", self)
+                btn_rev.setFixedWidth(82)
                 btn_rev.setStyleSheet("""
                     QPushButton {
                         background-color: #064E3B;
                         color: #6EE7B7;
                         font-size: 11px;
                         font-weight: bold;
-                        padding: 2px 6px;
+                        padding: 2px 4px;
                         border: 1px solid #059669;
                         border-radius: 3px;
                     }
@@ -927,7 +929,7 @@ class FingeringEditorDialog(QDialog):
                         color: #FFFFFF;
                     }
                 """)
-                btn_rev.setToolTip("クリックするとこの音のカスタム変え指を解除し、プリセット標準に戻します")
+                btn_rev.setToolTip("個別設定された変え指です。クリックすると標準の運指に戻します")
                 btn_rev.clicked.connect(lambda _, n_data=nd, l_note=lookup_note: self._revert_single_note(n_data, l_note))
                 cell_stat = QWidget()
                 h_stat = QHBoxLayout(cell_stat)
@@ -940,6 +942,7 @@ class FingeringEditorDialog(QDialog):
                 it_stat.setForeground(dim_col)
                 it_stat.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 it_stat.setFlags(it_stat.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                it_stat.setToolTip("プリセット通りの標準運指です（運指候補を変更すると個別カスタムになります）")
                 self.table.setItem(r, 8, it_stat)
 
         # 統計表示更新
