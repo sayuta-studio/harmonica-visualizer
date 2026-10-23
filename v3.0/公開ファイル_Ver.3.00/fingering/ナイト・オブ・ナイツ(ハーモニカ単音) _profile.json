@@ -1,0 +1,19 @@
+{
+  "preset": "スライド最小化",
+  "monophonic_mode": "すべて有効",
+  "hide_muted_notes": false,
+  "custom_fingering": {},
+  "muted_notes": {},
+  "main_track_indices": [
+    0,
+    1
+  ],
+  "accomp_track_indices": [],
+  "transpose": 0,
+  "transpose_accomp": true,
+  "inst_type": "16穴 (64音・C調)",
+  "ext_audio_path": "",
+  "ext_offset_ms": 0,
+  "loop_a": 1,
+  "loop_b": 138
+}

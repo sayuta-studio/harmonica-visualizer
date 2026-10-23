@@ -1,0 +1,4 @@
+# chromatic_harmonica_fingering_config
+PRESET: スライド優先
+
+# FORMAT -> start_tick_note_val: candidate_index
