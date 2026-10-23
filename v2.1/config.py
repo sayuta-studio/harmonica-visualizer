@@ -272,9 +272,11 @@ def draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False):
 
 def get_lever_highlight_color(hex_color):
     """
-    スライドレバーONノーツ用の同系色ハイライト色を算出します。
-    - 通常色: ユーザーが設定した色相を保持しつつ、明度と彩度を引き上げた鮮やかな発光色（同系色ネオンハイライト）。
-    - 白色・超明色時: 白の上では明度アップができないため、視認性抜群の反転色（漆黒 #151515）のアクセントラインを生成。
+    スライドレバーONノーツ用の明暗適応ハイライト色を算出します。
+    - 明るい色（シアン、黄色、白、明るいパステル等: lum >= 140 または l >= 0.55）:
+      明るい地色の上でも埋もれず輪郭がくっきり引き締まる漆黒（#151515）のコントラストライン。
+    - 暗い〜中明度色:
+      地色の色相を保持しつつ、明度と彩度を引き上げた高輝度ネオン発光ライン。
     """
     import colorsys
     if not hex_color or not str(hex_color).startswith("#"):
@@ -292,11 +294,11 @@ def get_lever_highlight_color(hex_color):
     lum = 0.299 * r * 255.0 + 0.587 * g * 255.0 + 0.114 * b * 255.0
     h, l, s = colorsys.rgb_to_hls(r, g, b)
 
-    # ユーザー要望：「白の時だけ黒いラインが入るようにする（明暗しかないので反対色の黒が出るように）」
-    if lum > 225.0 or l > 0.88:
+    # ユーザー要望：「明度一定以上の場合は暗いラインで、明度一定以下の場合は明るいラインで表示する」
+    if lum >= 140.0 or l >= 0.55:
         return "#151515"
 
-    new_l = min(0.93, max(0.82, l + (1.0 - l) * 0.65))
+    new_l = min(0.95, max(0.85, l + (1.0 - l) * 0.70))
     new_s = max(0.40, min(1.0, s * 0.90)) if s > 0.05 else 0.0
     hr, hg, hb = colorsys.hls_to_rgb(h, new_l, new_s)
     return f"#{int(round(hr * 255.0)):02X}{int(round(hg * 255.0)):02X}{int(round(hb * 255.0)):02X}"

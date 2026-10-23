@@ -40,6 +40,22 @@ _NOTES_INDEX_CACHE = {
     "max_dur_ticks": 0,
 }
 
+_MEASURES_INDEX_CACHE = {
+    "key": None,
+    "start_ticks": [],
+}
+
+
+def _get_measures_index(measures_timeline):
+    """小節タイムラインに対する二分探索用インデックスをキャッシュして返します。"""
+    if not measures_timeline:
+        return []
+    cache_key = (id(measures_timeline), len(measures_timeline))
+    if _MEASURES_INDEX_CACHE["key"] != cache_key:
+        _MEASURES_INDEX_CACHE["key"] = cache_key
+        _MEASURES_INDEX_CACHE["start_ticks"] = [m["start_tick"] for m in measures_timeline]
+    return _MEASURES_INDEX_CACHE["start_ticks"]
+
 
 def _get_notes_index(midi_notes):
     """曲全体のノーツリストに対する二分探索用インデックスと最大長キャッシュを返します。"""
@@ -66,12 +82,12 @@ def prepare_background_image(bg_image_path, target_w, target_h, bg_brightness=1.
     """
     target_w = max(1, int(round(target_w)))
     target_h = max(1, int(round(target_h)))
-    pil_bg = Image.open(bg_image_path)
-    try:
-        pil_bg = ImageOps.exif_transpose(pil_bg)
-    except Exception:
-        pass
-    pil_bg = pil_bg.convert("RGB")
+    with Image.open(bg_image_path) as raw_bg:
+        try:
+            raw_bg = ImageOps.exif_transpose(raw_bg)
+        except Exception:
+            pass
+        pil_bg = raw_bg.convert("RGB")
 
     rot_str = str(bg_rotation or "")
     if "右" in rot_str or "時計" in rot_str or ("90" in rot_str and "左" not in rot_str and "270" not in rot_str):
@@ -124,6 +140,18 @@ def prepare_background_image(bg_image_path, target_w, target_h, bg_brightness=1.
     return out_img
 
 
+def _get_trajectory_x(yv, lane_l, lane_r, dest_l, dest_r, y_col, y_str, h_diag):
+    """斜め落下軌道のX座標を固定関数で高速算出（クロージャ定義のオーバーヘッドをゼロ化）"""
+    if yv >= y_str or h_diag <= 0:
+        return dest_l, dest_r, (dest_l + dest_r) * 0.5
+    if yv <= y_col:
+        return lane_l, lane_r, (lane_l + lane_r) * 0.5
+    ratio = (yv - y_col) / h_diag
+    xl = lane_l + (dest_l - lane_l) * ratio
+    xr = lane_r + (dest_r - lane_r) * ratio
+    return xl, xr, (xl + xr) * 0.5
+
+
 def draw_bordered_text_canvas(canvas, position, text, text_color, font=("Arial", 11, "bold"), border_width=2, tags="text"):
     x, y = position
     border_color = "#000000"
@@ -142,13 +170,14 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                           edit_mode_active=False,
                           last_edit_note=None, last_edit_fing=None,
                           use_skin=True, scale=1.0, aspect_ratio="16:9",
-                          use_ring=True, trajectory_mode="3段階 (練習標準)",
+                          use_ring=True, trajectory_mode="垂直落下 (穴直上)",
                           show_lookahead=True, show_grid4=True,
                           measures_timeline=None, is_glow_on=False,
                           note_speed_ratio=1.0,
                           bg_image_path=None, bg_brightness=1.0,
                           bg_fit_mode="中央トリミング (画面いっぱい)",
-                          bg_rotation="0° (自動補正)"):  
+                          bg_rotation="0° (自動補正)",
+                          lever_deco_mode="センターライン (芯線)"):  
     """
     Pillowを一切経由せず、Tkinter Canvasのネイティブ命令と差分キャッシュで超高速描画。
     変化した要素のみを更新し、落下中ノーツは座標移動(coords)のみで60fps安定動作を実現します。
@@ -235,7 +264,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
         is_hole_num_on, is_legend_on, is_grid_on,
         color_blow_hex, color_draw_hex,
         use_skin, round(scale, 4), aspect_ratio,
-        trajectory_mode, show_grid4,
+        trajectory_mode, show_grid4, lever_deco_mode,
         bg_image_path if has_bg_img else None, round(float(bg_brightness), 3),
         bg_fit_mode if has_bg_img else None, bg_rotation if has_bg_img else None
     )
@@ -249,11 +278,19 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
             canvas.note_pool.clear()
         else:
             canvas.note_pool = {}
+        if hasattr(canvas, "note_free_pool"):
+            canvas.note_free_pool.clear()
+        else:
+            canvas.note_free_pool = []
 
         if hasattr(canvas, "measure_pool"):
             canvas.measure_pool.clear()
         else:
             canvas.measure_pool = {}
+        if hasattr(canvas, "measure_free_pool"):
+            canvas.measure_free_pool.clear()
+        else:
+            canvas.measure_free_pool = []
 
         canvas._led_state_cache = {}
         canvas._grid4_hole_cache = {}
@@ -624,17 +661,34 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                 x_l = 24.0 * scale
                 x_r = 936.0 * scale
 
-            for m in measures_timeline:
+            m_start_ticks = _get_measures_index(measures_timeline)
+            min_visible_tick = target_tick
+            max_visible_tick = target_tick + (y_hole_line_s / px_per_tick_s) + 5.0
+
+            # 二分探索で画面内に現在見えている小節のみを瞬時に特定 (O(log M))
+            idx_start = bisect.bisect_left(m_start_ticks, min_visible_tick)
+            if idx_start > 0:
+                idx_start -= 1
+            idx_end = bisect.bisect_right(m_start_ticks, max_visible_tick)
+
+            for i in range(idx_start, min(idx_end, len(measures_timeline))):
+                m = measures_timeline[i]
                 m_tick = m["start_tick"]
                 y_m = y_hole_line_s - (m_tick - target_tick) * px_per_tick_s
-                if y_m < 0.0:
-                    break
-                if y_m <= y_hole_line_s:
-                    m_num = m["measure_num"]
-                    visible_measures.add(m_num)
+                if y_m < 0.0 or y_m > y_hole_line_s:
+                    continue
+                m_num = m["measure_num"]
+                visible_measures.add(m_num)
 
-                    m_item = canvas.measure_pool.get(m_num)
-                    if m_item is None:
+                m_item = canvas.measure_pool.get(m_num)
+                if m_item is None:
+                    if getattr(canvas, "measure_free_pool", None):
+                        lid, tid = canvas.measure_free_pool.pop()
+                        canvas.coords(lid, x_l, y_m, x_r, y_m)
+                        canvas.coords(tid, x_l + 4 * scale, y_m - 2 * scale)
+                        canvas.itemconfig(lid, fill=m_line_color, state="normal")
+                        canvas.itemconfig(tid, text=str(m_num), fill=m_txt_color, state="normal")
+                    else:
                         lid = canvas.create_line(
                             x_l, y_m, x_r, y_m,
                             fill=m_line_color, width=1, tags="measure_line"
@@ -646,22 +700,26 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                         )
                         canvas.tag_lower(lid, "anchor_measure_lines_top")
                         canvas.tag_lower(tid, "anchor_measure_lines_top")
-                        canvas.measure_pool[m_num] = (lid, tid)
-                    else:
-                        lid, tid = m_item
-                        canvas.coords(lid, x_l, y_m, x_r, y_m)
-                        canvas.coords(tid, x_l + 4 * scale, y_m - 2 * scale)
+                    canvas.measure_pool[m_num] = (lid, tid)
+                else:
+                    lid, tid = m_item
+                    canvas.coords(lid, x_l, y_m, x_r, y_m)
+                    canvas.coords(tid, x_l + 4 * scale, y_m - 2 * scale)
 
             if len(canvas.measure_pool) > len(visible_measures):
+                if not hasattr(canvas, "measure_free_pool"): canvas.measure_free_pool = []
                 for old_m in list(canvas.measure_pool.keys()):
                     if old_m not in visible_measures:
                         lid, tid = canvas.measure_pool.pop(old_m)
-                        canvas.delete(lid)
-                        canvas.delete(tid)
-        elif canvas.measure_pool:
+                        canvas.itemconfig(lid, state="hidden")
+                        canvas.itemconfig(tid, state="hidden")
+                        canvas.measure_free_pool.append((lid, tid))
+        elif getattr(canvas, "measure_pool", None):
+            if not hasattr(canvas, "measure_free_pool"): canvas.measure_free_pool = []
             for lid, tid in canvas.measure_pool.values():
-                canvas.delete(lid)
-                canvas.delete(tid)
+                canvas.itemconfig(lid, state="hidden")
+                canvas.itemconfig(tid, state="hidden")
+                canvas.measure_free_pool.append((lid, tid))
             canvas.measure_pool.clear()
 
         # 5-B. 落下ノーツ＆追従音名ラベルの描画更新
@@ -720,19 +778,24 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     dest_right = dest_x_center + 6 * scale
 
                     lbl_str = (note_data["name_jp"] if is_jp else note_data["name_cde"]) if bound_ok else get_note_name(note_val, is_japanese=is_jp)
-                    style_key = (col_hex, edit_tag, has_edit_border, is_lever_on, hi_hex, lbl_str, f_lbl_size)
+                    style_key = (col_hex, edit_tag, has_edit_border, is_lever_on, lever_deco_mode, hi_hex, lbl_str, f_lbl_size)
                     
                     pool_item = canvas.note_pool.get(key)
                     if pool_item is None:
-                        pool_item = {
-                            "poly_id": None,
-                            "border_outer_id": None,
-                            "stripe_id": None,
-                            "lbl_s1_id": None, "lbl_s2_id": None, "lbl_txt_id": None,
-                            "style_key": style_key
-                        }
+                        if getattr(canvas, "note_free_pool", None):
+                            pool_item = canvas.note_free_pool.pop()
+                            pool_item["style_key"] = None
+                        else:
+                            pool_item = {
+                                "poly_id": None,
+                                "poly_r_id": None,
+                                "border_outer_id": None,
+                                "stripe_id": None,
+                                "lbl_s1_id": None, "lbl_s2_id": None, "lbl_txt_id": None,
+                                "style_key": None
+                            }
                         canvas.note_pool[key] = pool_item
-                        style_changed = False
+                        style_changed = True
                     else:
                         style_changed = (pool_item.get("style_key") != style_key)
                         if style_changed:
@@ -740,33 +803,12 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                     
                     tag_tuple = ("note", edit_tag) if edit_tag else ("note",)
 
-                    # 動画出力側と同じ四つ角面取り（チャンファー）付き単一ポリゴンでノーツを描画
+                    # 四つ角面取り（チャンファー）付き幾何学ポリゴンでノーツを描画
                     y_limit_bot = y_hole_line_s if note_in_range else y_collide_s
                     y_vis_top = max(0.0, y_top)
                     y_vis_bot = min(y_limit_bot, y_bottom)
 
                     if (not is_straight_mode or note_in_range) and y_vis_bot > y_vis_top:
-                        if is_straight_mode:
-                            def x_left_at(yv): return dest_left
-                            def x_right_at(yv): return dest_right
-                            bend_ys = ()
-                        else:
-                            def x_left_at(yv):
-                                if yv <= y_collide_s:
-                                    return lane_x_left
-                                elif yv >= y_straight_s:
-                                    return dest_left
-                                return lane_x_left + (dest_left - lane_x_left) * ((yv - y_collide_s) / height_diag_s)
-
-                            def x_right_at(yv):
-                                if yv <= y_collide_s:
-                                    return lane_x_right
-                                elif yv >= y_straight_s:
-                                    return dest_right
-                                return lane_x_right + (dest_right - lane_x_right) * ((yv - y_collide_s) / height_diag_s)
-
-                            bend_ys = ((y_collide_s, y_straight_s) if height_straight_s > 0 else (y_collide_s,)) if note_in_range else ()
-
                         length = max(1.0, y_vis_bot - y_vis_top)
                         ch_base = min(3.5 * scale, length / 3.0)
                         ch_top = ch_base if (0.0 <= y_top < y_limit_bot) else 0.0
@@ -774,146 +816,269 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
 
                         y_r_start = y_vis_top + ch_top
                         y_r_end = y_vis_bot - ch_bot
-                        active_bends = [by for by in bend_ys if y_r_start < by < y_r_end]
 
-                        coords_flat = []
-                        # 上端キャップ（面取り）
-                        if ch_top > 0.5:
-                            coords_flat.extend((
-                                x_left_at(y_vis_top) + ch_top, y_vis_top,
-                                x_right_at(y_vis_top) - ch_top, y_vis_top,
-                                x_right_at(y_r_start), y_r_start
-                            ))
+                        if is_straight_mode:
+                            x_left_at = lambda yv, dl=dest_left: dl
+                            x_right_at = lambda yv, dr=dest_right: dr
+                            x_mid_at = lambda yv, dc=dest_x_center: dc
+                            active_bends = ()
                         else:
-                            coords_flat.extend((
-                                x_left_at(y_vis_top), y_vis_top,
-                                x_right_at(y_vis_top), y_vis_top
-                            ))
-
-                        # 右辺の屈曲点（上から下）
-                        for by in active_bends:
-                            coords_flat.extend((x_right_at(by), by))
-
-                        # 下端キャップ（面取り）
-                        if ch_bot > 0.5:
-                            coords_flat.extend((
-                                x_right_at(y_r_end), y_r_end,
-                                x_right_at(y_vis_bot) - ch_bot, y_vis_bot,
-                                x_left_at(y_vis_bot) + ch_bot, y_vis_bot,
-                                x_left_at(y_r_end), y_r_end
-                            ))
-                        else:
-                            coords_flat.extend((
-                                x_right_at(y_vis_bot), y_vis_bot,
-                                x_left_at(y_vis_bot), y_vis_bot
-                            ))
-
-                        # 左辺の屈曲点（下から上）
-                        for by in reversed(active_bends):
-                            coords_flat.extend((x_left_at(by), by))
-
-                        if ch_top > 0.5:
-                            coords_flat.extend((x_left_at(y_r_start), y_r_start))
+                            x_left_at = lambda yv, l=lane_x_left, r=lane_x_right, dl=dest_left, dr=dest_right, yc=y_collide_s, ys=y_straight_s, hd=height_diag_s: _get_trajectory_x(yv, l, r, dl, dr, yc, ys, hd)[0]
+                            x_right_at = lambda yv, l=lane_x_left, r=lane_x_right, dl=dest_left, dr=dest_right, yc=y_collide_s, ys=y_straight_s, hd=height_diag_s: _get_trajectory_x(yv, l, r, dl, dr, yc, ys, hd)[1]
+                            x_mid_at = lambda yv, l=lane_x_left, r=lane_x_right, dl=dest_left, dr=dest_right, yc=y_collide_s, ys=y_straight_s, hd=height_diag_s: _get_trajectory_x(yv, l, r, dl, dr, yc, ys, hd)[2]
+                            bend_ys = ((y_collide_s, y_straight_s) if height_straight_s > 0 else (y_collide_s,)) if note_in_range else ()
+                            active_bends = [by for by in bend_ys if y_r_start < by < y_r_end]
 
                         outer_border_w = max(3, int(round(4.0 * scale)))
                         inner_border_w = max(1, int(round(2.0 * scale)))
-
-                        # A. 運指エディタ時のハイコントラスト二重枠（外側黒枠）
-                        if has_edit_border:
-                            if pool_item.get("border_outer_id") is None:
-                                bid = canvas.create_polygon(
-                                    *coords_flat,
-                                    fill="", outline="#000000", width=outer_border_w, tags=tag_tuple
-                                )
-                                canvas.tag_lower(bid, "anchor_notes_top")
-                                pool_item["border_outer_id"] = bid
-                            else:
-                                canvas.coords(pool_item["border_outer_id"], *coords_flat)
-                                if style_changed:
-                                    canvas.itemconfig(pool_item["border_outer_id"], width=outer_border_w, tags=tag_tuple)
-                        else:
-                            if pool_item.get("border_outer_id") is not None:
-                                canvas.delete(pool_item["border_outer_id"])
-                                pool_item["border_outer_id"] = None
-
-                        # B. ノーツ本体ポリゴン（エディタ時は内側白枠、通常時は枠なし）
                         poly_outline = "#FFFFFF" if has_edit_border else ""
                         poly_outline_w = inner_border_w if has_edit_border else 0
-                        if pool_item["poly_id"] is None:
-                            cid = canvas.create_polygon(
-                                *coords_flat,
-                                fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple
-                            )
-                            canvas.tag_lower(cid, "anchor_notes_top")
-                            if pool_item.get("border_outer_id") is not None:
-                                canvas.tag_lower(pool_item["border_outer_id"], cid)
-                            pool_item["poly_id"] = cid
-                        else:
-                            canvas.coords(pool_item["poly_id"], *coords_flat)
-                            if style_changed:
-                                canvas.itemconfig(
-                                    pool_item["poly_id"],
-                                    fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple
-                                )
 
-                        # C. スライドレバーON時の右エッジ・同系色ハイライト帯（白時は黒ライン）
-                        if is_lever_on:
-                            stripe_w = min(4.5 * scale, max(2.5, 3.2 * scale))
-                            stripe_flat = []
+                        use_split_slit = bool(is_lever_on and "スリット" in lever_deco_mode)
+
+                        if use_split_slit:
+                            # 1. 【センター半割 (透過スリット)】: 左右2本のレール状ポリゴンに分割描画
+                            slit_w = max(1.5, min(2.8 * scale, 3.2))
+                            
+                            # 左バー
+                            left_flat = []
                             if ch_top > 0.5:
-                                stripe_flat.extend((x_right_at(y_vis_top) - ch_top, y_vis_top,
-                                                    x_right_at(y_r_start), y_r_start))
+                                left_flat.extend((x_left_at(y_vis_top) + ch_top, y_vis_top,
+                                                  x_mid_at(y_vis_top) - slit_w / 2.0, y_vis_top,
+                                                  x_mid_at(y_r_start) - slit_w / 2.0, y_r_start))
                             else:
-                                stripe_flat.extend((x_right_at(y_vis_top), y_vis_top))
+                                left_flat.extend((x_left_at(y_vis_top), y_vis_top,
+                                                  x_mid_at(y_vis_top) - slit_w / 2.0, y_vis_top))
 
                             for by in active_bends:
-                                stripe_flat.extend((x_right_at(by), by))
+                                left_flat.extend((x_mid_at(by) - slit_w / 2.0, by))
 
                             if ch_bot > 0.5:
-                                stripe_flat.extend((x_right_at(y_r_end), y_r_end,
-                                                    x_right_at(y_vis_bot) - ch_bot, y_vis_bot,
-                                                    x_right_at(y_vis_bot) - ch_bot - stripe_w, y_vis_bot,
-                                                    x_right_at(y_r_end) - stripe_w, y_r_end))
+                                left_flat.extend((x_mid_at(y_r_end) - slit_w / 2.0, y_r_end,
+                                                  x_mid_at(y_vis_bot) - slit_w / 2.0, y_vis_bot,
+                                                  x_left_at(y_vis_bot) + ch_bot, y_vis_bot,
+                                                  x_left_at(y_r_end), y_r_end))
                             else:
-                                stripe_flat.extend((x_right_at(y_vis_bot), y_vis_bot,
-                                                    x_right_at(y_vis_bot) - stripe_w, y_vis_bot))
+                                left_flat.extend((x_mid_at(y_vis_bot) - slit_w / 2.0, y_vis_bot,
+                                                  x_left_at(y_vis_bot), y_vis_bot))
 
                             for by in reversed(active_bends):
-                                stripe_flat.extend((x_right_at(by) - stripe_w, by))
+                                left_flat.extend((x_left_at(by), by))
 
                             if ch_top > 0.5:
-                                stripe_flat.extend((x_right_at(y_r_start) - stripe_w, y_r_start,
-                                                    x_right_at(y_vis_top) - ch_top - stripe_w, y_vis_top))
-                            else:
-                                stripe_flat.extend((x_right_at(y_vis_top) - stripe_w, y_vis_top))
+                                left_flat.extend((x_left_at(y_r_start), y_r_start))
 
-                            if pool_item.get("stripe_id") is None:
-                                sid = canvas.create_polygon(
-                                    *stripe_flat,
-                                    fill=hi_hex, outline="", tags=tag_tuple
-                                )
-                                canvas.tag_lower(sid, "anchor_notes_top")
-                                if pool_item.get("poly_id") is not None:
-                                    canvas.tag_raise(sid, pool_item["poly_id"])
-                                pool_item["stripe_id"] = sid
+                            # 右バー
+                            right_flat = []
+                            if ch_top > 0.5:
+                                right_flat.extend((x_mid_at(y_vis_top) + slit_w / 2.0, y_vis_top,
+                                                   x_right_at(y_vis_top) - ch_top, y_vis_top,
+                                                   x_right_at(y_r_start), y_r_start))
                             else:
-                                canvas.coords(pool_item["stripe_id"], *stripe_flat)
+                                right_flat.extend((x_mid_at(y_vis_top) + slit_w / 2.0, y_vis_top,
+                                                   x_right_at(y_vis_top), y_vis_top))
+
+                            for by in active_bends:
+                                right_flat.extend((x_right_at(by), by))
+
+                            if ch_bot > 0.5:
+                                right_flat.extend((x_right_at(y_r_end), y_r_end,
+                                                   x_right_at(y_vis_bot) - ch_bot, y_vis_bot,
+                                                   x_mid_at(y_vis_bot) + slit_w / 2.0, y_vis_bot,
+                                                   x_mid_at(y_r_end) + slit_w / 2.0, y_r_end))
+                            else:
+                                right_flat.extend((x_right_at(y_vis_bot), y_vis_bot,
+                                                   x_mid_at(y_vis_bot) + slit_w / 2.0, y_vis_bot))
+
+                            for by in reversed(active_bends):
+                                right_flat.extend((x_mid_at(by) + slit_w / 2.0, by))
+
+                            if ch_top > 0.5:
+                                right_flat.extend((x_mid_at(y_r_start) + slit_w / 2.0, y_r_start))
+
+                            # 左ポリゴン描画
+                            if pool_item["poly_id"] is None:
+                                cid_l = canvas.create_polygon(*left_flat, fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple)
+                                canvas.tag_lower(cid_l, "anchor_notes_top")
+                                pool_item["poly_id"] = cid_l
+                            else:
+                                canvas.coords(pool_item["poly_id"], *left_flat)
                                 if style_changed:
-                                    canvas.itemconfig(pool_item["stripe_id"], fill=hi_hex, tags=tag_tuple)
-                        else:
+                                    canvas.itemconfig(pool_item["poly_id"], fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple, state="normal")
+                                else:
+                                    canvas.itemconfig(pool_item["poly_id"], state="normal")
+
+                            # 右ポリゴン描画
+                            if pool_item.get("poly_r_id") is None:
+                                cid_r = canvas.create_polygon(*right_flat, fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple)
+                                canvas.tag_lower(cid_r, "anchor_notes_top")
+                                pool_item["poly_r_id"] = cid_r
+                            else:
+                                canvas.coords(pool_item["poly_r_id"], *right_flat)
+                                if style_changed:
+                                    canvas.itemconfig(pool_item["poly_r_id"], fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple, state="normal")
+                                else:
+                                    canvas.itemconfig(pool_item["poly_r_id"], state="normal")
+
+                            # スリット時はストライプ・黒枠不要
                             if pool_item.get("stripe_id") is not None:
-                                canvas.delete(pool_item["stripe_id"])
-                                pool_item["stripe_id"] = None
+                                canvas.itemconfig(pool_item["stripe_id"], state="hidden")
+                            if pool_item.get("border_outer_id") is not None:
+                                canvas.itemconfig(pool_item["border_outer_id"], state="hidden")
+
+                        else:
+                            # 2. 【通常ノーツ / サイドライン / センター芯線 / 装飾なし】
+                            if pool_item.get("poly_r_id") is not None:
+                                canvas.itemconfig(pool_item["poly_r_id"], state="hidden")
+
+                            coords_flat = []
+                            if ch_top > 0.5:
+                                coords_flat.extend((
+                                    x_left_at(y_vis_top) + ch_top, y_vis_top,
+                                    x_right_at(y_vis_top) - ch_top, y_vis_top,
+                                    x_right_at(y_r_start), y_r_start
+                                ))
+                            else:
+                                coords_flat.extend((
+                                    x_left_at(y_vis_top), y_vis_top,
+                                    x_right_at(y_vis_top), y_vis_top
+                                ))
+
+                            for by in active_bends:
+                                coords_flat.extend((x_right_at(by), by))
+
+                            if ch_bot > 0.5:
+                                coords_flat.extend((
+                                    x_right_at(y_r_end), y_r_end,
+                                    x_right_at(y_vis_bot) - ch_bot, y_vis_bot,
+                                    x_left_at(y_vis_bot) + ch_bot, y_vis_bot,
+                                    x_left_at(y_r_end), y_r_end
+                                ))
+                            else:
+                                coords_flat.extend((
+                                    x_right_at(y_vis_bot), y_vis_bot,
+                                    x_left_at(y_vis_bot), y_vis_bot
+                                ))
+
+                            for by in reversed(active_bends):
+                                coords_flat.extend((x_left_at(by), by))
+
+                            if ch_top > 0.5:
+                                coords_flat.extend((x_left_at(y_r_start), y_r_start))
+
+                            # A. 運指エディタ時の外側黒枠
+                            if has_edit_border:
+                                if pool_item.get("border_outer_id") is None:
+                                    bid = canvas.create_polygon(*coords_flat, fill="", outline="#000000", width=outer_border_w, tags=tag_tuple)
+                                    canvas.tag_lower(bid, "anchor_notes_top")
+                                    pool_item["border_outer_id"] = bid
+                                else:
+                                    canvas.coords(pool_item["border_outer_id"], *coords_flat)
+                                    if style_changed:
+                                        canvas.itemconfig(pool_item["border_outer_id"], width=outer_border_w, tags=tag_tuple, state="normal")
+                                    else:
+                                        canvas.itemconfig(pool_item["border_outer_id"], state="normal")
+                            else:
+                                if pool_item.get("border_outer_id") is not None:
+                                    canvas.itemconfig(pool_item["border_outer_id"], state="hidden")
+
+                            # B. ノーツ本体ポリゴン
+                            if pool_item["poly_id"] is None:
+                                cid = canvas.create_polygon(*coords_flat, fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple)
+                                canvas.tag_lower(cid, "anchor_notes_top")
+                                if pool_item.get("border_outer_id") is not None:
+                                    canvas.tag_lower(pool_item["border_outer_id"], cid)
+                                pool_item["poly_id"] = cid
+                            else:
+                                canvas.coords(pool_item["poly_id"], *coords_flat)
+                                if style_changed:
+                                    canvas.itemconfig(pool_item["poly_id"], fill=col_hex, outline=poly_outline, width=poly_outline_w, tags=tag_tuple, state="normal")
+                                else:
+                                    canvas.itemconfig(pool_item["poly_id"], state="normal")
+
+                            # C. レバーON装飾ライン描画
+                            has_deco_stripe = bool(is_lever_on and ("サイドライン" in lever_deco_mode or "センターライン" in lever_deco_mode))
+                            if has_deco_stripe:
+                                is_center_line = ("センターライン" in lever_deco_mode)
+                                expected_type = "line" if is_center_line else "polygon"
+
+                                if pool_item.get("stripe_type") != expected_type:
+                                    if pool_item.get("stripe_id") is not None:
+                                        canvas.delete(pool_item["stripe_id"])
+                                        pool_item["stripe_id"] = None
+                                    pool_item["stripe_type"] = expected_type
+
+                                if is_center_line:
+                                    # センター芯線（全穴・全位置で幅のばらつきをゼロ化し、視認性の良い均一な2pxラインに設定）
+                                    line_pts = [round(x_mid_at(y_vis_top)), y_vis_top]
+                                    for by in active_bends:
+                                        line_pts.extend((round(x_mid_at(by)), by))
+                                    line_pts.extend((round(x_mid_at(y_vis_bot)), y_vis_bot))
+
+                                    line_w = max(2, int(round(2.0 * scale)))
+                                    if pool_item.get("stripe_id") is None:
+                                        sid = canvas.create_line(*line_pts, fill=hi_hex, width=line_w, tags=tag_tuple)
+                                        canvas.tag_lower(sid, "anchor_notes_top")
+                                        if pool_item.get("poly_id") is not None:
+                                            canvas.tag_raise(sid, pool_item["poly_id"])
+                                        pool_item["stripe_id"] = sid
+                                    else:
+                                        canvas.coords(pool_item["stripe_id"], *line_pts)
+                                        if style_changed:
+                                            canvas.itemconfig(pool_item["stripe_id"], fill=hi_hex, width=line_w, tags=tag_tuple, state="normal")
+                                        else:
+                                            canvas.itemconfig(pool_item["stripe_id"], state="normal")
+                                else:
+                                    # サイドライン（明暗適応）
+                                    stripe_flat = []
+                                    stripe_w = min(4.5 * scale, max(2.5, 3.2 * scale))
+                                    if ch_top > 0.5:
+                                        stripe_flat.extend((x_right_at(y_vis_top) - ch_top, y_vis_top,
+                                                            x_right_at(y_r_start), y_r_start))
+                                    else:
+                                        stripe_flat.extend((x_right_at(y_vis_top), y_vis_top))
+
+                                    for by in active_bends:
+                                        stripe_flat.extend((x_right_at(by), by))
+
+                                    if ch_bot > 0.5:
+                                        stripe_flat.extend((x_right_at(y_r_end), y_r_end,
+                                                            x_right_at(y_vis_bot) - ch_bot, y_vis_bot,
+                                                            x_right_at(y_vis_bot) - ch_bot - stripe_w, y_vis_bot,
+                                                            x_right_at(y_r_end) - stripe_w, y_r_end))
+                                    else:
+                                        stripe_flat.extend((x_right_at(y_vis_bot), y_vis_bot,
+                                                            x_right_at(y_vis_bot) - stripe_w, y_vis_bot))
+
+                                    for by in reversed(active_bends):
+                                        stripe_flat.extend((x_right_at(by) - stripe_w, by))
+
+                                    if ch_top > 0.5:
+                                        stripe_flat.extend((x_right_at(y_r_start) - stripe_w, y_r_start,
+                                                            x_right_at(y_vis_top) - ch_top - stripe_w, y_vis_top))
+                                    else:
+                                        stripe_flat.extend((x_right_at(y_vis_top) - stripe_w, y_vis_top))
+
+                                    if pool_item.get("stripe_id") is None:
+                                        sid = canvas.create_polygon(*stripe_flat, fill=hi_hex, outline="", tags=tag_tuple)
+                                        canvas.tag_lower(sid, "anchor_notes_top")
+                                        if pool_item.get("poly_id") is not None:
+                                            canvas.tag_raise(sid, pool_item["poly_id"])
+                                        pool_item["stripe_id"] = sid
+                                    else:
+                                        canvas.coords(pool_item["stripe_id"], *stripe_flat)
+                                        if style_changed:
+                                            canvas.itemconfig(pool_item["stripe_id"], fill=hi_hex, tags=tag_tuple, state="normal")
+                                        else:
+                                            canvas.itemconfig(pool_item["stripe_id"], state="normal")
+                            else:
+                                if pool_item.get("stripe_id") is not None:
+                                    canvas.itemconfig(pool_item["stripe_id"], state="hidden")
                     else:
-                        if pool_item["poly_id"] is not None:
-                            canvas.delete(pool_item["poly_id"])
-                            pool_item["poly_id"] = None
-                        if pool_item.get("border_outer_id") is not None:
-                            canvas.delete(pool_item["border_outer_id"])
-                            pool_item["border_outer_id"] = None
-                        if pool_item.get("stripe_id") is not None:
-                            canvas.delete(pool_item["stripe_id"])
-                            pool_item["stripe_id"] = None
+                        for k_id in ("poly_id", "poly_r_id", "border_outer_id", "stripe_id"):
+                            cid = pool_item.get(k_id)
+                            if cid is not None:
+                                canvas.itemconfig(cid, state="hidden")
 
                     # 落下ノーツ追従音名ラベル（生成時のみ属性設定、落下中はcoords移動のみ）
                     show_note_label = bool(
@@ -936,11 +1101,7 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                         lbl_tags = ("note_label", edit_tag) if edit_tag else ("note_label",)
                         if pool_item["lbl_s1_id"] is None:
                             s1 = canvas.create_text(
-                                label_x - lbl_bw, label_y - lbl_bw, text=lbl_str, fill="#000000",
-                                font=("Meiryo UI", f_lbl_size, "bold"), tags=lbl_tags
-                            )
-                            s2 = canvas.create_text(
-                                label_x + lbl_bw, label_y + lbl_bw, text=lbl_str, fill="#000000",
+                                label_x + 1.0, label_y + 1.0, text=lbl_str, fill="#000000",
                                 font=("Meiryo UI", f_lbl_size, "bold"), tags=lbl_tags
                             )
                             txt = canvas.create_text(
@@ -948,38 +1109,42 @@ def draw_harmonica_canvas(canvas, canvas_bg_color, inst_type, lang_seg_value,
                                 font=("Meiryo UI", f_lbl_size, "bold"), tags=lbl_tags
                             )
                             canvas.tag_lower(s1, "anchor_labels_top")
-                            canvas.tag_lower(s2, "anchor_labels_top")
                             canvas.tag_lower(txt, "anchor_labels_top")
                             pool_item["lbl_s1_id"] = s1
-                            pool_item["lbl_s2_id"] = s2
+                            pool_item["lbl_s2_id"] = None
                             pool_item["lbl_txt_id"] = txt
                         else:
-                            canvas.coords(pool_item["lbl_s1_id"], label_x - lbl_bw, label_y - lbl_bw)
-                            canvas.coords(pool_item["lbl_s2_id"], label_x + lbl_bw, label_y + lbl_bw)
+                            canvas.coords(pool_item["lbl_s1_id"], label_x + 1.0, label_y + 1.0)
                             canvas.coords(pool_item["lbl_txt_id"], label_x, label_y)
                             if style_changed:
-                                canvas.itemconfig(pool_item["lbl_s1_id"], text=lbl_str, tags=lbl_tags)
-                                canvas.itemconfig(pool_item["lbl_s2_id"], text=lbl_str, tags=lbl_tags)
-                                canvas.itemconfig(pool_item["lbl_txt_id"], text=lbl_str, tags=lbl_tags)
+                                canvas.itemconfig(pool_item["lbl_s1_id"], text=lbl_str, font=("Meiryo UI", f_lbl_size, "bold"), tags=lbl_tags, state="normal")
+                                canvas.itemconfig(pool_item["lbl_txt_id"], text=lbl_str, font=("Meiryo UI", f_lbl_size, "bold"), tags=lbl_tags, state="normal")
+                            else:
+                                canvas.itemconfig(pool_item["lbl_s1_id"], state="normal")
+                                canvas.itemconfig(pool_item["lbl_txt_id"], state="normal")
                     else:
                         for lk in ("lbl_s1_id", "lbl_s2_id", "lbl_txt_id"):
-                            if pool_item[lk] is not None:
-                                canvas.delete(pool_item[lk])
-                                pool_item[lk] = None
+                            cid = pool_item.get(lk)
+                            if cid is not None:
+                                canvas.itemconfig(cid, state="hidden")
             
             if len(canvas.note_pool) > len(visible_keys):
+                if not hasattr(canvas, "note_free_pool"): canvas.note_free_pool = []
                 for old_key in list(canvas.note_pool.keys()):
                     if old_key not in visible_keys:
                         pool_item = canvas.note_pool.pop(old_key)
                         for k_id, cid in pool_item.items():
                             if k_id != "style_key" and cid is not None:
-                                canvas.delete(cid)
+                                canvas.itemconfig(cid, state="hidden")
+                        canvas.note_free_pool.append(pool_item)
         else:
-            if canvas.note_pool:
+            if getattr(canvas, "note_pool", None):
+                if not hasattr(canvas, "note_free_pool"): canvas.note_free_pool = []
                 for pool_item in canvas.note_pool.values():
                     for k_id, cid in pool_item.items():
                         if k_id != "style_key" and cid is not None:
-                            canvas.delete(cid)
+                            canvas.itemconfig(cid, state="hidden")
+                    canvas.note_free_pool.append(pool_item)
                 canvas.note_pool.clear()
 
     # 6. 運指変更モード表示枠の差分更新（状態変化時のみ再描画）

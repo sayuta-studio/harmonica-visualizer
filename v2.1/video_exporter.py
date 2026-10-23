@@ -267,7 +267,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
                                          note_opacity_value, midi_notes=None, current_time=0.0, current_bpm=120.0, 
                                          active_pitches=None, show_glow_effect=True,
                                          color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                         use_skin=True, trajectory_mode="3段階 (練習標準)",
+                                         use_skin=True, trajectory_mode="垂直落下 (穴直上)",
                                          show_lookahead=True, show_grid4=True, measures_timeline=None,
                                          use_ring=True, note_speed_ratio=1.0,
                                          bg_image_path=None, bg_brightness=1.0,
@@ -615,7 +615,7 @@ def draw_harmonica_pillow_frame_exporter(width, height, scale, canvas_bg_color, 
         m_line_rgb = m_line_rgba[:3]
         m_font_size = max(6, int(8 * scale))
         line_w = max(1, int(1 * scale))
-        pixels_per_second = (220.0 * current_bpm * max(0.1, float(note_speed_ratio))) / 240.0
+        pixels_per_second = 2.0 * current_bpm * max(0.1, float(note_speed_ratio))
         if is_straight_mode:
             x_l = X_start_draw
             x_r = X_start_draw + total_width
@@ -914,13 +914,14 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
                                  res_mode, inst_type, notation_mode, bg_color, 
                                  is_hole_num_on, is_legend_on, is_notes_on, is_grid_on, is_glow_on, note_opacity,
                                  parent_window, color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                 aspect_ratio="16:9", use_skin=True, trajectory_mode="3段階 (練習標準)",
+                                 aspect_ratio="16:9", use_skin=True, trajectory_mode="垂直落下 (穴直上)",
                                  show_lookahead=True, show_grid4=True, measures_timeline=None,
                                  use_ring=True, note_speed_ratio=1.0,
                                  title_template="なし", video_title="", video_credit="",
                                  bg_image_path=None, bg_brightness=1.0,
                                  bg_fit_mode="中央トリミング (画面いっぱい)",
-                                 bg_rotation="0° (自動補正)"):
+                                 bg_rotation="0° (自動補正)",
+                                 lever_deco_mode="センターライン (芯線)"):
     if not PILLOW_AVAILABLE:
         return
 
@@ -998,7 +999,8 @@ def execute_single_frame_preview(midi_notes, current_bpm, current_time,
             trajectory_mode=trajectory_mode,
             lang_seg_value=notation_mode,
             show_lookahead=show_lookahead,
-            note_speed_ratio=note_speed_ratio
+            note_speed_ratio=note_speed_ratio,
+            lever_deco_mode=lever_deco_mode
         )
 
     bgr_notes_part = apply_title_overlay_bgr(
@@ -1067,9 +1069,9 @@ def _get_note_label_stamp(text_str, font_size, bw):
 def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, midi_notes, 
                                    current_time, current_bpm, active_pitches, note_opacity_value,
                                    color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
-                                   aspect_ratio="16:9", trajectory_mode="3段階 (練習標準)",
+                                   aspect_ratio="16:9", trajectory_mode="垂直落下 (穴直上)",
                                    lang_seg_value="CDE", show_lookahead=True,
-                                   note_speed_ratio=1.0):
+                                   note_speed_ratio=1.0, lever_deco_mode="センターライン (芯線)"):
     """
     OpenCVの LINE_AA を用いて、斜め面取りされたソリッドでシャープな幾何学多角形ノーツを合成描画。
     「3段階 (練習標準)」「垂直落下 (穴直上)」「2段階 (ビジュアル)」の3モードすべてに対応。
@@ -1093,7 +1095,7 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
     is_straight_mode = ("垂直落下" in str(trajectory_mode))
 
     _, _, _, X_shift_notes = get_layout_params(inst_type, scale)
-    pixels_per_second = (220.0 * current_bpm * max(0.1, float(note_speed_ratio))) / 240.0
+    pixels_per_second = 2.0 * current_bpm * max(0.1, float(note_speed_ratio))
     px_per_sec_s = pixels_per_second * scale
     note_labels_to_draw = []
     polys_to_draw = []
@@ -1184,91 +1186,179 @@ def apply_opencv_vector_notes_draw(bgr_frame, width, height, scale, inst_type, m
             y_r_end = y_vis_bot - ch_bot
             active_bends = [by for by in bend_ys if y_r_start < by < y_r_end]
 
-            pts_accum = []
-            # 上端キャップ
-            if ch_top > 0.5:
-                pts_accum.append([int(round(x_left_at(y_vis_top) + ch_top)), int(round(y_vis_top))])
-                pts_accum.append([int(round(x_right_at(y_vis_top) - ch_top)), int(round(y_vis_top))])
-                pts_accum.append([int(round(x_right_at(y_r_start))), int(round(y_r_start))])
+            is_lever_on = (fing.get("lever") in ("ON", "押す", True))
+            use_split_slit = bool(is_lever_on and "スリット" in lever_deco_mode)
+
+            def x_mid_at(yv):
+                return (x_left_at(yv) + x_right_at(yv)) / 2.0
+
+            if use_split_slit:
+                # 1. 【センター半割 (透過スリット)】: 左右2本のレール状ポリゴンに分割描画
+                slit_w = max(1.5, min(2.8 * scale, 3.2))
+
+                # 左片
+                left_accum = []
+                if ch_top > 0.5:
+                    left_accum.append([int(round(x_left_at(y_vis_top) + ch_top)), int(round(y_vis_top))])
+                    left_accum.append([int(round(x_mid_at(y_vis_top) - slit_w / 2.0)), int(round(y_vis_top))])
+                    left_accum.append([int(round(x_mid_at(y_r_start) - slit_w / 2.0)), int(round(y_r_start))])
+                else:
+                    left_accum.append([int(round(x_left_at(y_vis_top))), int(round(y_vis_top))])
+                    left_accum.append([int(round(x_mid_at(y_vis_top) - slit_w / 2.0)), int(round(y_vis_top))])
+
+                for by in active_bends:
+                    left_accum.append([int(round(x_mid_at(by) - slit_w / 2.0)), int(round(by))])
+
+                if ch_bot > 0.5:
+                    left_accum.append([int(round(x_mid_at(y_r_end) - slit_w / 2.0)), int(round(y_r_end))])
+                    left_accum.append([int(round(x_mid_at(y_vis_bot) - slit_w / 2.0)), int(round(y_vis_bot))])
+                    left_accum.append([int(round(x_left_at(y_vis_bot) + ch_bot)), int(round(y_vis_bot))])
+                    left_accum.append([int(round(x_left_at(y_r_end))), int(round(y_r_end))])
+                else:
+                    left_accum.append([int(round(x_mid_at(y_vis_bot) - slit_w / 2.0)), int(round(y_vis_bot))])
+                    left_accum.append([int(round(x_left_at(y_vis_bot))), int(round(y_vis_bot))])
+
+                for by in reversed(active_bends):
+                    left_accum.append([int(round(x_left_at(by))), int(round(by))])
+
+                if ch_top > 0.5:
+                    left_accum.append([int(round(x_left_at(y_r_start))), int(round(y_r_start))])
+
+                # 右片
+                right_accum = []
+                if ch_top > 0.5:
+                    right_accum.append([int(round(x_mid_at(y_vis_top) + slit_w / 2.0)), int(round(y_vis_top))])
+                    right_accum.append([int(round(x_right_at(y_vis_top) - ch_top)), int(round(y_vis_top))])
+                    right_accum.append([int(round(x_right_at(y_r_start))), int(round(y_r_start))])
+                else:
+                    right_accum.append([int(round(x_mid_at(y_vis_top) + slit_w / 2.0)), int(round(y_vis_top))])
+                    right_accum.append([int(round(x_right_at(y_vis_top))), int(round(y_vis_top))])
+
+                for by in active_bends:
+                    right_accum.append([int(round(x_right_at(by))), int(round(by))])
+
+                if ch_bot > 0.5:
+                    right_accum.append([int(round(x_right_at(y_r_end))), int(round(y_r_end))])
+                    right_accum.append([int(round(x_right_at(y_vis_bot) - ch_bot)), int(round(y_vis_bot))])
+                    right_accum.append([int(round(x_mid_at(y_vis_bot) + slit_w / 2.0)), int(round(y_vis_bot))])
+                    right_accum.append([int(round(x_mid_at(y_r_end) + slit_w / 2.0)), int(round(y_r_end))])
+                else:
+                    right_accum.append([int(round(x_right_at(y_vis_bot))), int(round(y_vis_bot))])
+                    right_accum.append([int(round(x_mid_at(y_vis_bot) + slit_w / 2.0)), int(round(y_vis_bot))])
+
+                for by in reversed(active_bends):
+                    right_accum.append([int(round(x_mid_at(by) + slit_w / 2.0)), int(round(by))])
+
+                if ch_top > 0.5:
+                    right_accum.append([int(round(x_mid_at(y_r_start) + slit_w / 2.0)), int(round(y_r_start))])
+
+                if len(left_accum) >= 3 and len(right_accum) >= 3:
+                    pts_l = np.array(left_accum, dtype=np.int32)
+                    pts_r = np.array(right_accum, dtype=np.int32)
+                    polys_to_draw.append((pts_l, col_rgb))
+                    polys_to_draw.append((pts_r, col_rgb))
+                    px_min = int(min(pts_l[:, 0].min(), pts_r[:, 0].min())) - 2
+                    px_max = int(max(pts_l[:, 0].max(), pts_r[:, 0].max())) + 3
+                    py_min = int(min(pts_l[:, 1].min(), pts_r[:, 1].min())) - 2
+                    py_max = int(max(pts_l[:, 1].max(), pts_r[:, 1].max())) + 3
+                    if px_min < min_x: min_x = px_min
+                    if px_max > max_x: max_x = px_max
+                    if py_min < min_y: min_y = py_min
+                    if py_max > max_y: max_y = py_max
+
             else:
-                pts_accum.append([int(round(x_left_at(y_vis_top))), int(round(y_vis_top))])
-                pts_accum.append([int(round(x_right_at(y_vis_top))), int(round(y_vis_top))])
+                # 2. 【通常ノーツ / サイドライン / センター芯線 / 装飾なし】
+                pts_accum = []
+                if ch_top > 0.5:
+                    pts_accum.append([int(round(x_left_at(y_vis_top) + ch_top)), int(round(y_vis_top))])
+                    pts_accum.append([int(round(x_right_at(y_vis_top) - ch_top)), int(round(y_vis_top))])
+                    pts_accum.append([int(round(x_right_at(y_r_start))), int(round(y_r_start))])
+                else:
+                    pts_accum.append([int(round(x_left_at(y_vis_top))), int(round(y_vis_top))])
+                    pts_accum.append([int(round(x_right_at(y_vis_top))), int(round(y_vis_top))])
 
-            # 右辺の屈曲点（上から下）
-            for by in active_bends:
-                pts_accum.append([int(round(x_right_at(by))), int(round(by))])
+                for by in active_bends:
+                    pts_accum.append([int(round(x_right_at(by))), int(round(by))])
 
-            # 下端キャップ
-            if ch_bot > 0.5:
-                pts_accum.append([int(round(x_right_at(y_r_end))), int(round(y_r_end))])
-                pts_accum.append([int(round(x_right_at(y_vis_bot) - ch_bot)), int(round(y_vis_bot))])
-                pts_accum.append([int(round(x_left_at(y_vis_bot) + ch_bot)), int(round(y_vis_bot))])
-                pts_accum.append([int(round(x_left_at(y_r_end))), int(round(y_r_end))])
-            else:
-                pts_accum.append([int(round(x_right_at(y_vis_bot))), int(round(y_vis_bot))])
-                pts_accum.append([int(round(x_left_at(y_vis_bot))), int(round(y_vis_bot))])
+                if ch_bot > 0.5:
+                    pts_accum.append([int(round(x_right_at(y_r_end))), int(round(y_r_end))])
+                    pts_accum.append([int(round(x_right_at(y_vis_bot) - ch_bot)), int(round(y_vis_bot))])
+                    pts_accum.append([int(round(x_left_at(y_vis_bot) + ch_bot)), int(round(y_vis_bot))])
+                    pts_accum.append([int(round(x_left_at(y_r_end))), int(round(y_r_end))])
+                else:
+                    pts_accum.append([int(round(x_right_at(y_vis_bot))), int(round(y_vis_bot))])
+                    pts_accum.append([int(round(x_left_at(y_vis_bot))), int(round(y_vis_bot))])
 
-            # 左辺の屈曲点（下から上）
-            for by in reversed(active_bends):
-                pts_accum.append([int(round(x_left_at(by))), int(round(by))])
+                for by in reversed(active_bends):
+                    pts_accum.append([int(round(x_left_at(by))), int(round(by))])
 
-            if ch_top > 0.5:
-                pts_accum.append([int(round(x_left_at(y_r_start))), int(round(y_r_start))])
+                if ch_top > 0.5:
+                    pts_accum.append([int(round(x_left_at(y_r_start))), int(round(y_r_start))])
 
-            if len(pts_accum) >= 3:
-                pts = np.array(pts_accum, dtype=np.int32)
-                polys_to_draw.append((pts, col_rgb))
-                px_min = int(pts[:, 0].min()) - 2
-                px_max = int(pts[:, 0].max()) + 3
-                py_min = int(pts[:, 1].min()) - 2
-                py_max = int(pts[:, 1].max()) + 3
-                if px_min < min_x: min_x = px_min
-                if px_max > max_x: max_x = px_max
-                if py_min < min_y: min_y = py_min
-                if py_max > max_y: max_y = py_max
+                if len(pts_accum) >= 3:
+                    pts = np.array(pts_accum, dtype=np.int32)
+                    polys_to_draw.append((pts, col_rgb))
+                    px_min = int(pts[:, 0].min()) - 2
+                    px_max = int(pts[:, 0].max()) + 3
+                    py_min = int(pts[:, 1].min()) - 2
+                    py_max = int(pts[:, 1].max()) + 3
+                    if px_min < min_x: min_x = px_min
+                    if px_max > max_x: max_x = px_max
+                    if py_min < min_y: min_y = py_min
+                    if py_max > max_y: max_y = py_max
 
-                # レバーON時：右端同系色ハイライトストライプ（白のときは黒ライン）
-                is_lever_on = (fing.get("lever") in ("ON", "押す", True))
-                if is_lever_on:
-                    stripe_w = min(4.5 * scale, max(2.5, 3.2 * scale))
-                    cur_hex = color_blow_hex if fing["action"] == "吹" else color_draw_hex
-                    hi_rgb = get_lever_highlight_rgb(cur_hex)
-                    stripe_accum = []
-                    # 右上角（面取り開始または右上端）
-                    if ch_top > 0.5:
-                        stripe_accum.append([int(round(x_right_at(y_vis_top) - ch_top)), int(round(y_vis_top))])
-                        stripe_accum.append([int(round(x_right_at(y_r_start))), int(round(y_r_start))])
-                    else:
-                        stripe_accum.append([int(round(x_right_at(y_vis_top))), int(round(y_vis_top))])
+                    # 装飾ライン描画
+                    has_deco = bool(is_lever_on and ("サイドライン" in lever_deco_mode or "センターライン" in lever_deco_mode))
+                    if has_deco:
+                        cur_hex = color_blow_hex if fing["action"] == "吹" else color_draw_hex
+                        hi_rgb = get_lever_highlight_rgb(cur_hex)
+                        stripe_accum = []
+                        if "センターライン" in lever_deco_mode:
+                            cx_top = int(round(x_mid_at(y_vis_top)))
+                            cx_bot = int(round(x_mid_at(y_vis_bot)))
+                            stripe_accum.append([cx_top - 1, int(round(y_vis_top))])
+                            stripe_accum.append([cx_top + 1, int(round(y_vis_top))])
+                            for by in active_bends:
+                                cx_by = int(round(x_mid_at(by)))
+                                stripe_accum.append([cx_by + 1, int(round(by))])
+                            stripe_accum.append([cx_bot + 1, int(round(y_vis_bot))])
+                            stripe_accum.append([cx_bot - 1, int(round(y_vis_bot))])
+                            for by in reversed(active_bends):
+                                cx_by = int(round(x_mid_at(by)))
+                                stripe_accum.append([cx_by - 1, int(round(by))])
+                        else:
+                            # サイドライン（明暗適応）
+                            stripe_w = min(4.5 * scale, max(2.5, 3.2 * scale))
+                            if ch_top > 0.5:
+                                stripe_accum.append([int(round(x_right_at(y_vis_top) - ch_top)), int(round(y_vis_top))])
+                                stripe_accum.append([int(round(x_right_at(y_r_start))), int(round(y_r_start))])
+                            else:
+                                stripe_accum.append([int(round(x_right_at(y_vis_top))), int(round(y_vis_top))])
 
-                    # 右辺の屈曲点（上から下）
-                    for by in active_bends:
-                        stripe_accum.append([int(round(x_right_at(by))), int(round(by))])
+                            for by in active_bends:
+                                stripe_accum.append([int(round(x_right_at(by))), int(round(by))])
 
-                    # 右下角（面取り）
-                    if ch_bot > 0.5:
-                        stripe_accum.append([int(round(x_right_at(y_r_end))), int(round(y_r_end))])
-                        stripe_accum.append([int(round(x_right_at(y_vis_bot) - ch_bot)), int(round(y_vis_bot))])
-                        stripe_accum.append([int(round(max(x_left_at(y_vis_bot) + ch_bot, x_right_at(y_vis_bot) - ch_bot - stripe_w))), int(round(y_vis_bot))])
-                        stripe_accum.append([int(round(max(x_left_at(y_r_end), x_right_at(y_r_end) - stripe_w))), int(round(y_r_end))])
-                    else:
-                        stripe_accum.append([int(round(x_right_at(y_vis_bot))), int(round(y_vis_bot))])
-                        stripe_accum.append([int(round(max(x_left_at(y_vis_bot), x_right_at(y_vis_bot) - stripe_w))), int(round(y_vis_bot))])
+                            if ch_bot > 0.5:
+                                stripe_accum.append([int(round(x_right_at(y_r_end))), int(round(y_r_end))])
+                                stripe_accum.append([int(round(x_right_at(y_vis_bot) - ch_bot)), int(round(y_vis_bot))])
+                                stripe_accum.append([int(round(max(x_left_at(y_vis_bot) + ch_bot, x_right_at(y_vis_bot) - ch_bot - stripe_w))), int(round(y_vis_bot))])
+                                stripe_accum.append([int(round(max(x_left_at(y_r_end), x_right_at(y_r_end) - stripe_w))), int(round(y_r_end))])
+                            else:
+                                stripe_accum.append([int(round(x_right_at(y_vis_bot))), int(round(y_vis_bot))])
+                                stripe_accum.append([int(round(max(x_left_at(y_vis_bot), x_right_at(y_vis_bot) - stripe_w))), int(round(y_vis_bot))])
 
-                    # 内側を上へ遡る（下から上）
-                    for by in reversed(active_bends):
-                        stripe_accum.append([int(round(max(x_left_at(by), x_right_at(by) - stripe_w))), int(round(by))])
+                            for by in reversed(active_bends):
+                                stripe_accum.append([int(round(max(x_left_at(by), x_right_at(by) - stripe_w))), int(round(by))])
 
-                    # 内側上端
-                    if ch_top > 0.5:
-                        stripe_accum.append([int(round(max(x_left_at(y_r_start), x_right_at(y_r_start) - stripe_w))), int(round(y_r_start))])
-                        stripe_accum.append([int(round(max(x_left_at(y_vis_top) + ch_top, x_right_at(y_vis_top) - ch_top - stripe_w))), int(round(y_vis_top))])
-                    else:
-                        stripe_accum.append([int(round(max(x_left_at(y_vis_top), x_right_at(y_vis_top) - stripe_w))), int(round(y_vis_top))])
+                            if ch_top > 0.5:
+                                stripe_accum.append([int(round(max(x_left_at(y_r_start), x_right_at(y_r_start) - stripe_w))), int(round(y_r_start))])
+                                stripe_accum.append([int(round(max(x_left_at(y_vis_top) + ch_top, x_right_at(y_vis_top) - ch_top - stripe_w))), int(round(y_vis_top))])
+                            else:
+                                stripe_accum.append([int(round(max(x_left_at(y_vis_top), x_right_at(y_vis_top) - stripe_w))), int(round(y_vis_top))])
 
-                    if len(stripe_accum) >= 3:
-                        pts_s = np.array(stripe_accum, dtype=np.int32)
-                        stripes_to_draw.append((pts_s, hi_rgb))
+                        if len(stripe_accum) >= 3:
+                            pts_s = np.array(stripe_accum, dtype=np.int32)
+                            stripes_to_draw.append((pts_s, hi_rgb))
 
             # 案A：落下ノーツ追従音名ラベルの座標収集
             if show_lookahead and lang_seg_value != "なし" and (y_vis_bot - y_vis_top >= 6.0 * scale) and y_vis_bot >= 8.0 * scale:
@@ -1448,7 +1538,7 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               ticks_per_beat=480, fps_mode="60 FPS",
                               color_blow_hex="#FF9900", color_draw_hex="#00FFFF",
                               aspect_ratio="16:9", use_skin=True, controller=None,
-                              trajectory_mode="3段階 (練習標準)",
+                              trajectory_mode="垂直落下 (穴直上)",
                               show_lookahead=True, show_grid4=True, measures_timeline=None,
                               use_ring=True, note_speed_ratio=1.0,
                               export_range="全曲", intro_sec=0.0, outro_sec=2.0,
@@ -1462,7 +1552,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                               fade_in_title_mode="フェード中もタイトル表示",
                               reverb_enabled=False,
                               reverb_type="ルーム (自然な部屋鳴り)",
-                              reverb_wet_pct=35):
+                              reverb_wet_pct=35,
+                              lever_deco_mode="センターライン (芯線)"):
     if not PILLOW_AVAILABLE:
         status_label.configure(text="エラー: 描画ライブラリが不足しています", text_color="#ff5555")
         return
@@ -1627,7 +1718,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                         trajectory_mode=trajectory_mode,
                         lang_seg_value=notation_mode,
                         show_lookahead=show_lookahead,
-                        note_speed_ratio=note_speed_ratio
+                        note_speed_ratio=note_speed_ratio,
+                        lever_deco_mode=lever_deco_mode
                     )
 
                 in_alpha = (
@@ -1717,12 +1809,16 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 count_in_measures_ref = ctrl.midi_engine.count_in_measures if is_count_in else 0
                 tick_to_sec_ref = ctrl.midi_engine.tick_to_sec
                 part_play_mode_ref = getattr(ctrl.midi_engine, "part_play_mode", "全パート再生")
+                time_sig_num_ref = getattr(ctrl.midi_engine, "time_sig_num", 4)
+                time_sig_den_ref = getattr(ctrl.midi_engine, "time_sig_den", 4)
             else:
                 ticks_per_beat_ref = ticks_per_beat
                 metronome_pattern_ref = "標準（頭拍強調）"
                 count_in_measures_ref = 1 if is_count_in else 0
                 tick_to_sec_ref = None
                 part_play_mode_ref = "全パート再生"
+                time_sig_num_ref = 4
+                time_sig_den_ref = 4
 
             synthesize_midi_to_wav(
                 midi_notes=exp_notes,
@@ -1731,8 +1827,8 @@ def execute_video_export_core(midi_notes, current_bpm, max_duration, is_count_in
                 is_count_in=is_count_in,
                 is_metro=is_metro,
                 output_wav_path=temp_audio_path,
-                time_sig_num=4,
-                time_sig_den=4,
+                time_sig_num=time_sig_num_ref,
+                time_sig_den=time_sig_den_ref,
                 count_in_measures=count_in_measures_ref,
                 measures_timeline=exp_measures,
                 metronome_pattern=metronome_pattern_ref,

@@ -9,6 +9,69 @@
 import tkinter as tk
 import customtkinter as ctk
 
+class ToolTip:
+    """ウィジェットにマウスホバーした際にショートカットや説明をポップアップ表示する軽量ツールチップ"""
+    def __init__(self, widget, text, delay_ms=400):
+        self.widget = widget
+        self.text = text
+        self.delay_ms = delay_ms
+        self.tip_window = None
+        self.after_id = None
+        try:
+            self.widget.bind("<Enter>", self.schedule_tip, add="+")
+            self.widget.bind("<Leave>", self.hide_tip, add="+")
+            self.widget.bind("<ButtonPress>", self.hide_tip, add="+")
+        except Exception:
+            pass
+
+    def schedule_tip(self, event=None):
+        self.unschedule_tip()
+        try:
+            self.after_id = self.widget.after(self.delay_ms, self.show_tip)
+        except Exception:
+            pass
+
+    def unschedule_tip(self):
+        if self.after_id:
+            try:
+                self.widget.after_cancel(self.after_id)
+            except Exception:
+                pass
+            self.after_id = None
+
+    def show_tip(self, event=None):
+        if self.tip_window or not self.text:
+            return
+        try:
+            x = self.widget.winfo_rootx() + (self.widget.winfo_width() // 2) - 10
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+            self.tip_window = tw = tk.Toplevel(self.widget)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x}+{y}")
+            tw.attributes("-topmost", True)
+            frame = tk.Frame(tw, background="#181818", highlightbackground="#00ffcc", highlightthickness=1)
+            frame.pack()
+            label = tk.Label(
+                frame, text=self.text, justify="left",
+                background="#181818", foreground="#ffffff",
+                font=("Meiryo", 9, "bold"), padx=6, pady=3
+            )
+            label.pack()
+        except Exception:
+            self.hide_tip()
+
+    def hide_tip(self, event=None):
+        self.unschedule_tip()
+        if self.tip_window:
+            try:
+                self.tip_window.destroy()
+            except Exception:
+                pass
+            self.tip_window = None
+
+def create_tooltip(widget, text):
+    return ToolTip(widget, text)
+
 class HarmonicaAppGUI(ctk.CTkFrame):
     def __init__(self, parent, controller):
         """
@@ -55,6 +118,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             return ctk.CTkLabel(parent, text="|", text_color="#333333", font=self.f_bold)
 
         # ----------------------------------------------------------------------
+        # ----------------------------------------------------------------------
         # ■ 1行目：ファイル読込 ＋ パート選択 ＋ 小節ジャンプ ＋ 速度%
         # ----------------------------------------------------------------------
         self.file_btn = ctk.CTkButton(
@@ -63,15 +127,9 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             command=self.controller.on_open_file
         )
         self.file_btn.pack(side="left", padx=(0, 6))
+        create_tooltip(self.file_btn, "MIDIファイルを開く (ドラッグ＆ドロップ対応)")
 
-        self.file_label_box = ctk.CTkFrame(self.row1, width=240, height=26, fg_color="#111111", corner_radius=6)
-        self.file_label_box.pack(side="left", padx=(0, 6))
-        self.file_label_box.pack_propagate(False)
-
-        self.file_label = ctk.CTkLabel(self.file_label_box, text="demo.mid", text_color="#38bdf8", font=self.f_bold, anchor="w")
-        self.file_label.pack(side="left", fill="both", expand=True, padx=8)
-
-        # 右側コントロール群
+        # 右側コントロール群（右寄せで先行配置し、中央のタイトル欄が全余白を自動占有）
         self.row1_right = ctk.CTkFrame(self.row1, fg_color="transparent")
         self.row1_right.pack(side="right", padx=(0, 4))
 
@@ -82,6 +140,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             command=self.controller.open_part_select_dialog
         )
         self.part_select_btn.pack(side="left", padx=(0, 4))
+        create_tooltip(self.part_select_btn, "演奏パートと伴奏パートの割り当てを変更")
 
         self.part_play_mode_menu = ctk.CTkOptionMenu(
             self.row1_right, values=["全パート再生", "主旋律ソロ", "伴奏のみ(カラオケ)"],
@@ -116,6 +175,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         self.bpm_minus_btn = ctk.CTkButton(self.row1_right, text="-5%", width=34, height=26, font=self.f_bold, fg_color="#333333", hover_color="#444444", command=lambda: self.controller.step_speed_percent(-5))
         self.bpm_minus_btn.pack(side="left", padx=1)
+        create_tooltip(self.bpm_minus_btn, "速度 -5% (↓キー)")
 
         self.bpm_entry = ctk.CTkEntry(self.row1_right, width=42, height=26, font=self.f_norm, justify="center")
         self.bpm_entry.insert(0, "100")
@@ -125,26 +185,59 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         self.bpm_plus_btn = ctk.CTkButton(self.row1_right, text="+5%", width=34, height=26, font=self.f_bold, fg_color="#333333", hover_color="#444444", command=lambda: self.controller.step_speed_percent(5))
         self.bpm_plus_btn.pack(side="left", padx=1)
+        create_tooltip(self.bpm_plus_btn, "速度 +5% (↑キー)")
 
         self.default_bpm_btn = ctk.CTkButton(self.row1_right, text="100%", width=42, height=26, font=self.f_norm, fg_color="#2b5b84", hover_color="#1f4361", command=self.controller.reset_bpm)
         self.default_bpm_btn.pack(side="left", padx=(2, 0))
+        create_tooltip(self.default_bpm_btn, "原曲速度 (100%) にリセット")
+
+        # 🚀【ウィンドウ連動・自動伸縮タイトル枠】：左端と右端の全余白を画面幅・最大化に合わせて100%自動伸縮
+        self.file_label_box = ctk.CTkFrame(self.row1, height=26, fg_color="#111111", corner_radius=6)
+        self.file_label_box.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.file_label_box.pack_propagate(False)
+
+        self.file_label = ctk.CTkLabel(self.file_label_box, text="demo.mid", text_color="#38bdf8", font=self.f_bold, anchor="w")
+        self.file_label.pack(side="left", fill="both", expand=True, padx=8)
+        self.file_label_tooltip = create_tooltip(self.file_label, "demo.mid")
+
+        self.file_label_box.bind("<Configure>", self._on_file_box_resize)
 
         # ----------------------------------------------------------------------
-        # ■ 2行目：トランスポート（再生・一時停止・停止） ➔ シーク ➔ LCD表示
+        # ■ 2行目：トランスポート（再生/一時停止・停止・録音） ➔ シーク ➔ LCD表示
         # ----------------------------------------------------------------------
-        self.play_btn = ctk.CTkButton(self.row2, text="▶ 再生", width=75, height=26, font=self.f_jp_bold, fg_color="#2b8c54", hover_color="#1f6b3e", command=self.controller.on_play)
+        # 🚀【再生・一時停止の統合】：Spaceキーと連動し、1ボタンで再生/一時停止をスマート切替
+        self.play_btn = ctk.CTkButton(
+            self.row2, text="▶ 再生", width=96, height=26, font=self.f_jp_bold,
+            fg_color="#2b8c54", hover_color="#1f6b3e",
+            command=self.controller.on_play_pause_toggle
+        )
         self.play_btn.pack(side="left", padx=2)
+        self.play_btn_tooltip = create_tooltip(self.play_btn, "再生 / 一時停止 (Space / テンキー Enter)")
 
-        self.pause_btn = ctk.CTkButton(self.row2, text="⏸ 一時停止", width=75, height=26, font=self.f_jp_bold, fg_color="#d97706", hover_color="#b45309", command=self.controller.on_pause)
-        self.pause_btn.pack(side="left", padx=2)
+        self.pause_btn = None  # 再生ボタンと統合（互換性保持用ダミー）
 
-        self.stop_btn = ctk.CTkButton(self.row2, text="■ 停止", width=75, height=26, font=self.f_jp_bold, fg_color="#dc2626", hover_color="#b91c1c", command=self.controller.on_stop)
-        self.stop_btn.pack(side="left", padx=(2, 8))
+        self.stop_btn = ctk.CTkButton(
+            self.row2, text="■ 停止", width=68, height=26, font=self.f_jp_bold,
+            fg_color="#dc2626", hover_color="#b91c1c",
+            command=self.controller.on_stop
+        )
+        self.stop_btn.pack(side="left", padx=2)
+        self.stop_btn_tooltip = create_tooltip(self.stop_btn, "停止 (Esc / テンキー 0)")
+
+        # 🚀【新設配置】：上段停止ボタンの隣にDAW準拠のワンクリック録音ボタンを移設配備
+        record_cmd = getattr(self.controller, "on_record_toggle", self.controller.on_play)
+        self.record_btn = ctk.CTkButton(
+            self.row2, text="🔴 録音", width=96, height=26, font=self.f_jp_bold,
+            fg_color="#991b1b", hover_color="#dc2626",
+            command=record_cmd
+        )
+        self.record_btn.pack(side="left", padx=(2, 8))
+        self.record_btn_tooltip = create_tooltip(self.record_btn, "ワンクリック録音 (R / テンキー *)")
 
         create_sep(self.row2).pack(side="left", padx=4)
 
         # シークスライダー
-        self.seek_label = ctk.CTkLabel(self.row2, text="00:00 / 00:00", font=("Courier New", 11, "bold"))
+        self.seek_label = ctk.CTkLabel(self.row2, text=" 00:00 /  00:00", width=132, anchor="w", font=("Courier New", 11, "bold"))
         self.seek_label.pack(side="left", padx=(4, 6))
 
         self.seek_slider = ctk.CTkSlider(self.row2, from_=0, to=100, command=self.controller.on_seek_drag)
@@ -182,19 +275,8 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         self.lbl_lcd_bpm.pack(side="left", padx=(6, 2))
 
         # ----------------------------------------------------------------------
-        # ■ 3行目：🔴 録音ボタン ＋ メトロノーム ＋ A-Bループ ＋ 落下速度
+        # ■ 3行目：メトロノーム ＋ カウントイン ＋ A-Bループ ＋ 落下速度（練習専用ストリップ）
         # ----------------------------------------------------------------------
-        # 🚀【新設】：再生ボタンの真下に配置されたワンクリック録音ボタン
-        record_cmd = getattr(self.controller, "on_record_toggle", self.controller.on_play)
-        self.record_btn = ctk.CTkButton(
-            self.row3, text="🔴 録音", width=75, height=26, font=self.f_jp_bold,
-            fg_color="#991b1b", hover_color="#dc2626",
-            command=record_cmd
-        )
-        self.record_btn.pack(side="left", padx=2)
-
-        create_sep(self.row3).pack(side="left", padx=6)
-
         self.metro_lbl_title = ctk.CTkLabel(self.row3, text="メトロノーム:", text_color="#aaaaaa", font=self.f_jp_bold)
         self.metro_lbl_title.pack(side="left", padx=(0, 4))
         
@@ -227,9 +309,11 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         # ABループ有効トグルスイッチ ＆ A点・B点小節指定
         self.cb_loop = ctk.CTkSwitch(self.row3, text="A-Bループ", font=self.f_jp_bold, command=self.controller.on_loop_toggle)
         self.cb_loop.pack(side="left", padx=(0, 6))
+        create_tooltip(self.cb_loop, "A-Bループ切替 (Lキー)")
 
         self.btn_set_a = ctk.CTkButton(self.row3, text="A点", width=46, height=26, font=self.f_jp_bold, command=self.controller.set_loop_a_at_current)
         self.btn_set_a.pack(side="left", padx=1)
+        create_tooltip(self.btn_set_a, "現在位置をA点に設定 (Aキー)")
         
         self.loop_a_entry = ctk.CTkEntry(self.row3, width=36, height=26, font=self.f_norm, justify="center")
         self.loop_a_entry.insert(0, "1")
@@ -244,6 +328,7 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         self.btn_set_b = ctk.CTkButton(self.row3, text="B点", width=46, height=26, font=self.f_jp_bold, command=self.controller.set_loop_b_at_current)
         self.btn_set_b.pack(side="left", padx=1)
+        create_tooltip(self.btn_set_b, "現在位置をB点に設定 (Bキー)")
 
         self.loop_b_entry = ctk.CTkEntry(self.row3, width=36, height=26, font=self.f_norm, justify="center")
         self.loop_b_entry.insert(0, "12")
@@ -753,10 +838,10 @@ class HarmonicaAppGUI(ctk.CTkFrame):
         traj_row.pack(fill="x", padx=12, pady=2)
         ctk.CTkLabel(traj_row, text="ノーツ軌道:", font=self.f_jp_bold, text_color="#aaaaaa", width=80, anchor="w").pack(side="left")
         self.trajectory_menu = ctk.CTkOptionMenu(
-            traj_row, values=["3段階 (練習標準)", "垂直落下 (穴直上)", "2段階 (ビジュアル)"],
+            traj_row, values=["垂直落下 (穴直上)", "3段階 (練習標準)", "2段階 (ビジュアル)"],
             height=24, font=self.f_jp_bold, dropdown_font=self.f_jp_norm, command=self.controller.on_setting_changed
         )
-        self.trajectory_menu.set("3段階 (練習標準)")
+        self.trajectory_menu.set("垂直落下 (穴直上)")
         self.trajectory_menu.pack(side="right", fill="x", expand=True)
 
         self.theme_color_frame = ctk.CTkFrame(self.design_color_group, fg_color="transparent")
@@ -775,6 +860,17 @@ class HarmonicaAppGUI(ctk.CTkFrame):
             self.theme_color_frame, text="吸色..", width=58, height=24, font=self.f_jp_bold, command=self.controller.choose_color_draw
         )
         self.btn_color_draw.pack(side="right", padx=(2, 0))
+
+        lever_deco_row = ctk.CTkFrame(self.design_color_group, fg_color="transparent")
+        lever_deco_row.pack(fill="x", padx=12, pady=2)
+        ctk.CTkLabel(lever_deco_row, text="半音ノーツ:", font=self.f_jp_bold, text_color="#aaaaaa", width=80, anchor="w").pack(side="left")
+        self.lever_deco_menu = ctk.CTkOptionMenu(
+            lever_deco_row,
+            values=["センターライン (芯線)", "センター半割 (スリット)", "サイドライン (明暗適応)", "装飾なし"],
+            height=24, font=self.f_jp_bold, dropdown_font=self.f_jp_norm, command=self.controller.on_setting_changed
+        )
+        self.lever_deco_menu.set("センターライン (芯線)")
+        self.lever_deco_menu.pack(side="right", fill="x", expand=True)
 
         op_row = ctk.CTkFrame(self.design_color_group, fg_color="transparent")
         op_row.pack(fill="x", padx=12, pady=(2, 8))
@@ -1042,3 +1138,20 @@ class HarmonicaAppGUI(ctk.CTkFrame):
 
         if hasattr(self.controller, "gui") and hasattr(self.controller, "on_sidebar_tab_changed"):
             self.controller.on_sidebar_tab_changed(tab_name)
+
+    def _on_file_box_resize(self, event=None):
+        """ウィンドウサイズ変更や最大化時に曲名ボックス幅の変化を検知し、デバウンス更新します"""
+        w = event.width if event else self.file_label_box.winfo_width()
+        if abs(w - getattr(self, "_last_file_box_w", 0)) >= 8 and w > 20:
+            self._last_file_box_w = w
+            if hasattr(self, "_file_box_resize_id") and self._file_box_resize_id:
+                try:
+                    self.after_cancel(self._file_box_resize_id)
+                except Exception:
+                    pass
+            self._file_box_resize_id = self.after(30, self._do_file_box_resize)
+
+    def _do_file_box_resize(self):
+        self._file_box_resize_id = None
+        if hasattr(self.controller, "refresh_file_label_display"):
+            self.controller.refresh_file_label_display()

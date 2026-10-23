@@ -92,20 +92,13 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         
         self.midi_engine.active_pitches_callback = None
         
-        def _safe_after(fn):
-            try:
-                if self.winfo_exists():
-                    self.after(0, fn)
-            except Exception:
-                pass
+        self.midi_engine.progress_callback = lambda pct: self._safe_after(lambda: self.update_progress_from_engine(pct))
+        self.midi_engine.measure_beat_callback = lambda m, b, num, den, tot: self._safe_after(lambda: self.update_measure_beat_from_engine(m, b, num, den, tot))
+        self.midi_engine.status_callback = lambda status: self._safe_after(lambda: self.update_status_from_engine(status))
+        self.midi_engine.error_callback = lambda err: self._safe_after(lambda: self.on_engine_error(err))
 
-        self.midi_engine.progress_callback = lambda pct: _safe_after(lambda: self.update_progress_from_engine(pct))
-        self.midi_engine.measure_beat_callback = lambda m, b, num, den, tot: _safe_after(lambda: self.update_measure_beat_from_engine(m, b, num, den, tot))
-        self.midi_engine.status_callback = lambda status: _safe_after(lambda: self.update_status_from_engine(status))
-        self.midi_engine.error_callback = lambda err: _safe_after(lambda: self.on_engine_error(err))
-
-        self.midi_engine.stream_start_callback = lambda: _safe_after(self.on_audio_stream_start)
-        self.midi_engine.loop_wrap_callback = lambda: _safe_after(self.on_loop_wrapped)
+        self.midi_engine.stream_start_callback = lambda: self._safe_after(self.on_audio_stream_start)
+        self.midi_engine.loop_wrap_callback = lambda: self._safe_after(self.on_loop_wrapped)
         self.midi_engine.main_start_callback = self.on_main_playback_start
 
         self.gui = HarmonicaAppGUI(self, self)
@@ -129,6 +122,14 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.bind("<KeyPress>", self.on_global_key_press)
 
         self.after(100, self.initialize_flow)
+
+    def _safe_after(self, fn):
+        """ワーカースレッドからメインスレッドへ安全にUI更新をディスパッチします。"""
+        try:
+            if not getattr(self, "_is_closing", False) and self.winfo_exists():
+                self.after(0, fn)
+        except Exception:
+            pass
 
     def report_callback_exception(self, exc, val, tb):
         """ボタンクリック等のTkinterコールバック例外も自動で error_log.txt に記録し自己診断可能にします。"""
@@ -400,6 +401,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
     def update_clock(self):
         """完全自立パッシブ等速時間軸タイマー（カウントイン＆ABループ折り返し完全連続追従）"""
         if self.play_state != "playing": return
+        now_perf_start = time.perf_counter()
 
         ticks_per_beat = self.midi_engine.ticks_per_beat
         count_in_duration = self.get_count_in_duration()
@@ -432,85 +434,151 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
                     self._last_slider_time = now
                     self.gui.seek_slider.set(pct)
             
-        self.update_time_label()
-
+        # UI文字列（時間・小節・拍・状態・BPM）の更新を約80ms周期（12fps相当）に間引き
+        # ノーツ描画（60fps）の滑らかさを100%維持しながら、Tkinterウィジェットの再計算負荷を劇的に削減
         safe_tick = max(0, self.current_tick)
-        measure, beat, num, den, total_measures = self.midi_engine.get_measure_and_beat(safe_tick)
         self.current_bpm = self.midi_engine.get_bpm_at_tick(safe_tick)
-        
-        status_state = self.midi_engine.playing_state
-        status_map = {
-            "stopped": "停止中", 
-            "paused": "一時停止", 
-            "playing": "再生中", 
-            "count_in": "前奏中"       
-        }
-        status_ja = status_map.get(status_state.lower(), "前奏中" if is_count_in_active else status_state)
-        
-        self._set_label_if_changed(self.gui.lbl_lcd_status, "lcd_status", f"状態：{status_ja[:6].ljust(6)}")
-        
-        if is_count_in_active:
-            pos_str = "位置：前奏カウント中..."
-        else:
-            pos_str = f"位置：{measure:03d}小節 . {beat:02d}拍"
-        self._set_label_if_changed(self.gui.lbl_lcd_pos, "lcd_pos", pos_str)
+
+        is_playing = (self.midi_engine.playing_state in ('playing', 'count_in'))
+        time_since_last_ui = now - getattr(self, "_last_lcd_update_time", 0.0)
+
+        if not is_playing or time_since_last_ui >= 0.08:
+            self._last_lcd_update_time = now
+            self.update_time_label()
+
+            measure, beat, num, den, total_measures = self.midi_engine.get_measure_and_beat(safe_tick)
             
-        self._set_label_if_changed(self.gui.lbl_lcd_sig, "lcd_sig", f"拍子：{num}/{den}")
-        speed_pct = int(round(getattr(self, "speed_percent", 100)))
-        self._set_label_if_changed(self.gui.lbl_lcd_bpm, "lcd_bpm", f"テンポ:{int(round(self.current_bpm)):03d}BPM({speed_pct}%)")
+            status_state = self.midi_engine.playing_state
+            status_map = {
+                "stopped": "停止中", 
+                "paused": "一時停止", 
+                "playing": "再生中", 
+                "count_in": "前奏中"       
+            }
+            status_ja = status_map.get(status_state.lower(), "前奏中" if is_count_in_active else status_state)
+            
+            self._set_label_if_changed(self.gui.lbl_lcd_status, "lcd_status", f"状態：{status_ja[:6].ljust(6)}")
+            
+            if is_count_in_active:
+                pos_str = "位置：前奏カウント中..."
+            else:
+                pos_str = f"位置：{measure:03d}小節 . {beat:02d}拍"
+            self._set_label_if_changed(self.gui.lbl_lcd_pos, "lcd_pos", pos_str)
+                
+            self._set_label_if_changed(self.gui.lbl_lcd_sig, "lcd_sig", f"拍子：{num}/{den}")
+            speed_pct = int(round(getattr(self, "speed_percent", 100)))
+            self._set_label_if_changed(self.gui.lbl_lcd_bpm, "lcd_bpm", f"テンポ:{int(round(self.current_bpm)):03d}BPM({speed_pct}%)")
         
         self.last_update_time = now
 
         active_mode = "from_tick" if (not is_count_in_active and self.current_tick >= 0) else set()
         self.draw_harmonica(active_pitches=active_mode, target_tick=self.current_tick, ticks_per_beat=ticks_per_beat, draw_mode="notes")
         
-        # after(30)だったスレッドタイマーを、高精度60FPS周期である after(16) へスライド短縮！
-        self.after(16, self.update_clock)
+        # 60fps（16.66ms）周期の高精度フレームタイマー
+        # 描画所要時間（elapsed）を自動で差し引き、負債蓄積（遅延による1ms連打バースト）を完全根絶
+        frame_interval = 0.016666  # 60 FPS
+        elapsed = time.perf_counter() - now_perf_start
+        delay_ms = max(2, min(20, int(round((frame_interval - elapsed) * 1000.0))))
+        self.after(delay_ms, self.update_clock)
+
+    def invalidate_render_cache(self):
+        """再生中GUI描画設定キャッシュの無効化（設定変更時・シーク時に呼び出し）"""
+        self._playback_render_cache = None
 
     def draw_harmonica(self, active_pitches=None, target_tick=0, ticks_per_beat=480, draw_mode="notes"):
         """Canvasプレビューの描画接続"""
         if not hasattr(self, "gui") or not self.gui.canvas: return
         
         current_time = self.current_time
-        
-        is_hole_num_on = bool(self.gui.hole_num_switch.get())
-        is_legend_on = bool(self.gui.show_legend_switch.get())
-        is_notes_on = bool(self.gui.show_notes_switch.get())
-        is_grid_on = bool(self.gui.show_grid_switch.get())
-        is_glow_on = bool(self.gui.show_glow_switch.get())
+
+        if draw_mode == "notes" and self.play_state == "playing" and getattr(self, "_playback_render_cache", None) is not None:
+            c = self._playback_render_cache
+            is_hole_num_on = c["is_hole_num_on"]
+            is_legend_on = c["is_legend_on"]
+            is_notes_on = c["is_notes_on"]
+            is_grid_on = c["is_grid_on"]
+            is_glow_on = c["is_glow_on"]
+            use_skin = c["use_skin"]
+            aspect_ratio = c["aspect_ratio"]
+            disp_scale = c["disp_scale"]
+            use_ring = c["use_ring"]
+            trajectory_mode = c["trajectory_mode"]
+            show_lookahead = c["show_lookahead"]
+            show_grid4 = c["show_grid4"]
+            note_speed_ratio = c["note_speed_ratio"]
+            bg_img_path = c["bg_img_path"]
+            bg_bright = c["bg_bright"]
+            bg_fit = c["bg_fit"]
+            bg_rot = c["bg_rot"]
+            lever_deco_mode = c["lever_deco_mode"]
+            inst_type = c["inst_type"]
+            lang_seg_value = c["lang_seg_value"]
+            canvas_bg_color = c["canvas_bg_color"]
+        else:
+            is_hole_num_on = bool(self.gui.hole_num_switch.get())
+            is_legend_on = bool(self.gui.show_legend_switch.get())
+            is_notes_on = bool(self.gui.show_notes_switch.get())
+            is_grid_on = bool(self.gui.show_grid_switch.get())
+            is_glow_on = bool(self.gui.show_glow_switch.get())
+            use_skin = bool(self.gui.use_skin_switch.get())
+            aspect_ratio = self.get_effective_canvas_ratio()
+            if hasattr(self.gui, "canvas_frame"):
+                fw = self.gui.canvas_frame.winfo_width()
+                fh = self.gui.canvas_frame.winfo_height()
+                if fw > 200 and fh > 200 and getattr(self, "_synced_frame_wh", None) != (fw, fh, aspect_ratio):
+                    self.sync_canvas_size_to_active_ratio()
+            disp_scale = getattr(self, "_current_canvas_scale", None)
+            if disp_scale is None:
+                _, _, disp_scale = self.get_current_canvas_layout()
+
+            use_ring = bool(self.gui.show_ring_switch.get())
+            trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "垂直落下 (穴直上)"
+            show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
+            show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
+            note_speed_ratio = self.get_note_speed_ratio() if hasattr(self, "get_note_speed_ratio") else 1.0
+            bg_img_path, bg_bright, bg_fit, bg_rot = (
+                self.get_effective_bg_image_info()
+                if hasattr(self, "get_effective_bg_image_info")
+                else (None, 1.0, "中央トリミング (画面いっぱい)", "0° (自動補正)")
+            )
+            lever_deco_mode = self.gui.lever_deco_menu.get() if hasattr(self.gui, "lever_deco_menu") else "センターライン (芯線)"
+            inst_type = self.gui.inst_menu.get()
+            lang_seg_value = self.gui.lang_menu.get()
+            canvas_bg_color = self.gui.canvas_bg_color
+
+            if self.play_state == "playing":
+                self._playback_render_cache = {
+                    "is_hole_num_on": is_hole_num_on,
+                    "is_legend_on": is_legend_on,
+                    "is_notes_on": is_notes_on,
+                    "is_grid_on": is_grid_on,
+                    "is_glow_on": is_glow_on,
+                    "use_skin": use_skin,
+                    "aspect_ratio": aspect_ratio,
+                    "disp_scale": disp_scale,
+                    "use_ring": use_ring,
+                    "trajectory_mode": trajectory_mode,
+                    "show_lookahead": show_lookahead,
+                    "show_grid4": show_grid4,
+                    "note_speed_ratio": note_speed_ratio,
+                    "bg_img_path": bg_img_path,
+                    "bg_bright": bg_bright,
+                    "bg_fit": bg_fit,
+                    "bg_rot": bg_rot,
+                    "lever_deco_mode": lever_deco_mode,
+                    "inst_type": inst_type,
+                    "lang_seg_value": lang_seg_value,
+                    "canvas_bg_color": canvas_bg_color,
+                }
 
         last_edit_note = getattr(self, "last_edited_note_name", None)
         last_edit_fing = getattr(self, "last_edited_fingering", None)
 
-        use_skin = bool(self.gui.use_skin_switch.get())
-        
-        aspect_ratio = self.get_effective_canvas_ratio()
-        if hasattr(self.gui, "canvas_frame"):
-            fw = self.gui.canvas_frame.winfo_width()
-            fh = self.gui.canvas_frame.winfo_height()
-            if fw > 200 and fh > 200 and getattr(self, "_synced_frame_wh", None) != (fw, fh, aspect_ratio):
-                self.sync_canvas_size_to_active_ratio()
-        disp_scale = getattr(self, "_current_canvas_scale", None)
-        if disp_scale is None:
-            _, _, disp_scale = self.get_current_canvas_layout()
-
-        # 連動リング表示スイッチのON/OFF状態を引き渡す
-        use_ring = bool(self.gui.show_ring_switch.get())
-        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
-        show_lookahead = bool(self.gui.show_lookahead_switch.get()) if hasattr(self.gui, "show_lookahead_switch") else True
-        show_grid4 = ("4音グリッド" in self.gui.grid4_menu.get()) if hasattr(self.gui, "grid4_menu") else True
-        note_speed_ratio = self.get_note_speed_ratio() if hasattr(self, "get_note_speed_ratio") else 1.0
-        bg_img_path, bg_bright, bg_fit, bg_rot = (
-            self.get_effective_bg_image_info()
-            if hasattr(self, "get_effective_bg_image_info")
-            else (None, 1.0, "中央トリミング (画面いっぱい)", "0° (自動補正)")
-        )
-
         draw_harmonica_canvas(
             canvas=self.gui.canvas,
-            canvas_bg_color=self.gui.canvas_bg_color,
-            inst_type=self.gui.inst_menu.get(),
-            lang_seg_value=self.gui.lang_menu.get(), 
+            canvas_bg_color=canvas_bg_color,
+            inst_type=inst_type,
+            lang_seg_value=lang_seg_value, 
             is_hole_num_on=is_hole_num_on,
             is_legend_on=is_legend_on,
             is_notes_on=is_notes_on,
@@ -540,7 +608,8 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             bg_image_path=bg_img_path,
             bg_brightness=bg_bright,
             bg_fit_mode=bg_fit,
-            bg_rotation=bg_rot
+            bg_rotation=bg_rot,
+            lever_deco_mode=lever_deco_mode
         )
 
     def draw_harmonica_body_only(self, pitches):
@@ -555,6 +624,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
     def draw_harmonica_static(self, show_active_at_tick=False):
         """再生停止・シーク・ジャンプ時のプレビュー追従"""
+        self.invalidate_render_cache()
         ticks_per_beat = self.midi_engine.ticks_per_beat
         
         count_in_duration = self.get_count_in_duration()
@@ -622,6 +692,18 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
         self.gui.bg_menu.configure(state="normal")
         self.gui.res_menu.configure(state="normal")
         
+        if hasattr(self.gui, "lever_deco_menu"):
+            self.gui.lever_deco_menu.configure(state="normal")
+        for attr_name in (
+            "rec_device_menu",
+            "rec_channel_menu",
+            "rec_listen_btn",
+            "ext_audio_btn",
+            "ext_audio_clear_btn",
+        ):
+            if hasattr(self.gui, attr_name):
+                getattr(self.gui, attr_name).configure(state=state)
+
         if self.fingering_edit_mode:
             self.gui.export_btn.configure(state="disabled")
         else:
@@ -647,8 +729,11 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             self.gui.part_play_mode_menu.configure(state=state)
         
         self.gui.play_btn.configure(state=state)
-        self.gui.pause_btn.configure(state=state)
+        if hasattr(self.gui, "pause_btn") and self.gui.pause_btn:
+            self.gui.pause_btn.configure(state=state)
         self.gui.stop_btn.configure(state=state)
+        if hasattr(self.gui, "record_btn") and self.gui.record_btn:
+            self.gui.record_btn.configure(state=state)
         
         if hasattr(self.gui, "bpm_minus_btn"):
             self.gui.bpm_minus_btn.configure(state=state)
@@ -720,6 +805,13 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             "title_template_menu",
             "video_title_entry",
             "video_credit_entry",
+            "lever_deco_menu",
+            "rec_device_menu",
+            "rec_channel_menu",
+            "rec_listen_btn",
+            "reverb_switch",
+            "reverb_type_menu",
+            "reverb_wet_slider",
             "ext_audio_btn",
             "ext_audio_clear_btn",
             "ext_audio_mode_menu",
@@ -815,7 +907,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         aspect_ratio = self.gui.ratio_menu.get()
         use_skin = bool(self.gui.use_skin_switch.get())
-        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
+        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "垂直落下 (穴直上)"
 
         # Step 3 & Step 4 動画書き出し拡張パラメータ（動画編集タブのマスタースイッチ連動）
         export_range = self.gui.export_range_menu.get() if hasattr(self.gui, "export_range_menu") else "全曲"
@@ -905,6 +997,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             reverb_enabled=bool(self.gui.reverb_switch.get()) if hasattr(self.gui, "reverb_switch") else False,
             reverb_type=self.gui.reverb_type_menu.get() if hasattr(self.gui, "reverb_type_menu") else "ルーム (自然な部屋鳴り)",
             reverb_wet_pct=int(self.gui.reverb_wet_slider.get()) if hasattr(self.gui, "reverb_wet_slider") else 35,
+            lever_deco_mode=self.gui.lever_deco_menu.get() if hasattr(self.gui, "lever_deco_menu") else "センターライン (芯線)",
         )
 
     # エクスポート完了、エラー、またはユーザー中止時のクリーンUI復帰コールバック
@@ -958,7 +1051,7 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
 
         aspect_ratio = self.gui.ratio_menu.get()
         use_skin = bool(self.gui.use_skin_switch.get())
-        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)"
+        trajectory_mode = self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "垂直落下 (穴直上)"
 
         export_mode = self.gui.export_mode_menu.get() if hasattr(self.gui, "export_mode_menu") else "完成動画 (背景・タイトル合成)"
         is_chroma = ("クロマキー素材" in export_mode)
@@ -1013,10 +1106,23 @@ class HarmonicaAppIntegrator(ctk.CTk, PlaybackController, SettingsController):
             bg_brightness=bg_bright,
             bg_fit_mode=bg_fit,
             bg_rotation=bg_rot,
+            lever_deco_mode=self.gui.lever_deco_menu.get() if hasattr(self.gui, "lever_deco_menu") else "センターライン (芯線)",
         )
 
     def destroy(self):
         """ライフサイクル：WinMM / MIDIエンジンのクローズ安全開放処理"""
+        self._is_closing = True
+        self.video_export_cancelled = True
+        try:
+            if hasattr(self, "audio_recorder") and self.audio_recorder.is_recording:
+                self.audio_recorder.stop_recording(None)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "stop_rec_audition"):
+                self.stop_rec_audition()
+        except Exception:
+            pass
         self._teardown_win32_file_drop()
         if hasattr(self, "stop_ext_audio_playback"):
             self.stop_ext_audio_playback()

@@ -8,6 +8,7 @@ import sys
 import time
 import threading
 import ctypes
+import bisect
 from ctypes import wintypes
 
 try:
@@ -100,6 +101,12 @@ def get_gm_instrument_name(program, is_drum=False):
     return f"GM Program #{program + 1}"
 
 
+try:
+    sys.setswitchinterval(0.001)  # GIL切り替え間隔を 5ms ➔ 1ms へ引き締め、スレッドブロックを根絶
+except Exception:
+    pass
+
+
 class PlayableEvent:
     def __init__(self, mido_msg, is_metronome=False, beat_in_measure=0, abs_tick=0, track_idx=-1):
         self.msg = mido_msg
@@ -110,6 +117,9 @@ class PlayableEvent:
         self.time = 0
         self.time_sig_num = 4
         self.time_sig_den = 4
+        self.base_sec = 0.0
+        self.dw_msg = 0
+        self.routed_msg = mido_msg
 
 
 class MidiEngine:
@@ -151,6 +161,8 @@ class MidiEngine:
         self.bpm = 120
         self.speed_ratio = 1.0
         self.tempo_timeline = [{"tick": 0, "tempo": 500000, "bpm": 120.0, "base_sec": 0.0}]
+        self.tempo_start_ticks = [0]
+        self.tempo_base_secs = [0.0]
         self.time_sig_num = 4
         self.time_sig_den = 4
         self.count_in_measures = 1
@@ -165,6 +177,7 @@ class MidiEngine:
         self.loop_b_target_tick = None 
         
         self.measures_timeline = []
+        self.measures_start_ticks = []
         self.currently_playing_notes = set()
         
         # コールバック
@@ -504,6 +517,7 @@ class MidiEngine:
 
         if self.merged_messages:
             self.all_notes_off()
+            self.precompute_event_timing_and_messages()
             self.sync_midi_channel_states(self.current_msg_index)
 
     def get_main_track_info(self):
@@ -562,19 +576,18 @@ class MidiEngine:
                 "bpm": bpm_val,
                 "base_sec": cum_sec
             })
+        self.tempo_start_ticks = [seg["tick"] for seg in self.tempo_timeline]
+        self.tempo_base_secs = [seg["base_sec"] for seg in self.tempo_timeline]
 
     def get_base_bpm_at_tick(self, tick):
-        """指定ティック時点での原曲BPM（100%速度時）を返します。"""
-        if not self.tempo_timeline:
+        """指定ティック時点での原曲BPM（100%速度時）を返します。二分探索によりO(log N)で超高速解決。"""
+        if not getattr(self, "tempo_timeline", None) or not getattr(self, "tempo_start_ticks", None):
             return float(self.default_bpm)
         t = max(0.0, float(tick))
-        active_bpm = self.tempo_timeline[0]["bpm"]
-        for seg in self.tempo_timeline:
-            if seg["tick"] <= t:
-                active_bpm = seg["bpm"]
-            else:
-                break
-        return active_bpm
+        idx = bisect.bisect_right(self.tempo_start_ticks, t) - 1
+        if idx < 0:
+            idx = 0
+        return self.tempo_timeline[idx]["bpm"]
 
     def get_bpm_at_tick(self, tick, speed_ratio=None):
         """指定ティック時点での実効BPM（原曲BPM × 再生速度倍率）を返します。"""
@@ -582,9 +595,9 @@ class MidiEngine:
         return self.get_base_bpm_at_tick(tick) * max(0.05, sr)
 
     def tick_to_sec(self, tick, speed_ratio=None):
-        """指定ティックを、曲中テンポ変化と再生速度倍率を考慮した実経過秒数（カウントイン除く）へ変換します。"""
+        """指定ティックを、曲中テンポ変化と再生速度倍率を考慮した実経過秒数（カウントイン除く）へ変換します。二分探索によりO(log N)化。"""
         sr = max(0.05, self.speed_ratio if speed_ratio is None else speed_ratio)
-        if not self.tempo_timeline:
+        if not getattr(self, "tempo_timeline", None) or not getattr(self, "tempo_start_ticks", None):
             base_sec = float(tick) * (60.0 / (max(1.0, self.default_bpm) * self.ticks_per_beat))
             return base_sec / sr
 
@@ -593,35 +606,29 @@ class MidiEngine:
             base_sec = float(tick) * (60.0 / (first_bpm * self.ticks_per_beat))
             return base_sec / sr
 
-        active_seg = self.tempo_timeline[0]
-        for seg in self.tempo_timeline:
-            if seg["tick"] <= tick:
-                active_seg = seg
-            else:
-                break
-
+        idx = bisect.bisect_right(self.tempo_start_ticks, tick) - 1
+        if idx < 0:
+            idx = 0
+        active_seg = self.tempo_timeline[idx]
         dt = float(tick) - active_seg["tick"]
         base_sec = active_seg["base_sec"] + dt * (60.0 / (max(1.0, active_seg["bpm"]) * self.ticks_per_beat))
         return base_sec / sr
 
     def sec_to_tick(self, sec, speed_ratio=None):
-        """実経過秒数（カウントイン除く）を、曲中テンポ変化と再生速度倍率を考慮したティックへ変換します。"""
+        """実経過秒数（カウントイン除く）を、曲中テンポ変化と再生速度倍率を考慮したティックへ変換します。二分探索によりO(log N)化。"""
         sr = max(0.05, self.speed_ratio if speed_ratio is None else speed_ratio)
         target_base_sec = float(sec) * sr
-        if not self.tempo_timeline:
+        if not getattr(self, "tempo_timeline", None) or not getattr(self, "tempo_base_secs", None):
             return target_base_sec * (max(1.0, self.default_bpm) * self.ticks_per_beat / 60.0)
 
         if target_base_sec <= 0:
             first_bpm = max(1.0, self.tempo_timeline[0]["bpm"])
             return target_base_sec * (first_bpm * self.ticks_per_beat / 60.0)
 
-        active_seg = self.tempo_timeline[0]
-        for seg in self.tempo_timeline:
-            if seg["base_sec"] <= target_base_sec:
-                active_seg = seg
-            else:
-                break
-
+        idx = bisect.bisect_right(self.tempo_base_secs, target_base_sec) - 1
+        if idx < 0:
+            idx = 0
+        active_seg = self.tempo_timeline[idx]
         delta_base_sec = target_base_sec - active_seg["base_sec"]
         return active_seg["tick"] + delta_base_sec * (max(1.0, active_seg["bpm"]) * self.ticks_per_beat / 60.0)
 
@@ -668,24 +675,28 @@ class MidiEngine:
             
             tick += measure_len_ticks
             measure_num += 1
+            
+        self.measures_start_ticks = [m['start_tick'] for m in self.measures_timeline]
 
     def get_measure_and_beat(self, tick):
         if tick < 0:
-            return 1, 1, self.time_sig_num, self.time_sig_den, len(self.measures_timeline) if self.measures_timeline else 1
+            return 1, 1, self.time_sig_num, self.time_sig_den, len(self.measures_timeline) if getattr(self, "measures_timeline", None) else 1
             
-        if not self.measures_timeline:
+        if not getattr(self, "measures_timeline", None) or not getattr(self, "measures_start_ticks", None):
             return 1, 1, 4, 4, 1
             
-        for m in self.measures_timeline:
-            if m['start_tick'] <= tick < m['end_tick']:
-                elapsed = tick - m['start_tick']
-                beat_len = int(self.ticks_per_beat * (4 / m['den']))
-                beat = int(elapsed // beat_len) + 1
-                beat = min(beat, m['num'])
-                return m['measure_num'], beat, m['num'], m['den'], len(self.measures_timeline)
-                
-        m = self.measures_timeline[-1]
-        return m['measure_num'], m['num'], m['num'], m['den'], len(self.measures_timeline)
+        idx = bisect.bisect_right(self.measures_start_ticks, tick) - 1
+        if idx < 0:
+            idx = 0
+        elif idx >= len(self.measures_timeline):
+            idx = len(self.measures_timeline) - 1
+
+        m = self.measures_timeline[idx]
+        elapsed = tick - m['start_tick']
+        beat_len = int(self.ticks_per_beat * (4 / m['den']))
+        beat = int(elapsed // beat_len) + 1 if beat_len > 0 else 1
+        beat = min(beat, m['num'])
+        return m['measure_num'], beat, m['num'], m['den'], len(self.measures_timeline)
 
     def generate_merged_messages_with_metronome(self, raw_merged_with_track):
         absolute_events = []
@@ -730,6 +741,32 @@ class MidiEngine:
             event.time = delta
             self.merged_messages.append(event)
             prev_tick = abs_tick
+
+        self.precompute_event_timing_and_messages()
+
+    def precompute_event_timing_and_messages(self):
+        """
+        全再生イベントの発音基準秒数(base_sec)と、WinMM用32bit整数メッセージ(dw_msg)を事前コンパイル。
+        再生中のtick_to_sec探索、オブジェクト生成、動的ルーティング変換を完全ゼロ化します。
+        """
+        if not self.merged_messages:
+            return
+        for event in self.merged_messages:
+            event.base_sec = self.tick_to_sec(event.abs_tick, speed_ratio=1.0)
+            if event.is_metronome:
+                note = 76 if event.beat_in_measure == 0 else 77
+                vel = 110 if event.beat_in_measure == 0 else 80
+                event.dw_msg = 0x99 | (note << 8) | (vel << 16)
+            else:
+                msg = self.transform_msg_for_routing(event.msg, event.track_idx)
+                event.routed_msg = msg
+                dw = 0
+                if not msg.is_meta and msg.type != 'sysex':
+                    b = msg.bytes()
+                    if len(b) > 0: dw |= b[0]
+                    if len(b) > 1: dw |= (b[1] << 8)
+                    if len(b) > 2: dw |= (b[2] << 16)
+                event.dw_msg = dw
 
     def reset_playback_state(self):
         self.current_msg_index = self.loop_a_index if (self.loop_enabled and self.loop_a_index is not None) else 0
@@ -1162,26 +1199,29 @@ class MidiEngine:
                         if self.active_pitches_callback:
                             self.active_pitches_callback(self.currently_playing_notes)
                         
-                        event_base_sec = self.tick_to_sec(event.abs_tick, speed_ratio=1.0)
+                        event_base_sec = event.base_sec if getattr(event, 'base_sec', 0.0) > 0.0 else self.tick_to_sec(event.abs_tick, speed_ratio=1.0)
+                        loop_b_sec = self.tick_to_sec(self.loop_b_target_tick, speed_ratio=1.0) if (self.loop_enabled and self.loop_b_target_tick is not None) else None
+                        clock_speed = max(0.05, self._clock_anchor_speed)
+
                         while self.playing_state == 'playing':
                             cur_base_sec = self.get_current_base_sec()
-                            cur_tick_f = self.sec_to_tick(cur_base_sec, speed_ratio=1.0)
-                            self.accumulated_ticks = int(min(float(event.abs_tick), cur_tick_f))
-                            self.bpm = round(max(1.0, self.get_bpm_at_tick(self.accumulated_ticks)))
                             
-                            if self.loop_enabled and self.loop_b_target_tick is not None:
-                                if cur_tick_f >= self.loop_b_target_tick:
-                                    self.accumulated_ticks = int(self.loop_b_target_tick)
-                                    reached_b_or_end = True
-                                    break
-                            
-                            remaining = (event_base_sec - cur_base_sec) / max(0.05, self._clock_anchor_speed)
-                            if remaining <= 0.0:
+                            if loop_b_sec is not None and cur_base_sec >= loop_b_sec:
+                                self.accumulated_ticks = int(self.loop_b_target_tick)
+                                reached_b_or_end = True
                                 break
-                            if remaining > 0.004:
+                            
+                            remaining = (event_base_sec - cur_base_sec) / clock_speed
+                            if remaining <= 0.0001:
+                                break
+                            elif remaining > 0.006:
+                                time.sleep(0.002)
+                            elif remaining > 0.002:
                                 time.sleep(0.001)
-                            elif remaining > 0.0005:
+                            elif remaining > 0.0015:
                                 time.sleep(0)
+                            else:
+                                pass  # 発音直前1.5ms以内はGILを手放さずスピン待機し、GUI描画による発音遅延を完全根絶
                                 
                         if reached_b_or_end:
                             break
@@ -1203,17 +1243,26 @@ class MidiEngine:
                     if event.is_metronome:
                         self.play_metronome_tick(event.beat_in_measure)
                     else:
-                        msg = event.msg
-                        if not msg.is_meta and msg.type != 'sysex':
-                            self.send_midi_msg(msg, track_idx=event.track_idx)
-                            
-                            # 穴のLED発光(currently_playing_notes)は、常に選択中の主旋律パートのノーツのみに連動させる
-                            if event.track_idx < 0 or event.track_idx == self.main_track_index:
+                        msg = getattr(event, "routed_msg", event.msg)
+                        if self.is_track_audible(event.track_idx):
+                            dw_msg = getattr(event, "dw_msg", 0)
+                            if not self.device_muted and not self.internal_synth_enabled and self.device_opened and winmm:
+                                if dw_msg:
+                                    winmm.midiOutShortMsg(self.h_midi_out, dw_msg)
+                                elif not msg.is_meta and msg.type != 'sysex':
+                                    self.send_midi_msg(msg, track_idx=event.track_idx)
+                            elif self.synth_initialized and self.internal_synth_enabled:
                                 if msg.type == "note_on" and msg.velocity > 0:
-                                    self.currently_playing_notes.add(msg.note)
+                                    self._play_synth_note(msg.note, msg.velocity)
                                 elif (msg.type == "note_off") or (msg.type == "note_on" and msg.velocity == 0):
-                                    if msg.note in self.currently_playing_notes:
-                                        self.currently_playing_notes.remove(msg.note)
+                                    self._stop_synth_note(msg.note)
+                        
+                        # 穴のLED発光(currently_playing_notes)は、常に選択中の主旋律パートのノーツのみに連動させる
+                        if event.track_idx < 0 or event.track_idx == self.main_track_index:
+                            if msg.type == "note_on" and msg.velocity > 0:
+                                self.currently_playing_notes.add(msg.note)
+                            elif (msg.type == "note_off") or (msg.type == "note_on" and msg.velocity == 0):
+                                self.currently_playing_notes.discard(msg.note)
                     
                     self.current_msg_index += 1
                     

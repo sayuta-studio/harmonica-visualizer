@@ -109,6 +109,7 @@ class PlaybackController:
         hex_data = "4d546864000000060001000101e04d54726b0000023f00ff031d31362d486f6c652043204368726f6d61746963204861726d6f6e69636100ff58040402180800ff5902000000ff510307a12000b0790000640000650000060c00647f00657f00c01600b00764000a40005b00005d0000ff21010000903c5000b002508267903c00013d5000b0025077903d00013e5000b002508267903e00013f5000b0025077903f0001405000b00250826790400001415000b002507790410001425000b00250826790420001435000b002507790430001445000b00250826790440001455000b002507790450001465000b00250826790460001475000b002507790470001485000b00250835f9048008361485000b00250826790480001495000b0025077904900014a5000b002508267904a00014b5000b0025077904b00014c5000b002508267904c00014d5000b0025077904d00014e5000b002508267904e00014f5000b0025077904f0001505000b00250826790500001515000b002507790510001525000b00250826790520001535000b002507790530001545000b00250835f9054008361545000b00250826790540001555000b002507790550001565000b00250826790560001575000b002507790570001585000b00250826790580001595000b0025077905900015a5000b002508267905a00015b5000b0025077905b00015c5000b002508267905c00015d5000b0025077905d00015e5000b002508267905e00015f5000b0025077905f0001605000b00250835f9060008361625000b002508b1f90620001305000b002507790300001ff2f00"
         
         self.current_midi_path = os.path.join(self.base_dir, "temp", "test_harmonica_input.mid")
+        self.current_midi_filename = "demo.mid"
         try:
             midi_bytes = bytes.fromhex(hex_data)
             with open(self.current_midi_path, "wb") as f:
@@ -139,13 +140,14 @@ class PlaybackController:
             harmonica_map.apply_fingering_preset(harmonica_map.CURRENT_SONG_PRESET)
 
             self.extract_notes_from_midi()
+            self.refresh_file_label_display()
             
         except Exception as e:
             print(f"[警告] デモ曲MIDI物理展開・ロード失敗: {e}")
             traceback.print_exc()
 
     def update_time_label(self):
-        """前奏マイナス時間軸カウント対応時間表記（秒が変わった瞬間のみ更新）"""
+        """前奏マイナス時間軸カウント対応時間表記（秒が変わった瞬間のみ更新・常に15文字固定でシークバーのブレをゼロ化）"""
         count_in_duration = self.get_count_in_duration()
         display_sec = self.current_time - count_in_duration
         
@@ -154,16 +156,35 @@ class PlaybackController:
         
         cur_min = int(abs_time) // 60
         cur_sec = int(abs_time) % 60
-        max_min = int(self.max_duration - count_in_duration) // 60
-        max_sec = int(self.max_duration - count_in_duration) % 60
+        max_duration_eff = max(0.0, self.max_duration - count_in_duration)
+        max_min = int(max_duration_eff) // 60
+        max_sec = int(max_duration_eff) % 60
         
-        sign = "-" if is_negative else ""
-        new_text = f"{sign}{cur_min:02d}:{cur_sec:02d} / {max_min:02d}:{max_sec:02d}"
+        # 3桁目は通常は半角空白、マイナス時は'-'記号、100分以上は百の位の数字を充当（常に3文字固定）
+        def _fmt_min(m, neg=False):
+            if neg:
+                return f"-{m:02d}"
+            elif m >= 100:
+                return f"{m:03d}"
+            else:
+                return f" {m:02d}"
+
+        cur_str = f"{_fmt_min(cur_min, is_negative)}:{cur_sec:02d}"
+        max_str = f"{_fmt_min(max_min, False)}:{max_sec:02d}"
+        new_text = f"{cur_str} / {max_str}"
         self._set_label_if_changed(self.gui.seek_label, "seek_label", new_text)
 
-    def _truncate_by_visual_width(self, text, max_width=24):
-        """全角文字=2・半角文字=1として見た目幅を計算し、固定幅ボックスに収まるよう省略します。"""
+    def _truncate_by_visual_width(self, text, max_width=None):
+        """全角文字=2・半角文字=1として見た目幅を計算し、収まるよう省略します。"""
         import unicodedata
+        if max_width is None:
+            box_w = 360
+            if hasattr(self, "gui") and hasattr(self.gui, "file_label_box"):
+                bw = self.gui.file_label_box.winfo_width()
+                if bw > 10:
+                    box_w = bw
+            max_width = max(24, int((box_w - 24) / 8.5))
+
         def char_w(c):
             return 2 if unicodedata.east_asian_width(c) in ("F", "W", "A") else 1
         total_w = sum(char_w(c) for c in text)
@@ -171,13 +192,66 @@ class PlaybackController:
             return text
         head = []
         w = 0
+        tail = text[-4:] if len(text) > 4 else ""
+        tail_w = sum(char_w(c) for c in tail)
+        ell_w = 3
+        avail_w = max_width - (tail_w + ell_w)
         for c in text:
             cw = char_w(c)
-            if w + cw > max_width - 7:
+            if w + cw > avail_w:
                 break
             head.append(c)
             w += cw
-        return "".join(head) + "..." + text[-4:]
+        return "".join(head) + "..." + tail
+
+    def refresh_file_label_display(self):
+        """ウィンドウ幅やタイトル枠の横幅に合わせて、曲名ラベルの省略・表示を動的に最適化します。"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "file_label"):
+            return
+
+        filename = getattr(self, "current_midi_filename", "")
+        if not filename:
+            if hasattr(self, "current_midi_path") and self.current_midi_path:
+                filename = os.path.basename(self.current_midi_path)
+            else:
+                filename = "demo.mid"
+
+        # ツールチップには常にフル曲名/ファイル名を設定（ホバーで全体を確認可能）
+        if hasattr(self.gui, "file_label_tooltip"):
+            self.gui.file_label_tooltip.text = filename
+
+        # 物理ピクセル幅を測定して動的トリミング
+        box_w = self.gui.file_label_box.winfo_width() if hasattr(self.gui, "file_label_box") else 360
+        # ウィンドウ初期描画前等でwinfo_widthが未確定(<=10)の場合は、親ウィンドウ幅から推定
+        if box_w <= 10:
+            win_w = self.winfo_width() if hasattr(self, "winfo_width") else 1400
+            box_w = max(360, win_w - 750)
+
+        # 左右パディング(8px*2) + 余白マージンを差し引いた実効表示可能ピクセル幅
+        max_px = max(60, box_w - 24)
+
+        try:
+            import tkinter.font as tkfont
+            font_obj = tkfont.Font(family="Segoe UI", size=11, weight="bold")
+            if font_obj.measure(filename) <= max_px:
+                display_name = filename
+            else:
+                tail = filename[-4:] if len(filename) > 4 else ""
+                ell = "..."
+                avail_px = max_px - font_obj.measure(ell + tail)
+                head = []
+                w = 0
+                for c in filename:
+                    cw = font_obj.measure(c)
+                    if w + cw > avail_px:
+                        break
+                    head.append(c)
+                    w += cw
+                display_name = "".join(head) + ell + tail
+        except Exception:
+            display_name = self._truncate_by_visual_width(filename, max_width=max(24, int(max_px / 8.5)))
+
+        self.gui.file_label.configure(text=display_name, text_color="#38bdf8")
 
     def on_open_file(self):
         """MIDIファイルの選択ダイアログを開き、読み込みます。"""
@@ -188,15 +262,14 @@ class PlaybackController:
         self.load_midi_file(file_path)
 
     def load_midi_file(self, file_path):
-        """指定パスのMIDIファイルをパース読み込み ＆ 固定幅トリミング表示（D&D・ダイアログ共通）"""
+        """指定パスのMIDIファイルをパース読み込み ＆ 自動伸縮幅トリミング表示（D&D・ダイアログ共通）"""
         if not file_path or not os.path.exists(file_path):
             return False
         self.on_stop()
         filename = os.path.basename(file_path)
-        display_name = self._truncate_by_visual_width(filename, max_width=24)
-            
-        self.gui.file_label.configure(text=display_name, text_color="#1f538d")
+        self.current_midi_filename = filename
         self.current_midi_path = file_path
+        self.refresh_file_label_display()
         
         try:
             self.midi_engine.load_file(file_path)
@@ -277,6 +350,8 @@ class PlaybackController:
     def on_toggle_force_harmonica(self, sw_var):
         """主旋律パートのハーモニカ音色強制スイッチ切替"""
         self.midi_engine.force_main_harmonica = bool(sw_var.get())
+        if self.midi_engine.merged_messages:
+            self.midi_engine.precompute_event_timing_and_messages()
         self.midi_engine.sync_midi_channel_states(self.midi_engine.current_msg_index)
 
     def open_part_select_dialog(self):
@@ -467,6 +542,30 @@ class PlaybackController:
         self.gui.bpm_entry.insert(0, "100")
         self.apply_bpm()
 
+    def on_play_pause_toggle(self):
+        """▶ 再生 / ⏸ 一時停止のワンボタントグル処理"""
+        if self.play_state == "playing":
+            self.on_pause()
+        else:
+            self.on_play()
+
+    def update_play_btn_ui(self):
+        """再生状態に応じて再生ボタンのテキスト・カラー・ツールチップを自動同期更新します"""
+        if not hasattr(self, "gui") or not hasattr(self.gui, "play_btn"):
+            return
+        if self.play_state == "playing":
+            self.gui.play_btn.configure(
+                text="⏸ 一時停止", fg_color="#d97706", hover_color="#b45309"
+            )
+            if hasattr(self.gui, "play_btn_tooltip"):
+                self.gui.play_btn_tooltip.text = "一時停止 (Space / テンキー Enter)"
+        else:
+            self.gui.play_btn.configure(
+                text="▶ 再生", fg_color="#2b8c54", hover_color="#1f6b3e"
+            )
+            if hasattr(self.gui, "play_btn_tooltip"):
+                self.gui.play_btn_tooltip.text = "再生 (Space / テンキー Enter)"
+
     def on_play(self):
         if not self.midi_notes: return
         was_stopped = (self.play_state == "stopped")
@@ -488,7 +587,18 @@ class PlaybackController:
         self.apply_bpm()
 
         if self.play_state != "playing":
+            # 演奏中のマイクロスタッター（瞬間停止）を防ぐため、再生開始前にGCを実行し一時的に閾値を緩和
+            try:
+                import gc
+                gc.collect()
+                if not hasattr(self, "_default_gc_threshold"):
+                    self._default_gc_threshold = gc.get_threshold()
+                gc.set_threshold(50000, 100, 100)
+            except Exception:
+                pass
+
             self.play_state = "playing"
+            self.update_play_btn_ui()
             self.lock_controls_on_play(True)
             
             self.gui.export_btn.configure(state="disabled")
@@ -503,6 +613,9 @@ class PlaybackController:
 
             now = time.time()
             self.last_update_time = now
+            self._next_clock_perf = 0.0
+            if hasattr(self, "invalidate_render_cache"):
+                self.invalidate_render_cache()
             self.midi_engine.play()
             self.update_clock()
 
@@ -539,7 +652,11 @@ class PlaybackController:
             self.midi_engine.internal_synth_enabled = False
 
     def on_pause(self):
+        if getattr(self, "is_recording", False):
+            self.stop_and_finalize_recording()
+            return
         self.play_state = "paused"
+        self.update_play_btn_ui()
         self._is_seeking = False
         if hasattr(self, "_seek_debounce_id") and self._seek_debounce_id:
             try:
@@ -556,6 +673,13 @@ class PlaybackController:
                 pygame.mixer.music.pause()
         except Exception:
             pass
+        try:
+            import gc
+            if hasattr(self, "_default_gc_threshold"):
+                gc.set_threshold(*self._default_gc_threshold)
+            gc.collect()
+        except Exception:
+            pass
         self.lock_controls_on_play(False)
         if hasattr(self.gui, "ext_audition_play_btn"):
             self.gui.ext_audition_play_btn.configure(
@@ -567,9 +691,13 @@ class PlaybackController:
     def on_stop(self):
         if getattr(self, "is_recording", False):
             self.stop_and_finalize_recording()
+            return
         if getattr(self, "is_auditioning_rec", False):
             self.stop_rec_audition()
+            return
+        was_already_stopped = (self.play_state == "stopped")
         self.play_state = "stopped"
+        self.update_play_btn_ui()
         self._is_seeking = False
         if hasattr(self, "_seek_debounce_id") and self._seek_debounce_id:
             try:
@@ -587,6 +715,13 @@ class PlaybackController:
                 pygame.mixer.music.unload()
         except Exception:
             pass
+        try:
+            import gc
+            if hasattr(self, "_default_gc_threshold"):
+                gc.set_threshold(*self._default_gc_threshold)
+            gc.collect()
+        except Exception:
+            pass
         self.lock_controls_on_play(False)
         if hasattr(self.gui, "ext_audition_play_btn"):
             self.gui.ext_audition_play_btn.configure(
@@ -594,6 +729,14 @@ class PlaybackController:
             )
         if not self.fingering_edit_mode:
             self.gui.export_btn.configure(state="normal")
+        if was_already_stopped and self.midi_notes:
+            self.midi_engine.seek(0.0)
+            self.current_tick = 0
+            self.current_time = self.get_count_in_duration()
+            self.update_time_label()
+            if hasattr(self.gui, "seek_slider") and self.gui.seek_slider:
+                self.gui.seek_slider.set(0.0)
+            self.gui.status_label.configure(text="⏮ 曲頭に巻き戻しました (0:00)", text_color="#00ffcc")
         self.draw_harmonica_static()
 
     def on_seek_start(self, event=None):
@@ -757,6 +900,8 @@ class PlaybackController:
         if not self.midi_notes: return
         try:
             val = int(self.gui.jump_entry.get())
+            if self.play_state == "playing":
+                self._refresh_ext_audio_config_cache()
             self.midi_engine.seek_to_measure(val)
             
             self.current_tick = self.midi_engine.accumulated_ticks
@@ -765,8 +910,6 @@ class PlaybackController:
             
             self.current_time = elapsed_sec + count_in_duration
             self.update_time_label()
-            if self.play_state == "playing":
-                self.sync_ext_audio_playback()
             self.draw_harmonica_static()
         except ValueError:
             pass
@@ -877,15 +1020,34 @@ class PlaybackController:
                     text_color="#00ffcc"
                 )
 
+    def _on_recording_init_failed_ui(self):
+        self.is_recording = False
+        if hasattr(self.gui, "record_btn"):
+            self.gui.record_btn.configure(
+                text="🔴 録音", fg_color="#991b1b", hover_color="#dc2626"
+            )
+            if hasattr(self.gui, "record_btn_tooltip"):
+                self.gui.record_btn_tooltip.text = "ワンクリック録音 (R / テンキー *)"
+        if hasattr(self.gui, "rec_status_lbl"):
+            self.gui.rec_status_lbl.configure(
+                text="❌ マイク初期化エラー", text_color="#ff5555"
+            )
+
     def on_main_playback_start(self):
         """カウントイン終了または本編再生開始の瞬間にワーカースレッドから直結呼び出しされ、1音目と外部音源・マイク録音を誤差0.0msで同時点火します。"""
         if getattr(self, "is_recording", False) and hasattr(self, "audio_recorder") and not self.audio_recorder.is_recording:
-            dev_name = self.gui.rec_device_menu.get() if hasattr(self.gui, "rec_device_menu") else None
-            ch_val = self.gui.rec_channel_menu.get() if hasattr(self.gui, "rec_channel_menu") else "モノラル"
-            num_channels = 1 if "モノラル" in ch_val else 2
+            dev_name = getattr(self, "_rec_cfg_dev_name", None)
+            num_channels = getattr(self, "_rec_cfg_channels", 1)
             ok = self.audio_recorder.start_recording(dev_name, channels=num_channels)
-            if hasattr(self.gui, "rec_status_lbl"):
-                self.after(0, lambda: self.gui.rec_status_lbl.configure(text=f"🔴 録音中... ({'1chモノラル' if num_channels == 1 else '2chステレオ'})", text_color="#ef4444"))
+            if ok:
+                self._safe_after(lambda ch=num_channels: (
+                    self.gui.rec_status_lbl.configure(
+                        text=f"🔴 録音中... ({'1chモノラル' if ch == 1 else '2chステレオ'})", text_color="#ef4444"
+                    ) if hasattr(self.gui, "rec_status_lbl") else None
+                ))
+            else:
+                self.is_recording = False
+                self._safe_after(self._on_recording_init_failed_ui)
         if self.play_state == "playing" and not getattr(self, "_is_seeking", False):
             self.sync_ext_audio_playback(from_worker=True, anchor_tick=self.midi_engine.accumulated_ticks)
 
@@ -907,6 +1069,8 @@ class PlaybackController:
             self.gui.record_btn.configure(
                 text="⏹ 録音停止", fg_color="#ef4444", hover_color="#dc2626"
             )
+            if hasattr(self.gui, "record_btn_tooltip"):
+                self.gui.record_btn_tooltip.text = "録音停止 (R / テンキー *)"
         if hasattr(self.gui, "rec_status_lbl"):
             self.gui.rec_status_lbl.configure(
                 text="🔴 録音準備中（カウントイン...）", text_color="#ef4444"
@@ -915,6 +1079,8 @@ class PlaybackController:
         dev_name = self.gui.rec_device_menu.get() if hasattr(self.gui, "rec_device_menu") else None
         ch_val = self.gui.rec_channel_menu.get() if hasattr(self.gui, "rec_channel_menu") else "モノラル"
         num_channels = 1 if "モノラル" in ch_val else 2
+        self._rec_cfg_dev_name = dev_name
+        self._rec_cfg_channels = num_channels
         count_in_dur = self.get_count_in_duration() if hasattr(self, "get_count_in_duration") else 0.0
 
         if count_in_dur > 0 and self.midi_notes:
@@ -941,6 +1107,8 @@ class PlaybackController:
                     self.gui.record_btn.configure(
                         text="🔴 録音", fg_color="#991b1b", hover_color="#dc2626"
                     )
+                    if hasattr(self.gui, "record_btn_tooltip"):
+                        self.gui.record_btn_tooltip.text = "ワンクリック録音 (R / テンキー *)"
                 if hasattr(self.gui, "rec_status_lbl"):
                     self.gui.rec_status_lbl.configure(
                         text="❌ マイク初期化エラー", text_color="#ff5555"
@@ -955,6 +1123,8 @@ class PlaybackController:
             self.gui.record_btn.configure(
                 text="🔴 録音", fg_color="#991b1b", hover_color="#dc2626"
             )
+            if hasattr(self.gui, "record_btn_tooltip"):
+                self.gui.record_btn_tooltip.text = "ワンクリック録音 (R / テンキー *)"
 
         t_str = time.strftime("%Y%m%d_%H%M%S")
         take_dir = os.path.join(self.base_dir, "temp")
@@ -1375,24 +1545,50 @@ class PlaybackController:
         is_shift = bool(state_flags & 0x0001)
         is_ctrl = bool(state_flags & 0x0004)
 
-        if ks == "space":
-            if self.play_state == "playing":
-                self.on_pause()
-            else:
-                self.on_play()
-        elif ks in ("BackSpace", "Escape", "Return"):
+        # 再生 / 一時停止 (Space / テンキーEnter / 通常Enter)
+        if (ks in ("space", "KP_Enter", "Return") 
+                or getattr(event, "keycode", 0) == 13 
+                or getattr(event, "keysym_num", 0) in (65421, 65293)):
+            self.on_play_pause_toggle()
+        elif ks in ("BackSpace", "Escape", "KP_0", "KP_Insert", "0") or getattr(event, "keycode", 0) in (96, 45):
             self.on_stop()
+        elif ks in ("r", "R", "KP_Multiply", "asterisk", "multiply") or getattr(event, "keycode", 0) == 106:
+            if hasattr(self, "on_record_toggle"):
+                self.on_record_toggle()
+        elif ks in ("Home", "KP_Decimal", "KP_Delete") or getattr(event, "keycode", 0) in (110, 46, 36):
+            # 曲頭（0:00）へ即座に巻き戻し
+            if not getattr(self, "is_recording", False):
+                self.on_stop()
+                if self.midi_notes:
+                    self.midi_engine.seek(0.0)
+                    self.current_tick = 0
+                    self.current_time = self.get_count_in_duration()
+                    self.update_time_label()
+                    if hasattr(self.gui, "seek_slider") and self.gui.seek_slider:
+                        self.gui.seek_slider.set(0.0)
+                    self.draw_harmonica_static()
+                    self.gui.status_label.configure(text="⏮ 曲頭に巻き戻しました (0:00)", text_color="#00ffcc")
         elif ks in ("bracketleft", "comma", "less", "braceleft"):
             step = -1 if is_shift else (-100 if is_ctrl else -10)
             self.step_ext_audio_offset(step)
         elif ks in ("bracketright", "period", "greater", "braceright"):
             step = 1 if is_shift else (100 if is_ctrl else 10)
             self.step_ext_audio_offset(step)
-        elif ks in ("Left", "Right"):
+        elif ks in ("Left", "KP_Subtract", "minus") or getattr(event, "keycode", 0) in (109, 189):
             if not self.midi_notes:
                 return
             cur_m, _, _, _, total_m = self.midi_engine.get_measure_and_beat(max(0, self.midi_engine.accumulated_ticks))
-            target_m = max(1, min(total_m, cur_m + (-1 if ks == "Left" else 1)))
+            target_m = max(1, min(total_m, cur_m - 1))
+            self.gui.jump_entry.delete(0, tk.END)
+            self.gui.jump_entry.insert(0, str(target_m))
+            self.on_jump_measure()
+            if self.play_state in ("stopped", "paused"):
+                self.draw_harmonica_static(show_active_at_tick=True)
+        elif ks in ("Right", "KP_Add", "plus") or getattr(event, "keycode", 0) in (107, 187):
+            if not self.midi_notes:
+                return
+            cur_m, _, _, _, total_m = self.midi_engine.get_measure_and_beat(max(0, self.midi_engine.accumulated_ticks))
+            target_m = max(1, min(total_m, cur_m + 1))
             self.gui.jump_entry.delete(0, tk.END)
             self.gui.jump_entry.insert(0, str(target_m))
             self.on_jump_measure()
@@ -1406,7 +1602,7 @@ class PlaybackController:
             self.set_loop_a_at_current()
         elif ks in ("b", "B"):
             self.set_loop_b_at_current()
-        elif ks in ("l", "L"):
+        elif ks in ("l", "L", "KP_Divide", "slash") or getattr(event, "keycode", 0) in (111, 191):
             if self.gui.cb_loop.get():
                 self.gui.cb_loop.deselect()
             else:

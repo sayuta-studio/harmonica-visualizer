@@ -95,13 +95,20 @@ class SettingsController:
         harmonica_map.apply_fingering_preset(fingering_preset)
 
         # ノーツ軌道の復元
-        traj_mode = loaded.get("ノーツ軌道", "3段階 (練習標準)")
+        traj_mode = loaded.get("ノーツ軌道", "垂直落下 (穴直上)")
         if traj_mode == "3段階収束 (標準)":
             traj_mode = "3段階 (練習標準)"
         if traj_mode not in ["3段階 (練習標準)", "垂直落下 (穴直上)", "2段階 (ビジュアル)"]:
-            traj_mode = "3段階 (練習標準)"
+            traj_mode = "垂直落下 (穴直上)"
         if hasattr(self.gui, "trajectory_menu"):
             self.gui.trajectory_menu.set(traj_mode)
+
+        # 半音ノーツ装飾（レバーONノーツ）の復元
+        if hasattr(self.gui, "lever_deco_menu"):
+            ld_val = loaded.get("レバーON装飾", "センターライン (芯線)")
+            if ld_val not in ["センター半割 (スリット)", "サイドライン (明暗適応)", "センターライン (芯線)", "装飾なし"]:
+                ld_val = "センターライン (芯線)"
+            self.gui.lever_deco_menu.set(ld_val)
 
         # ノーツ音名表示・穴下の音名（4音グリッド表示）の復元
         if hasattr(self.gui, "show_lookahead_switch"):
@@ -577,9 +584,10 @@ class SettingsController:
             ratio=self.gui.ratio_menu.get(),
             use_skin="ON" if self.gui.use_skin_switch.get() else "OFF",
             ring="ON" if self.gui.show_ring_switch.get() else "OFF",
-            trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "3段階 (練習標準)",
+            trajectory=self.gui.trajectory_menu.get() if hasattr(self.gui, "trajectory_menu") else "垂直落下 (穴直上)",
             lookahead=("ON" if self.gui.show_lookahead_switch.get() else "OFF") if hasattr(self.gui, "show_lookahead_switch") else "ON",
             grid4=self.gui.grid4_menu.get() if hasattr(self.gui, "grid4_menu") else "4音グリッド表示",
+            lever_deco=self.gui.lever_deco_menu.get() if hasattr(self.gui, "lever_deco_menu") else "センターライン (芯線)",
             **{
                 "ノーツ落下速度": self.gui.note_speed_menu.get() if hasattr(self.gui, "note_speed_menu") else "1.0x (標準)",
                 "ステップアップ1周増分": self.gui.stepup_step_menu.get() if hasattr(self.gui, "stepup_step_menu") else "+5%",
