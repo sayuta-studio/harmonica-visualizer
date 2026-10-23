@@ -536,9 +536,9 @@ class FingeringEditorDialog(QDialog):
         # 運指プリセット
         ctrl_layout.addWidget(QLabel("運指プリセット:"))
         self.combo_preset = QComboBox(self)
-        self.combo_preset.addItems(["スライド最小化", "スライド優先", "標準"])
-        from harmonica_map import CURRENT_SONG_PRESET, CURRENT_MONOPHONIC_MODE
-        self.combo_preset.setCurrentText(CURRENT_SONG_PRESET)
+        self.combo_preset.addItems(["スライド最小化 (標準)", "スライド優先 (異名同音)"])
+        from harmonica_map import CURRENT_SONG_PRESET, CURRENT_MONOPHONIC_MODE, normalize_fingering_preset
+        self.combo_preset.setCurrentText(normalize_fingering_preset(CURRENT_SONG_PRESET))
         self.combo_preset.currentTextChanged.connect(self._on_preset_changed)
         ctrl_layout.addWidget(self.combo_preset)
 

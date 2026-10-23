@@ -81,6 +81,18 @@ ALTERNATIVE_PRESETS = {
         88: {"hole": 13, "action": "吸", "lever": "ON",  "note_name": "E6"},
     }
 }
+# エイリアス登録（新名称および旧名称の後方互換）
+ALTERNATIVE_PRESETS["スライド最小化 (標準)"] = ALTERNATIVE_PRESETS["スライド最小化"]
+ALTERNATIVE_PRESETS["スライド優先 (異名同音)"] = ALTERNATIVE_PRESETS["スライド優先"]
+ALTERNATIVE_PRESETS["標準"] = ALTERNATIVE_PRESETS["スライド最小化"]
+
+def normalize_fingering_preset(preset_name: str) -> str:
+    """プリセット名を標準表示名へ正規化"""
+    if not preset_name:
+        return "スライド最小化 (標準)"
+    if "優先" in preset_name:
+        return "スライド優先 (異名同音)"
+    return "スライド最小化 (標準)"
 
 # インタラクティブ切り替え可能な循環候補パターン定義
 FINGERING_CANDIDATES = {
@@ -429,15 +441,23 @@ def apply_fingering_preset(preset_name, user_custom_overrides=None):
     ACTIVE_HARMONICA_MAP = temp_map
 
 
-def is_note_in_range(note, inst_type):
+def get_instrument_range(inst_type: str) -> tuple:
+    """ハーモニカモデルの対応MIDIノート番号範囲 (min_note, max_note) を返却"""
+    if not inst_type:
+        return (48, 98)
     if "バス" in inst_type:
-        return 24 <= note <= 62
+        return (24, 62)  # C1 (24) 〜 D4 (62)
     elif "14穴" in inst_type:
-        return 55 <= note <= 98
+        return (55, 98)  # G3 (55) 〜 D7 (98)
     elif "12穴" in inst_type or "標準" in inst_type or "48音" in inst_type:
-        return 60 <= note <= 98
+        return (60, 98)  # C4 (60) 〜 D7 (98)
     else:
-        return 48 <= note <= 98
+        return (48, 98)  # C3 (48) 〜 D7 (98) (16穴)
+
+
+def is_note_in_range(note, inst_type):
+    low, high = get_instrument_range(inst_type)
+    return low <= note <= high
 
 
 def get_note_fingering(note, inst_type):

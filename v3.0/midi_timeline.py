@@ -522,6 +522,98 @@ class MidiTimelineData:
             self.transpose_accomp = bool(transpose_accomp)
         self.rebind_fingerings(self.inst_type)
 
+    def diagnose_pitch_range(self) -> dict:
+        """主旋律ノーツの音域と選択中モデルの音域適合性を診断し、最適な推奨移調量を計算"""
+        active_notes = [nd for nd in self.main_notes if not nd.get("is_muted", False)]
+        if not active_notes:
+            return {"status": "empty", "message": "主旋律ノーツが存在しません"}
+
+        from harmonica_map import get_instrument_range, get_note_name
+        inst_min, inst_max = get_instrument_range(self.inst_type)
+
+        # 現在の移調適用後の実ノート番号
+        current_pitches = [nd["note"] for nd in active_notes]
+        song_cur_min = min(current_pitches)
+        song_cur_max = max(current_pitches)
+        song_span = song_cur_max - song_cur_min
+        inst_span = inst_max - inst_min
+
+        # 音域外のノーツ
+        under_notes = [p for p in current_pitches if p < inst_min]
+        over_notes = [p for p in current_pitches if p > inst_max]
+        out_cnt = len(under_notes) + len(over_notes)
+
+        res = {
+            "status": "ok" if out_cnt == 0 else "out_of_range",
+            "out_count": out_cnt,
+            "under_count": len(under_notes),
+            "over_count": len(over_notes),
+            "song_cur_min": song_cur_min,
+            "song_cur_max": song_cur_max,
+            "song_cur_min_name": get_note_name(song_cur_min),
+            "song_cur_max_name": get_note_name(song_cur_max),
+            "inst_min": inst_min,
+            "inst_max": inst_max,
+            "inst_min_name": get_note_name(inst_min),
+            "inst_max_name": get_note_name(inst_max),
+            "current_transpose": self.transpose_semitones,
+            "recommended_shifts": [],
+            "target_transposes": [],
+            "recommendation_text": "",
+        }
+
+        if out_cnt == 0:
+            res["recommendation_text"] = "全ノーツが選択中モデルの音域内に収まっています。"
+            return res
+
+        # 収まるための追加シフト Δ (current_pitch + Δ ∈ [inst_min, inst_max])
+        delta_min = inst_min - song_cur_min
+        delta_max = inst_max - song_cur_max
+
+        if delta_min > delta_max:
+            res["status"] = "exceeds_instrument"
+            res["recommendation_text"] = (
+                f"曲の音域（{song_span + 1}半音: {res['song_cur_min_name']}〜{res['song_cur_max_name']}）が"
+                f"ハーモニカの対応音域（{inst_span + 1}半音: {res['inst_min_name']}〜{res['inst_max_name']}）を"
+                f"超えているため、移調のみでは全音収まりません（16穴モデル等の利用を推奨）。"
+            )
+            return res
+
+        # 全ノーツが収まる追加シフト
+        shifts = []
+        if delta_min <= 0 <= delta_max:
+            min_abs_shift = 0
+        elif delta_min > 0:
+            min_abs_shift = delta_min
+        else:
+            min_abs_shift = delta_max
+
+        if min_abs_shift != 0:
+            shifts.append(min_abs_shift)
+
+        # 原曲(0st)からのオクターブ移動 (+12, -12, 0, +24, -24) に対応するシフト
+        for target_oct in [12, -12, 0, 24, -24]:
+            needed_shift = target_oct - self.transpose_semitones
+            if delta_min <= needed_shift <= delta_max and needed_shift not in shifts:
+                shifts.append(needed_shift)
+
+        res["recommended_shifts"] = shifts
+        res["target_transposes"] = [self.transpose_semitones + s for s in shifts]
+
+        recs = []
+        for s in shifts:
+            target_t = self.transpose_semitones + s
+            sign_s = f"+{s}" if s > 0 else str(s)
+            sign_t = f"+{target_t}" if target_t > 0 else str(target_t)
+            if abs(target_t) == 12 or target_t == 0:
+                oct_label = " (原曲キー)" if target_t == 0 else (" (+1Oct)" if target_t == 12 else " (-1Oct)")
+                recs.append(f"{sign_s}半音{oct_label} [移調:{sign_t}st]")
+            else:
+                recs.append(f"{sign_s}半音 [移調:{sign_t}st]")
+
+        res["recommendation_text"] = f"💡 推奨: {' または '.join(recs)} で全ノーツ演奏可能"
+        return res
+
     def get_out_of_range_count(self) -> int:
         """現在有効な主旋律ノーツの中で音域外となっているノーツ数を取得"""
         cnt = 0

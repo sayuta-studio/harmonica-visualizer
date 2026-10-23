@@ -700,24 +700,36 @@ class HarmonicaMainWindow(QMainWindow):
         row3.addWidget(QLabel("移調:", self))
 
         self.btn_trans_down_oct = QPushButton("-12", self)
-        self.btn_trans_down_oct.setFixedWidth(40)
+        self.btn_trans_down_oct.setFixedWidth(36)
         self.btn_trans_down_oct.setToolTip("1オクターブ下げる (-12半音)")
         self.btn_trans_down_oct.clicked.connect(lambda: self.spin_transpose.setValue(max(-24, self.spin_transpose.value() - 12)))
         row3.addWidget(self.btn_trans_down_oct)
+
+        self.btn_trans_minus_1 = QPushButton("-1", self)
+        self.btn_trans_minus_1.setFixedWidth(28)
+        self.btn_trans_minus_1.setToolTip("半音下げる (-1半音)")
+        self.btn_trans_minus_1.clicked.connect(lambda: self.spin_transpose.setValue(max(-24, self.spin_transpose.value() - 1)))
+        row3.addWidget(self.btn_trans_minus_1)
 
         self.spin_transpose = QSpinBox(self)
         self.spin_transpose.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.spin_transpose.setRange(-24, 24)
         self.spin_transpose.setValue(int(self.user_settings.get("transpose", 0)))
         self.spin_transpose.setSuffix("st")
-        self.spin_transpose.setFixedWidth(52)
+        self.spin_transpose.setFixedWidth(46)
         self.spin_transpose.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spin_transpose.setToolTip("半音単位の移調 (-24〜+24半音 / ±2オクターブ) [直接入力 / マウスホイールで変更]")
         self.spin_transpose.valueChanged.connect(self._on_transpose_changed)
         row3.addWidget(self.spin_transpose)
 
+        self.btn_trans_plus_1 = QPushButton("+1", self)
+        self.btn_trans_plus_1.setFixedWidth(28)
+        self.btn_trans_plus_1.setToolTip("半音上げる (+1半音)")
+        self.btn_trans_plus_1.clicked.connect(lambda: self.spin_transpose.setValue(min(24, self.spin_transpose.value() + 1)))
+        row3.addWidget(self.btn_trans_plus_1)
+
         self.btn_trans_up_oct = QPushButton("+12", self)
-        self.btn_trans_up_oct.setFixedWidth(40)
+        self.btn_trans_up_oct.setFixedWidth(36)
         self.btn_trans_up_oct.setToolTip("1オクターブ上げる (+12半音)")
         self.btn_trans_up_oct.clicked.connect(lambda: self.spin_transpose.setValue(min(24, self.spin_transpose.value() + 12)))
         row3.addWidget(self.btn_trans_up_oct)
@@ -819,6 +831,7 @@ class HarmonicaMainWindow(QMainWindow):
         l_inst.setSpacing(6)
 
         l_inst.addWidget(QLabel("🎷 <b>ハーモニカモデル:</b>"))
+        r_model = QHBoxLayout()
         self.inst_combo = QComboBox(self)
         self.inst_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.inst_combo.setMinimumContentsLength(8)
@@ -831,15 +844,24 @@ class HarmonicaMainWindow(QMainWindow):
         self.inst_combo.setCurrentText(self.user_settings.get("inst_type", "16穴 (64音・C調)"))
         self.inst_combo.setToolTip("使用するクロマチックハーモニカの穴数・音域モデルを選択")
         self.inst_combo.currentTextChanged.connect(self._on_inst_changed)
-        l_inst.addWidget(self.inst_combo)
+        r_model.addWidget(self.inst_combo, stretch=1)
+
+        self.btn_range_check = QPushButton("🔍 音域チェック", self)
+        self.btn_range_check.setFixedWidth(92)
+        self.btn_range_check.setStyleSheet("font-size: 11px; padding: 3px 6px;")
+        self.btn_range_check.setToolTip("現在の曲の音域と選択中モデルの適合性を診断し、最適な推奨移調量を提案")
+        self.btn_range_check.clicked.connect(self._on_check_pitch_range)
+        r_model.addWidget(self.btn_range_check)
+        l_inst.addLayout(r_model)
 
         r_fing = QHBoxLayout()
         r_fing.addWidget(QLabel("運指規則:"))
         self.combo_fing_preset = QComboBox(self)
         self.combo_fing_preset.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.combo_fing_preset.addItems(["スライド最小化", "スライド優先", "標準"])
-        self.combo_fing_preset.setCurrentText(self.user_settings.get("fingering_preset", "スライド最小化"))
-        self.combo_fing_preset.setToolTip("同音異穴が存在するノーツの自動運指選択ルール")
+        self.combo_fing_preset.addItems(["スライド最小化 (標準)", "スライド優先 (異名同音)"])
+        from harmonica_map import normalize_fingering_preset
+        self.combo_fing_preset.setCurrentText(normalize_fingering_preset(self.user_settings.get("fingering_preset", "スライド最小化 (標準)")))
+        self.combo_fing_preset.setToolTip("同音異穴が存在するノーツの自動運指選択ルール（最小化＝スライドOFF優先 / 優先＝同音異名ON活用）")
         self.combo_fing_preset.currentTextChanged.connect(self._on_fingering_preset_changed)
         r_fing.addWidget(self.combo_fing_preset, stretch=1)
         l_inst.addLayout(r_fing)
@@ -1422,21 +1444,22 @@ class HarmonicaMainWindow(QMainWindow):
         l_rev.setSpacing(6)
         l_rev.addWidget(QLabel("✨ <b>ハーモニカ用リバーブ (空間残響エフェクト):</b>"))
 
-        r_rev1 = QHBoxLayout()
         self.chk_reverb = QCheckBox("リバーブを適用", self)
         self.chk_reverb.setChecked(bool(self.user_settings.get("reverb_enabled", False)))
         self.chk_reverb.setToolTip("録音テイクおよび動画出力音声にリバーブ残響を適用")
         self.chk_reverb.toggled.connect(self._on_reverb_toggled)
-        r_rev1.addWidget(self.chk_reverb)
+        l_rev.addWidget(self.chk_reverb)
 
+        r_rev_type = QHBoxLayout()
+        r_rev_type.addWidget(QLabel("空間タイプ:"))
         self.combo_reverb_type = QComboBox(self)
         self.combo_reverb_type.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_reverb_type.addItems(["ルーム (自然な部屋鳴り)", "ホール (豊かな広がり)", "プレート (透明感のある響き)"])
         self.combo_reverb_type.setCurrentText(self.user_settings.get("reverb_type", "ルーム (自然な部屋鳴り)"))
         self.combo_reverb_type.setToolTip("リバーブの空間タイプ")
         self.combo_reverb_type.currentTextChanged.connect(self._on_reverb_type_changed)
-        r_rev1.addWidget(self.combo_reverb_type, stretch=1)
-        l_rev.addLayout(r_rev1)
+        r_rev_type.addWidget(self.combo_reverb_type, stretch=1)
+        l_rev.addLayout(r_rev_type)
 
         r_rev2 = QHBoxLayout()
         self.lbl_reverb_wet = QLabel(f"深さ: {self.user_settings.get('reverb_wet_pct', 35)}%", self)
@@ -1526,9 +1549,16 @@ class HarmonicaMainWindow(QMainWindow):
         self.spin_ext_offset.setToolTip("MIDIと外部伴奏音源の発音タイミングのズレを調整 [直接入力 / マウスホイールで変更 / [ ] キーで±10ms]")
         self.spin_ext_offset.valueChanged.connect(self._on_ext_offset_changed)
         r_off.addWidget(self.spin_ext_offset)
+
+        btn_z = QPushButton("0ms", self)
+        btn_z.setFixedWidth(38)
+        btn_z.setStyleSheet("font-size: 11px; padding: 2px 4px;")
+        btn_z.setToolTip("同期オフセットを0msにリセット")
+        btn_z.clicked.connect(lambda: self.spin_ext_offset.setValue(0))
+        r_off.addWidget(btn_z)
         l_ext.addLayout(r_off)
 
-        # 微調整ボタン
+        # 微調整ボタン 4連
         r_fine = QHBoxLayout()
         for label, val in [("-10ms", -10), ("-1ms", -1), ("+1ms", 1), ("+10ms", 10)]:
             btn = QPushButton(label, self)
@@ -1536,11 +1566,6 @@ class HarmonicaMainWindow(QMainWindow):
             btn.setToolTip(f"同期オフセットを {label} 微調整")
             btn.clicked.connect(lambda _, d=val: self._on_ext_offset_adjust(d))
             r_fine.addWidget(btn)
-        btn_z = QPushButton("0ms", self)
-        btn_z.setStyleSheet("font-size: 11px; padding: 2px 4px;")
-        btn_z.setToolTip("同期オフセットを0msにリセット")
-        btn_z.clicked.connect(lambda: self.spin_ext_offset.setValue(0))
-        r_fine.addWidget(btn_z)
         l_ext.addLayout(r_fine)
 
         # 試聴ボタン
@@ -2614,14 +2639,88 @@ class HarmonicaMainWindow(QMainWindow):
     def _check_out_of_range_and_notify(self):
         """音域外ノーツの存在を検出してステータスバー等に通知"""
         if hasattr(self, "timeline") and self.timeline:
-            out_cnt = self.timeline.get_out_of_range_count()
-            if out_cnt > 0:
+            diag = self.timeline.diagnose_pitch_range()
+            status = diag.get("status")
+            if status in ("out_of_range", "exceeds_instrument"):
+                out_cnt = diag.get("out_count", 0)
+                rec = diag.get("recommendation_text", "")
+                self.lbl_status_msg.setText(f"⚠ 音域外: {out_cnt}音 | {rec}")
+            elif status == "ok":
                 cur_text = self.lbl_status_msg.text()
-                if "⚠ 音域外" not in cur_text:
-                    if cur_text and cur_text not in ("準備完了", "待機中..."):
-                        self.lbl_status_msg.setText(f"{cur_text}  |  ⚠ 音域外: {out_cnt}音 (±12等で調整可)")
-                    else:
-                        self.lbl_status_msg.setText(f"⚠ 音域外の音が {out_cnt} 音あります（移調や±12ボタンで調整可能）")
+                if "音域外" in cur_text:
+                    self.lbl_status_msg.setText("✅ 全音域クリア (演奏可能)")
+
+    def _on_check_pitch_range(self):
+        """音域チェックボタン押下時の詳細診断ダイアログ表示"""
+        if not hasattr(self, "timeline") or not self.timeline or not getattr(self.timeline, "main_notes", None):
+            QMessageBox.information(self, "音域チェック", "MIDIファイルが読み込まれていません。")
+            return
+
+        diag = self.timeline.diagnose_pitch_range()
+        status = diag.get("status")
+
+        if status == "empty":
+            QMessageBox.information(self, "音域チェック", "有効な主旋律ノーツが見つかりませんでした。")
+            return
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("🔍 ハーモニカ音域診断")
+
+        info_lines = [
+            "<b>【現在の設定】</b>",
+            f"・モデル: <b>{self.inst_combo.currentText()}</b> (対応音域: {diag['inst_min_name']} 〜 {diag['inst_max_name']})",
+            f"・曲の主旋律音域: <b>{diag['song_cur_min_name']} 〜 {diag['song_cur_max_name']}</b> (現在移調: {diag['current_transpose']:+d}st)",
+        ]
+
+        if status == "ok":
+            msg.setIcon(QMessageBox.Icon.Information)
+            info_lines.append("")
+            info_lines.append("🎉 <b>判定: 全音域クリア</b>")
+            info_lines.append("すべてのノーツが選択中ハーモニカの音域内に収まっており、無理なく演奏可能です！")
+            msg.setText("<br>".join(info_lines))
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+            self.lbl_status_msg.setText("✅ 全音域クリア: 全ノーツ演奏可能です")
+            return
+
+        if status == "exceeds_instrument":
+            msg.setIcon(QMessageBox.Icon.Warning)
+            info_lines.append("")
+            info_lines.append(f"⚠ <b>判定: 音域外ノーツ {diag['out_count']} 音 (高低差超過)</b>")
+            info_lines.append(diag["recommendation_text"])
+            msg.setText("<br>".join(info_lines))
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+            self.lbl_status_msg.setText(f"⚠ 音域外: {diag['out_count']}音 (曲の音域がモデルの上限/下限を超過)")
+            return
+
+        # out_of_range (移調で解決可能)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        info_lines.append("")
+        info_lines.append(f"⚠ <b>判定: 音域外ノーツ {diag['out_count']} 音</b> (低音側: {diag['under_count']}音 / 高音側: {diag['over_count']}音)")
+        info_lines.append("")
+        info_lines.append(f"<b>{diag['recommendation_text']}</b>")
+        msg.setText("<br>".join(info_lines))
+
+        # 推奨ボタンの配置 (最大2件)
+        target_transposes = diag.get("target_transposes", [])
+        shifts = diag.get("recommended_shifts", [])
+        buttons = []
+        for i, target_t in enumerate(target_transposes[:2]):
+            s = shifts[i]
+            label = f"移調を {target_t:+d}st に設定 ({s:+d}半音)"
+            btn = msg.addButton(label, QMessageBox.ButtonRole.ActionRole)
+            buttons.append((btn, target_t))
+
+        msg.addButton("閉じる", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+
+        clicked = msg.clickedButton()
+        for btn, target_t in buttons:
+            if clicked == btn:
+                self.spin_transpose.setValue(target_t)
+                self.lbl_status_msg.setText(f"🎯 移調を {target_t:+d}st に設定しました (全音域クリア)")
+                break
 
     def _load_midi_file(self, filepath: str):
         try:
