@@ -26,7 +26,8 @@ from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from config import (
     CANVAS_WIDTH, W_PITCH, D_HOLE,
     get_canvas_height_by_ratio, get_y_trajectory_params,
-    get_layout_params, get_lever_highlight_color, get_portable_path
+    get_layout_params, get_lever_highlight_color, get_portable_path,
+    format_hole_number
 )
 from harmonica_map import (
     is_note_in_range, get_note_name, get_hole_4_notes, BLOW_NOTES_MIDI
@@ -86,6 +87,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
         self.show_bar_lines = True
         self.show_grid4 = "4音グリッド表示"  # "4音グリッド表示" or "1音表示 (従来)"
         self.show_hole_num = True
+        self.hole_num_style = "実機標準 (低音ドット付)"
         self.show_legend = True
         self.show_lookahead = True
         self.use_ring = True          # レバーリング連動
@@ -214,6 +216,10 @@ class HarmonicaGLWidget(QOpenGLWidget):
 
     def set_show_hole_num(self, show: bool):
         self.show_hole_num = bool(show)
+        self.invalidate_static_cache()
+
+    def set_hole_num_style(self, style: str):
+        self.hole_num_style = str(style)
         self.invalidate_static_cache()
 
     def set_show_legend(self, show: bool):
@@ -448,9 +454,16 @@ class HarmonicaGLWidget(QOpenGLWidget):
         if self.timeline:
             self.timeline.rebind_fingerings(self.inst_type)
 
-        self.invalidate_static_cache()
-
         new_cand = candidates[next_idx]
+        nd["fingering"] = new_cand
+        nd["hole"] = new_cand["hole"]
+        nd["action"] = new_cand["action"]
+        nd["lever"] = new_cand["lever"]
+        nd["is_lever_on"] = (new_cand["lever"] == "ON")
+
+        self.invalidate_static_cache()
+        self.update()
+
         note_name = nd.get("name_jp", "") if self.lang_mode == "ドレミ" else nd.get("name_cde", "")
         cand_str = f"{new_cand['hole']}穴 {new_cand['action']} {new_cand['lever']}"
         self.show_toast(f"⟳ 運指切替: {note_name} → {cand_str}")
@@ -666,6 +679,8 @@ class HarmonicaGLWidget(QOpenGLWidget):
                     img_h = img.height()
                     if img_w > 0 and img_h > 0:
                         dest_rect = QRectF(x_offset, y_offset, disp_w, disp_h)
+                        p.save()
+                        p.setClipRect(dest_rect)
                         if "全体" in self.bg_fit_mode or "収める" in self.bg_fit_mode:
                             img_scale = min(disp_w / img_w, disp_h / img_h)
                             fw = img_w * img_scale
@@ -696,6 +711,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
                         if self.bg_dim_ratio > 0:
                             alpha = int(round(255 * (min(100, max(0, self.bg_dim_ratio)) / 100.0)))
                             p.fillRect(dest_rect, QColor(0, 0, 0, alpha))
+                        p.restore()
             except Exception as ex:
                 print(f"[Warning] Background image draw error: {ex}")
 
@@ -719,7 +735,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
         if self.show_grid:
             grid_sub_col = QColor(0, 0, 0, 20) if is_bright_bg else QColor(255, 255, 255, 18)
             grid_bnd_col = QColor(0, 0, 0, 45) if is_bright_bg else QColor(255, 255, 255, 30)
-            grid_oct_col = QColor(0, 0, 0, 80) if is_bright_bg else QColor(56, 189, 248, 85)
+            grid_oct_col = QColor(0, 0, 0, 50) if is_bright_bg else QColor(255, 255, 255, 35)
 
             if is_straight_mode:
                 for k in range(len(visible_indices)):
@@ -795,7 +811,8 @@ class HarmonicaGLWidget(QOpenGLWidget):
 
             if self.show_hole_num:
                 num_rect = QRectF(cx - w_pitch_s * 0.5, y_center_s + 14.0 * scale, w_pitch_s, 20.0 * scale)
-                _draw_bordered_text_qt(p, num_rect, str(k + 1), self.font_hole, self.color_white, self.color_black, border_w=1.5 * scale)
+                num_str = format_hole_number(idx, self.inst_type, getattr(self, "hole_num_style", "実機標準 (低音ドット付)"))
+                _draw_bordered_text_qt(p, num_rect, num_str, self.font_hole, self.color_white, self.color_black, border_w=1.5 * scale)
 
         # 3. 穴下の音名表示 (田の字4音グリッド / 1音表示)
         show_4grid = (self.show_grid4 is True or "4音" in str(self.show_grid4))
@@ -1164,8 +1181,32 @@ class HarmonicaGLWidget(QOpenGLWidget):
 
                     # 半音ノーツ装飾 (除外ノーツは装飾しない)
                     if not is_muted and is_lever_on:
-                        if "センターライン" in self.lever_deco_mode:
-                            painter.setPen(self.pen_center_blow if is_blow else self.pen_center_draw)
+                        line_alpha = fill_color.alpha()
+                        if "2本" in self.lever_deco_mode or "ダブル" in self.lever_deco_mode:
+                            pen_col = self.color_blow_hi if is_blow else self.color_draw_hi
+                            pen_d = QPen(QColor(pen_col.red(), pen_col.green(), pen_col.blue(), line_alpha), max(1.2, 1.4 * scale))
+                            pen_d.setCapStyle(Qt.PenCapStyle.RoundCap)
+                            painter.setPen(pen_d)
+                            d_off = max(1.6, 2.2 * scale)
+                            # 左ライン
+                            line_pts_l = [QPointF(round(x_m_func(y_vis_top) - d_off), y_vis_top)]
+                            for by in active_bends:
+                                line_pts_l.append(QPointF(round(x_m_func(by) - d_off), by))
+                            line_pts_l.append(QPointF(round(x_m_func(y_vis_bot) - d_off), y_vis_bot))
+                            for lj in range(len(line_pts_l) - 1):
+                                painter.drawLine(line_pts_l[lj], line_pts_l[lj + 1])
+                            # 右ライン
+                            line_pts_r = [QPointF(round(x_m_func(y_vis_top) + d_off), y_vis_top)]
+                            for by in active_bends:
+                                line_pts_r.append(QPointF(round(x_m_func(by) + d_off), by))
+                            line_pts_r.append(QPointF(round(x_m_func(y_vis_bot) + d_off), y_vis_bot))
+                            for lj in range(len(line_pts_r) - 1):
+                                painter.drawLine(line_pts_r[lj], line_pts_r[lj + 1])
+                        elif "センターライン" in self.lever_deco_mode:
+                            pen_col = self.color_blow_hi if is_blow else self.color_draw_hi
+                            pen_c = QPen(QColor(pen_col.red(), pen_col.green(), pen_col.blue(), line_alpha), max(1.6, 2.0 * scale))
+                            pen_c.setCapStyle(Qt.PenCapStyle.RoundCap)
+                            painter.setPen(pen_c)
                             line_pts = [QPointF(round(x_m_func(y_vis_top)), y_vis_top)]
                             for by in active_bends:
                                 line_pts.append(QPointF(round(x_m_func(by)), by))

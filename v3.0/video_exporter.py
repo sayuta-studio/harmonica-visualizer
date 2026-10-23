@@ -25,7 +25,8 @@ from PyQt6.QtGui import (
 from config import (
     CANVAS_WIDTH, W_PITCH, D_HOLE,
     get_canvas_height_by_ratio, get_y_trajectory_params,
-    get_layout_params, get_lever_highlight_color, get_portable_path
+    get_layout_params, get_lever_highlight_color, get_portable_path,
+    format_hole_number
 )
 from harmonica_map import (
     is_note_in_range, get_note_name, get_hole_4_notes, BLOW_NOTES_MIDI
@@ -92,6 +93,7 @@ class OffscreenVisualizerRenderer:
         self.show_bar_lines = bool(self.settings.get("show_bar_lines", True))
         self.show_grid4 = self.settings.get("show_grid4", "4音グリッド表示")
         self.show_hole_num = bool(self.settings.get("show_hole_num", True))
+        self.hole_num_style = str(self.settings.get("hole_num_style", "実機標準 (低音ドット付)"))
         self.show_legend = bool(self.settings.get("show_legend", True))
         self.show_lookahead = bool(self.settings.get("show_lookahead", True))
         self.use_ring = bool(self.settings.get("use_ring", True))
@@ -190,6 +192,8 @@ class OffscreenVisualizerRenderer:
                         bg_raw = bg_raw.transformed(tr, Qt.TransformationMode.SmoothTransformation)
 
                     dest_rect = QRectF(x_offset, y_offset, disp_w, disp_h)
+                    p.save()
+                    p.setClipRect(dest_rect)
                     if "全体" in self.bg_fit_mode or "収める" in self.bg_fit_mode:
                         scaled = bg_raw.scaled(int(disp_w), int(disp_h), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                         px = x_offset + (disp_w - scaled.width()) * 0.5
@@ -219,6 +223,7 @@ class OffscreenVisualizerRenderer:
                     if self.bg_dim_ratio > 0:
                         dim_alpha = int(255 * (self.bg_dim_ratio / 100.0))
                         p.fillRect(dest_rect, QColor(0, 0, 0, dim_alpha))
+                    p.restore()
             except Exception as e:
                 print(f"[VideoExporter] 背景描画例外: {e}")
 
@@ -242,7 +247,7 @@ class OffscreenVisualizerRenderer:
         if self.show_grid:
             grid_sub_col = QColor(0, 0, 0, 20) if is_bright_bg else QColor(255, 255, 255, 18)
             grid_bnd_col = QColor(0, 0, 0, 45) if is_bright_bg else QColor(255, 255, 255, 30)
-            grid_oct_col = QColor(0, 0, 0, 80) if is_bright_bg else QColor(56, 189, 248, 85)
+            grid_oct_col = QColor(0, 0, 0, 50) if is_bright_bg else QColor(255, 255, 255, 35)
 
             if is_straight_mode:
                 for k in range(len(visible_indices)):
@@ -312,7 +317,8 @@ class OffscreenVisualizerRenderer:
 
             if self.show_hole_num:
                 num_rect = QRectF(cx - w_pitch_s * 0.5, y_center_s + 14.0 * scale, w_pitch_s, 20.0 * scale)
-                _draw_bordered_text_qt(p, num_rect, str(k + 1), self.font_hole, self.color_white, self.color_black, border_w=1.5 * scale)
+                num_str = format_hole_number(idx, self.inst_type, getattr(self, "hole_num_style", "実機標準 (低音ドット付)"))
+                _draw_bordered_text_qt(p, num_rect, num_str, self.font_hole, self.color_white, self.color_black, border_w=1.5 * scale)
 
         # 3. 穴下の音名表示 (4音グリッド / 1音表示)
         show_4grid = (self.show_grid4 is True or "4音" in str(self.show_grid4))
@@ -619,8 +625,30 @@ class OffscreenVisualizerRenderer:
                     p.drawPolygon(QPolygonF(poly_pts))
 
                     if is_lever_on:
-                        if "センターライン" in self.lever_deco_mode:
-                            p.setPen(self.pen_center_blow if is_blow else self.pen_center_draw)
+                        line_alpha = fill_color.alpha()
+                        if "2本" in self.lever_deco_mode or "ダブル" in self.lever_deco_mode:
+                            pen_col = self.color_blow_hi if is_blow else self.color_draw_hi
+                            pen_d = QPen(QColor(pen_col.red(), pen_col.green(), pen_col.blue(), line_alpha), max(1.2, 1.4 * scale))
+                            pen_d.setCapStyle(Qt.PenCapStyle.RoundCap)
+                            p.setPen(pen_d)
+                            d_off = max(1.6, 2.2 * scale)
+                            line_pts_l = [QPointF(round(x_m_func(y_vis_top) - d_off), y_vis_top)]
+                            for by in active_bends:
+                                line_pts_l.append(QPointF(round(x_m_func(by) - d_off), by))
+                            line_pts_l.append(QPointF(round(x_m_func(y_vis_bot) - d_off), y_vis_bot))
+                            for lj in range(len(line_pts_l) - 1):
+                                p.drawLine(line_pts_l[lj], line_pts_l[lj + 1])
+                            line_pts_r = [QPointF(round(x_m_func(y_vis_top) + d_off), y_vis_top)]
+                            for by in active_bends:
+                                line_pts_r.append(QPointF(round(x_m_func(by) + d_off), by))
+                            line_pts_r.append(QPointF(round(x_m_func(y_vis_bot) + d_off), y_vis_bot))
+                            for lj in range(len(line_pts_r) - 1):
+                                p.drawLine(line_pts_r[lj], line_pts_r[lj + 1])
+                        elif "センターライン" in self.lever_deco_mode:
+                            pen_col = self.color_blow_hi if is_blow else self.color_draw_hi
+                            pen_c = QPen(QColor(pen_col.red(), pen_col.green(), pen_col.blue(), line_alpha), max(1.6, 2.0 * scale))
+                            pen_c.setCapStyle(Qt.PenCapStyle.RoundCap)
+                            p.setPen(pen_c)
                             line_pts = [QPointF(round(x_m_func(y_vis_top)), y_vis_top)]
                             for by in active_bends:
                                 line_pts.append(QPointF(round(x_m_func(by)), by))

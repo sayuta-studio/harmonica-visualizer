@@ -404,3 +404,28 @@ def generate_default_skins():
         lon_img.paste(btn_img, (12, 6), mask=btn_mask)
         lon_img.save(lever_on_path, "PNG")
         print("[システム] skins/レバーオン.png の自動書き出しに成功しました。")
+
+
+def format_hole_number(hole_index_0_based: int, inst_type: str = "16穴 (64音・C調)", style: str = "実機標準 (低音ドット付)") -> str:
+    """
+    穴番号の表示文字列をフォーマット。
+    style:
+      - "実機標準 (低音ドット付)" / "実機標準"
+      - "通し番号 (1〜16)"
+    """
+    raw_num = hole_index_0_based + 1
+    if "通し番号" in str(style):
+        return str(raw_num)
+
+    if "16穴" in inst_type:
+        if raw_num <= 4:
+            return f"·{raw_num}"
+        else:
+            return str(raw_num - 4)
+    elif "14穴" in inst_type:
+        if raw_num <= 2:
+            return "·"
+        else:
+            return str(raw_num - 2)
+    else:
+        return str(raw_num)

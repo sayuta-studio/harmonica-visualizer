@@ -154,15 +154,34 @@ QComboBox {{
     color: #FFFFFF;
     border: 1px solid #343442;
     border-radius: 4px;
-    padding: 2px 6px;
+    padding: 2px 20px 2px 6px;
     min-width: 48px;
 }}
 QComboBox:hover {{
     border-color: #00BFFF;
 }}
 QComboBox::drop-down {{
-    border: none;
-    width: 16px;
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 18px;
+    border-left: 1px solid #2D2D3A;
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+    background-color: #1E1E26;
+}}
+QComboBox::drop-down:hover {{
+    background-color: #282836;
+}}
+QComboBox::down-arrow {{
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #94A3B8;
+    width: 0px;
+    height: 0px;
+}}
+QComboBox::down-arrow:hover {{
+    border-top-color: #38BDF8;
 }}
 QComboBox QAbstractItemView {{
     background-color: #1A1A22;
@@ -1053,7 +1072,7 @@ class HarmonicaMainWindow(QMainWindow):
         r_deco.addWidget(QLabel("レバーON装飾:"))
         self.combo_lever = QComboBox(self)
         self.combo_lever.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.combo_lever.addItems(["センターライン (芯線)", "センター半割 (スリット)", "サイドライン (明暗適応)", "装飾なし"])
+        self.combo_lever.addItems(["センターライン (芯線)", "センターライン2本 (ダブル芯線)", "センター半割 (スリット)", "サイドライン (明暗適応)", "装飾なし"])
         self.combo_lever.setCurrentText(self.user_settings.get("lever_deco_mode", "センターライン (芯線)"))
         self.combo_lever.setToolTip("スライドレバーON（半音）ノーツの視覚的アクセント装飾")
         self.combo_lever.currentTextChanged.connect(self._on_lever_changed)
@@ -1133,6 +1152,17 @@ class HarmonicaMainWindow(QMainWindow):
         grid_chk.addWidget(self.chk_bar_lines, 3, 1)
 
         l_chk.addLayout(grid_chk)
+
+        r_hole_style = QHBoxLayout()
+        r_hole_style.addWidget(QLabel("穴番号表記:"))
+        self.combo_hole_num_style = QComboBox(self)
+        self.combo_hole_num_style.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.combo_hole_num_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜16)"])
+        self.combo_hole_num_style.setCurrentText(self.user_settings.get("hole_num_style", "実機標準 (低音ドット付)"))
+        self.combo_hole_num_style.setToolTip("実機同様に低音穴にドットを付与する表記（·1〜·4, 1〜12）か、通し番号（1〜16）かを選択")
+        self.combo_hole_num_style.currentTextChanged.connect(self._on_hole_num_style_changed)
+        r_hole_style.addWidget(self.combo_hole_num_style, stretch=1)
+        l_chk.addLayout(r_hole_style)
 
         r_grid4 = QHBoxLayout()
         r_grid4.addWidget(QLabel("穴下ノート表示:"))
@@ -1940,6 +1970,11 @@ class HarmonicaMainWindow(QMainWindow):
         if hasattr(self, "chk_bar_lines"):
             self.chk_bar_lines.setChecked(bool(s.get("show_bar_lines", True)))
         self.gl_widget.set_show_hole_num(s.get("show_hole_num", True))
+        self.gl_widget.set_hole_num_style(s.get("hole_num_style", "実機標準 (低音ドット付)"))
+        if hasattr(self, "combo_hole_num_style"):
+            self.combo_hole_num_style.blockSignals(True)
+            self.combo_hole_num_style.setCurrentText(s.get("hole_num_style", "実機標準 (低音ドット付)"))
+            self.combo_hole_num_style.blockSignals(False)
         self.gl_widget.set_use_ring(s.get("show_ring", s.get("use_ring", True)))
         self.gl_widget.set_show_glow(s.get("show_glow", True))
         self.gl_widget.set_show_legend(s.get("show_legend", True))
@@ -2020,6 +2055,8 @@ class HarmonicaMainWindow(QMainWindow):
             self.user_settings["stepup_step_pct"] = 5
         self.user_settings["color_theme"] = self.combo_theme.currentText()
         self.user_settings["lever_deco_mode"] = self.combo_lever.currentText()
+        if hasattr(self, "combo_hole_num_style"):
+            self.user_settings["hole_num_style"] = self.combo_hole_num_style.currentText()
         self.user_settings["note_opacity"] = self.slider_op.value()
         self.user_settings["bg_image_path"] = getattr(self.gl_widget, "bg_image_path", "")
         self.user_settings["bg_dim_ratio"] = self.slider_bg_dim.value()
@@ -2896,6 +2933,11 @@ class HarmonicaMainWindow(QMainWindow):
         self.gl_widget.set_aspect_ratio(ratio)
         self._save_current_settings()
 
+    def _on_hole_num_style_changed(self, style: str):
+        self.user_settings["hole_num_style"] = str(style)
+        self.gl_widget.set_hole_num_style(str(style))
+        self._save_current_settings()
+
     # =========================================================================
     # 定周期UI更新 (30Hz)
     # =========================================================================
@@ -3312,6 +3354,7 @@ class HarmonicaMainWindow(QMainWindow):
             "show_bar_lines": getattr(self.gl_widget, "show_bar_lines", True),
             "show_grid4": self.combo_grid4.currentText(),
             "show_hole_num": self.gl_widget.show_hole_num,
+            "hole_num_style": getattr(self.gl_widget, "hole_num_style", "実機標準 (低音ドット付)"),
             "show_legend": self.gl_widget.show_legend,
             "show_lookahead": self.gl_widget.show_lookahead,
             "use_ring": self.gl_widget.use_ring,
@@ -3451,6 +3494,7 @@ class HarmonicaMainWindow(QMainWindow):
             "show_bar_lines": getattr(self.gl_widget, "show_bar_lines", True),
             "show_grid4": self.combo_grid4.currentText(),
             "show_hole_num": self.gl_widget.show_hole_num,
+            "hole_num_style": getattr(self.gl_widget, "hole_num_style", "実機標準 (低音ドット付)"),
             "show_legend": self.gl_widget.show_legend,
             "show_lookahead": self.gl_widget.show_lookahead,
             "use_ring": self.gl_widget.use_ring,

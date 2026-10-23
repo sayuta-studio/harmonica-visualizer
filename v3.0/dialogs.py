@@ -79,7 +79,7 @@ class HarmonicaSettingsDialog(QDialog):
         row_lever = QHBoxLayout()
         row_lever.addWidget(QLabel("レバーON装飾:"))
         self.combo_lever = QComboBox(self)
-        self.combo_lever.addItems(["センターライン (芯線)", "スリット (2本線)", "なし"])
+        self.combo_lever.addItems(["センターライン (芯線)", "センターライン2本 (ダブル芯線)", "センター半割 (スリット)", "サイドライン (明暗適応)", "装飾なし"])
         row_lever.addWidget(self.combo_lever)
         row_lever.addStretch()
         v_layout.addLayout(row_lever)

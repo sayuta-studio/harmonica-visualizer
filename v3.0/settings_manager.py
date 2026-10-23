@@ -23,6 +23,7 @@ DEFAULT_SETTINGS = {
     "show_bar_lines": True,
     "show_legend": True,
     "show_hole_num": True,
+    "hole_num_style": "実機標準 (低音ドット付)",
     "show_notes": True,
     "show_lookahead": True,
     "grid4_mode": "4音グリッド表示",
