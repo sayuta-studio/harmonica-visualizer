@@ -524,7 +524,8 @@ class FingeringEditorDialog(QDialog):
 
         # 1. ヘッダー情報バー
         hdr_frame = QFrame(self)
-        hdr_frame.setStyleSheet("background-color: #161622; border: 1px solid #272738; border-radius: 6px; padding: 6px;")
+        hdr_frame.setObjectName("fingHdrFrame")
+        hdr_frame.setStyleSheet("QFrame#fingHdrFrame { background-color: #161622; border: 1px solid #272738; border-radius: 6px; }")
         l_hdr = QHBoxLayout(hdr_frame)
         l_hdr.setContentsMargins(10, 6, 10, 6)
 
@@ -545,7 +546,8 @@ class FingeringEditorDialog(QDialog):
 
         # 2. パターン＆プロファイル管理バー
         pat_frame = QFrame(self)
-        pat_frame.setStyleSheet("background-color: #151520; border: 1px solid #242436; border-radius: 4px; padding: 4px;")
+        pat_frame.setObjectName("fingPatFrame")
+        pat_frame.setStyleSheet("QFrame#fingPatFrame { background-color: #151520; border: 1px solid #242436; border-radius: 4px; }")
         pat_layout = QHBoxLayout(pat_frame)
         pat_layout.setContentsMargins(8, 4, 8, 4)
         pat_layout.setSpacing(8)
@@ -1520,10 +1522,11 @@ class SkinSelectDialog(QDialog):
 
         # プレビューボックス (中央表示)
         f_prev = QFrame(self)
-        f_prev.setStyleSheet("background-color: #0E0E14; border: 1px solid #232334; border-radius: 6px; padding: 8px;")
+        f_prev.setObjectName("skinPrevFrame")
+        f_prev.setStyleSheet("QFrame#skinPrevFrame { background-color: #0E0E14; border: 1px solid #232334; border-radius: 6px; }")
         l_prev = QVBoxLayout(f_prev)
-        l_prev.setContentsMargins(8, 6, 8, 6)
-        l_prev.setSpacing(4)
+        l_prev.setContentsMargins(10, 8, 10, 8)
+        l_prev.setSpacing(6)
 
         lbl_prev_title = QLabel("👁 <b>リアルタイム合成プレビュー (4穴＋レバー表示例):</b>", self)
         lbl_prev_title.setStyleSheet("font-size: 11px; color: #94A3B8;")
@@ -1538,8 +1541,10 @@ class SkinSelectDialog(QDialog):
 
         # 選択グループ
         f_opts = QFrame(self)
-        f_opts.setStyleSheet("background-color: #161622; border: 1px solid #272738; border-radius: 6px; padding: 10px;")
+        f_opts.setObjectName("skinOptsFrame")
+        f_opts.setStyleSheet("QFrame#skinOptsFrame { background-color: #161622; border: 1px solid #272738; border-radius: 6px; }")
         l_opts = QVBoxLayout(f_opts)
+        l_opts.setContentsMargins(14, 12, 14, 12)
         l_opts.setSpacing(10)
 
         # 1. 本体スキン
