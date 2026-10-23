@@ -19,7 +19,7 @@ import math
 import threading
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QRectF, QPointF
 from PyQt6.QtGui import (
-    QImage, QPainter, QColor, QPen, QBrush, QFont, QPolygonF, QTransform, QRadialGradient
+    QImage, QPainter, QColor, QPen, QBrush, QFont, QFontMetricsF, QPolygonF, QTransform, QRadialGradient
 )
 
 from config import (
@@ -69,6 +69,23 @@ def _draw_bordered_text_qt(painter, rect: QRectF, text: str, font: QFont,
     painter.drawText(rect.translated(bw, 0), alignment, text)
     painter.setPen(text_color)
     painter.drawText(rect, alignment, text)
+
+
+def _fit_font(text: str, base_font: QFont, max_w: float, min_pt: float = 6.0) -> QFont:
+    """枠幅 max_w を超える場合に文字サイズを自動縮小した QFont を返す"""
+    if not text or max_w <= 0:
+        return base_font
+    font = QFont(base_font)
+    fm = QFontMetricsF(font)
+    text_w = fm.horizontalAdvance(text)
+    if text_w > max_w:
+        ratio = max_w / text_w
+        cur_pt = font.pointSizeF()
+        if cur_pt <= 0:
+            cur_pt = float(font.pointSize())
+        new_pt = max(min_pt, cur_pt * ratio * 0.98)
+        font.setPointSizeF(new_pt)
+    return font
 
 
 class OffscreenVisualizerRenderer:
@@ -828,7 +845,18 @@ class OffscreenVisualizerRenderer:
             elif cur_sec > intro_dur - 0.45:
                 fade = max(0.0, (intro_dur - cur_sec) / 0.45)
 
-            card_w = min(w * 0.88, max(360.0 * scale, max(len(title_text), len(credit_text)) * 26.0 * scale + 80.0 * scale))
+            base_f_t = QFont("Meiryo UI", max(14, int(28.0 * scale)), QFont.Weight.Bold)
+            base_f_c = QFont("Meiryo UI", max(10, int(15.0 * scale)), QFont.Weight.Bold)
+            fm_t = QFontMetricsF(base_f_t)
+            fm_c = QFontMetricsF(base_f_c)
+
+            raw_w_t = fm_t.horizontalAdvance(title_text) if title_text else 0.0
+            raw_w_c = fm_c.horizontalAdvance(credit_text) if credit_text else 0.0
+            max_text_w = max(raw_w_t, raw_w_c)
+
+            max_card_w = w * 0.88
+            ideal_card_w = max(360.0 * scale, max_text_w + 80.0 * scale)
+            card_w = min(max_card_w, ideal_card_w)
             card_h = (130.0 if (title_text and credit_text) else 90.0) * scale
             cx0 = (w - card_w) * 0.5
             cy0 = max(15.0 * scale, h * 0.22 - card_h * 0.5)
@@ -842,8 +870,10 @@ class OffscreenVisualizerRenderer:
             painter.setPen(QPen(QColor(255, 165, 30, int(200 * fade)), max(1.0, 2.0 * scale)))
             painter.drawLine(QPointF(cx0 + 18.0 * scale, cy0 + 6.0 * scale), QPointF(cx0 + card_w - 18.0 * scale, cy0 + 6.0 * scale))
 
-            f_t = QFont("Meiryo UI", max(14, int(28.0 * scale)), QFont.Weight.Bold)
-            f_c = QFont("Meiryo UI", max(10, int(15.0 * scale)), QFont.Weight.Bold)
+            avail_w = card_w - 40.0 * scale
+            f_t = _fit_font(title_text, base_f_t, avail_w, min_pt=max(8.0, 9.0 * scale))
+            f_c = _fit_font(credit_text, base_f_c, avail_w, min_pt=max(6.0, 7.0 * scale))
+
             if title_text and credit_text:
                 _draw_bordered_text_qt(painter, QRectF(cx0, cy0 + 12.0 * scale, card_w, 48.0 * scale), title_text, f_t, QColor(255, 255, 255, int(255 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=2.0 * scale)
                 _draw_bordered_text_qt(painter, QRectF(cx0, cy0 + 68.0 * scale, card_w, 32.0 * scale), credit_text, f_c, QColor(0, 229, 255, int(240 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=1.5 * scale)
@@ -853,7 +883,18 @@ class OffscreenVisualizerRenderer:
                 _draw_bordered_text_qt(painter, card_rect, credit_text, f_c, QColor(0, 229, 255, int(240 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=1.5 * scale)
 
         if (show_left or show_right) and (not show_intro or cur_sec >= intro_dur):
-            card_w = min(w * 0.45, max(120.0 * scale, max(len(title_text), len(credit_text)) * 16.0 * scale + 40.0 * scale))
+            base_f_t = QFont("Meiryo UI", max(10, int(13.0 * scale)), QFont.Weight.Bold)
+            base_f_c = QFont("Meiryo UI", max(8, int(10.0 * scale)))
+            fm_t = QFontMetricsF(base_f_t)
+            fm_c = QFontMetricsF(base_f_c)
+
+            raw_w_t = fm_t.horizontalAdvance(title_text) if title_text else 0.0
+            raw_w_c = fm_c.horizontalAdvance(credit_text) if credit_text else 0.0
+            max_text_w = max(raw_w_t, raw_w_c)
+
+            max_card_w = w * 0.45
+            ideal_card_w = max(120.0 * scale, max_text_w + 36.0 * scale)
+            card_w = min(max_card_w, ideal_card_w)
             card_h = (52.0 if (title_text and credit_text) else 34.0) * scale
             cx0 = (w - card_w - 20.0 * scale) if show_right else (20.0 * scale)
             cy0 = 18.0 * scale
@@ -863,8 +904,10 @@ class OffscreenVisualizerRenderer:
             painter.setBrush(QColor(14, 18, 28, 195))
             painter.drawRoundedRect(card_rect, 8.0 * scale, 8.0 * scale)
 
-            f_t = QFont("Meiryo UI", max(10, int(13.0 * scale)), QFont.Weight.Bold)
-            f_c = QFont("Meiryo UI", max(8, int(10.0 * scale)))
+            avail_w = card_w - 20.0 * scale
+            f_t = _fit_font(title_text, base_f_t, avail_w, min_pt=max(6.0, 7.0 * scale))
+            f_c = _fit_font(credit_text, base_f_c, avail_w, min_pt=max(5.0, 6.0 * scale))
+
             if title_text and credit_text:
                 _draw_bordered_text_qt(painter, QRectF(cx0, cy0 + 4.0 * scale, card_w, 24.0 * scale), title_text, f_t, self.color_white, self.color_black, border_w=1.5 * scale)
                 _draw_bordered_text_qt(painter, QRectF(cx0, cy0 + 26.0 * scale, card_w, 20.0 * scale), credit_text, f_c, QColor("#B2EBF2"), self.color_black, border_w=1.0 * scale)
@@ -1034,16 +1077,32 @@ class VideoExportThread(QThread):
 
             if temp_audio_path and os.path.isfile(temp_audio_path):
                 cmd.extend(["-i", temp_audio_path])
+                af_filters = []
                 if reverb_enabled and reverb_wet_pct > 0:
-                    af = get_reverb_filter_arg(reverb_type, reverb_wet_pct)
-                    cmd.extend(["-af", af])
+                    af_filters.append(get_reverb_filter_arg(reverb_type, reverb_wet_pct))
+
+                # 音声フェードイン・フェードアウトの連動 (動画課題 4)
+                if fade_in and fade_in_sec > 0:
+                    af_filters.append(f"afade=t=in:ss=0:d={fade_in_sec:.2f}")
+                if fade_out and fade_out_sec > 0:
+                    fade_out_st = max(0.0, total_video_dur - fade_out_sec)
+                    af_filters.append(f"afade=t=out:st={fade_out_st:.2f}:d={fade_out_sec:.2f}")
+
+                # 動画音声ボリューム制御 (動画課題 8)
+                export_audio_vol_pct = float(self.config.get("export_audio_vol_pct", 100.0))
+                if abs(export_audio_vol_pct - 100.0) > 0.5:
+                    vol_gain = max(0.0, min(2.5, export_audio_vol_pct / 100.0))
+                    af_filters.append(f"volume={vol_gain:.2f}")
+
+                if af_filters:
+                    cmd.extend(["-af", ",".join(af_filters)])
                 cmd.extend(["-c:a", "aac", "-b:a", "256k"])
 
             export_style = self.config.get("settings", {}).get("export_style", "")
             is_transparent_mov = ("完全背景透過" in export_style or output_path.lower().endswith(".mov"))
 
             if is_transparent_mov:
-                cmd.extend(["-c:v", "png", "-pix_fmt", "rgba", output_path])
+                cmd.extend(["-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", output_path])
             else:
                 encoder = self.config.get("codec", "自動")
                 if "mf" in encoder.lower() or "自動" in encoder or "gpu" in encoder.lower():
@@ -1089,7 +1148,16 @@ class VideoExportThread(QThread):
             for f_idx in range(total_frames):
                 if self._is_cancelled:
                     if self._ffmpeg_process:
-                        self._ffmpeg_process.terminate()
+                        try:
+                            self._ffmpeg_process.terminate()
+                            self._ffmpeg_process.wait(timeout=1.0)
+                        except Exception:
+                            pass
+                    if os.path.exists(output_path):
+                        try:
+                            os.remove(output_path)
+                        except Exception:
+                            pass
                     self.sig_finished.emit(False, "", "ユーザーによってキャンセルされました")
                     return
 
@@ -1141,6 +1209,11 @@ class VideoExportThread(QThread):
             if ret_code == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
                 self.sig_finished.emit(True, output_path, "")
             else:
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
+                    except Exception:
+                        pass
                 self.sig_finished.emit(False, "", f"FFmpeg error (code {ret_code}):\n{stderr_out[-500:]}")
 
         except Exception as e:

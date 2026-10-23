@@ -1387,7 +1387,10 @@ class ExportProgressDialog(QDialog):
             self.progress_bar.setValue(100)
             self.lbl_title.setText("✅ <b>動画の書き出しが完了しました！</b>")
             self.lbl_title.setStyleSheet("font-size: 13px; color: #34D399;")
-            self.lbl_frame_info.setText(f"ファイル保存完了: {os.path.basename(output_path)}")
+            msg = f"ファイル保存完了: {os.path.basename(output_path)}"
+            if output_path.lower().endswith(".mov"):
+                msg += "\n※完全透過MOVは編集ソフト（Premiere, DaVinci, AviUtl, OBS等）で重ねて使う合成用素材です"
+            self.lbl_frame_info.setText(msg)
             self.btn_open_folder.setVisible(True)
             self.btn_action.setText("閉じる")
         else:
@@ -1405,8 +1408,12 @@ class ExportProgressDialog(QDialog):
 
     def _open_folder(self):
         import subprocess
-        folder = os.path.dirname(self.output_path)
-        subprocess.Popen(f'explorer "{folder}"')
+        norm_path = os.path.normpath(self.output_path)
+        if os.path.isfile(norm_path):
+            subprocess.Popen(f'explorer /select,"{norm_path}"')
+        else:
+            folder = os.path.dirname(norm_path)
+            subprocess.Popen(f'explorer "{folder}"')
 
     def closeEvent(self, event):
         if not self.is_done:
