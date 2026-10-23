@@ -160,6 +160,11 @@ QComboBox {{
 QComboBox:hover {{
     border-color: #00BFFF;
 }}
+QComboBox:disabled {{
+    background-color: #16161D;
+    color: #555566;
+    border-color: #262632;
+}}
 QComboBox::drop-down {{
     subcontrol-origin: padding;
     subcontrol-position: top right;
@@ -172,6 +177,10 @@ QComboBox::drop-down {{
 QComboBox::drop-down:hover {{
     background-color: #282836;
 }}
+QComboBox::drop-down:disabled {{
+    background-color: #14141A;
+    border-left-color: #1E1E26;
+}}
 QComboBox::down-arrow {{
     image: none;
     border-left: 4px solid transparent;
@@ -182,6 +191,9 @@ QComboBox::down-arrow {{
 }}
 QComboBox::down-arrow:hover {{
     border-top-color: #38BDF8;
+}}
+QComboBox::down-arrow:disabled {{
+    border-top-color: #444455;
 }}
 QComboBox QAbstractItemView {{
     background-color: #1A1A22;
@@ -205,6 +217,11 @@ QSpinBox:focus, QDoubleSpinBox:focus {{
     border-color: #38BDF8;
     background-color: #1A1A24;
 }}
+QSpinBox:disabled, QDoubleSpinBox:disabled {{
+    background-color: #16161D;
+    color: #555566;
+    border-color: #262632;
+}}
 QSpinBox::up-button, QDoubleSpinBox::up-button,
 QSpinBox::down-button, QDoubleSpinBox::down-button {{
     width: 0px;
@@ -220,6 +237,11 @@ QLineEdit {{
 }}
 QLineEdit:hover {{
     border-color: #00BFFF;
+}}
+QLineEdit:disabled {{
+    background-color: #16161D;
+    color: #555566;
+    border-color: #262632;
 }}
 QSlider::groove:horizontal {{
     height: 6px;
@@ -242,9 +264,15 @@ QSlider::handle:horizontal:hover {{
     background: #00E5FF;
     border-color: #FFFFFF;
 }}
+QLabel:disabled {{
+    color: #555566;
+}}
 QCheckBox {{
     spacing: 5px;
     color: #C0C0D0;
+}}
+QCheckBox:disabled {{
+    color: #555566;
 }}
 QCheckBox::indicator {{
     width: 14px;
@@ -256,6 +284,10 @@ QCheckBox::indicator {{
 QCheckBox::indicator:checked {{
     background-color: #0099DD;
     border-color: #00BFFF;
+}}
+QCheckBox::indicator:disabled {{
+    background-color: #16161D;
+    border-color: #262632;
 }}
 QTabWidget::pane {{
     border: 1px solid #282835;
@@ -667,14 +699,14 @@ class HarmonicaMainWindow(QMainWindow):
         row1.addWidget(self.btn_spd_minus)
 
         self.speed_slider = QSlider(Qt.Orientation.Horizontal, self)
-        self.speed_slider.setRange(50, 200)
+        self.speed_slider.setRange(10, 300)
         self.speed_slider.setValue(int(round(float(self.user_settings.get("speed_ratio", 1.0)) * 100)))
         self.speed_slider.setFixedWidth(80)
         self.speed_slider.valueChanged.connect(self._on_speed_changed)
         row1.addWidget(self.speed_slider)
 
         self.lbl_speed_val = QLabel(f"{self.speed_slider.value()}%", self)
-        self.lbl_speed_val.setMinimumWidth(44)
+        self.lbl_speed_val.setFixedWidth(48)
         row1.addWidget(self.lbl_speed_val)
 
         self.btn_spd_plus = QPushButton("+5", self)
@@ -813,6 +845,7 @@ class HarmonicaMainWindow(QMainWindow):
 
         self.spin_loop_a = QSpinBox(self)
         self.spin_loop_a.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.spin_loop_a.setKeyboardTracking(False)
         self.spin_loop_a.setRange(1, 999)
         self.spin_loop_a.setValue(1)
         self.spin_loop_a.setFixedWidth(44)
@@ -832,6 +865,7 @@ class HarmonicaMainWindow(QMainWindow):
 
         self.spin_loop_b = QSpinBox(self)
         self.spin_loop_b.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.spin_loop_b.setKeyboardTracking(False)
         self.spin_loop_b.setRange(1, 999)
         self.spin_loop_b.setValue(12)
         self.spin_loop_b.setFixedWidth(44)
@@ -1109,7 +1143,7 @@ class HarmonicaMainWindow(QMainWindow):
         r_sp1.addWidget(QLabel("開始:"))
         self.spin_sp_start = QSpinBox(self)
         self.spin_sp_start.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.spin_sp_start.setRange(30, 200)
+        self.spin_sp_start.setRange(10, 300)
         self.spin_sp_start.setValue(int(self.user_settings.get("stepup_start_pct", 70)))
         self.spin_sp_start.setSuffix("%")
         self.spin_sp_start.setFixedWidth(54)
@@ -1121,7 +1155,7 @@ class HarmonicaMainWindow(QMainWindow):
         r_sp1.addWidget(QLabel("目標:"))
         self.spin_sp_target = QSpinBox(self)
         self.spin_sp_target.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.spin_sp_target.setRange(50, 250)
+        self.spin_sp_target.setRange(10, 300)
         self.spin_sp_target.setValue(int(self.user_settings.get("stepup_target_pct", 100)))
         self.spin_sp_target.setSuffix("%")
         self.spin_sp_target.setFixedWidth(54)
@@ -1502,10 +1536,12 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_guide_audio = QComboBox(self)
         self.combo_guide_audio.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_guide_audio.addItems([
-            "Windows標準MIDI (WinMM / 推奨)",
-            "内蔵軽量シンセ (遅延0ms・トラブルシューティング用)"
+            "Windows標準MIDI (推奨)",
+            "内蔵軽量シンセ (遅延0ms)"
         ])
-        self.combo_guide_audio.setCurrentText(self.user_settings.get("guide_audio_engine", "Windows標準MIDI (WinMM / 推奨)"))
+        raw_guide = self.user_settings.get("guide_audio_engine", "Windows標準MIDI (推奨)")
+        cur_guide = "内蔵軽量シンセ (遅延0ms)" if "内蔵" in raw_guide or "シンセ" in raw_guide else "Windows標準MIDI (推奨)"
+        self.combo_guide_audio.setCurrentText(cur_guide)
         self.combo_guide_audio.setToolTip("再生に使用するMIDI音源エンジン")
         self.combo_guide_audio.currentTextChanged.connect(self._on_guide_audio_changed)
         r_gas.addWidget(self.combo_guide_audio, stretch=1)
@@ -1516,12 +1552,6 @@ class HarmonicaMainWindow(QMainWindow):
         self.chk_force_harmonica.setToolTip("MIDIファイル内の楽器指定に関わらず主旋律パートをハーモニカ音色(GM 22)で再生")
         self.chk_force_harmonica.toggled.connect(lambda v: setattr(self.audio_engine, "force_main_harmonica", v))
         l_vol.addWidget(self.chk_force_harmonica)
-
-        self.chk_yt_limiter = QCheckBox("音割れ防止リミッター (-1.0dB)", self)
-        self.chk_yt_limiter.setChecked(bool(self.user_settings.get("yt_limiter", True)))
-        self.chk_yt_limiter.setToolTip("動画音声やWAV合成時に音割れを防ぐためピークを-1.0dBFSに自動制限")
-        self.chk_yt_limiter.toggled.connect(self._save_current_settings)
-        l_vol.addWidget(self.chk_yt_limiter)
         v_box.addWidget(f_vol)
 
         # 2. 🎙️ マイク録音 (ワンクリック録音)
@@ -1636,26 +1666,30 @@ class HarmonicaMainWindow(QMainWindow):
         l_ext.addWidget(QLabel("🎵 <b>伴奏・外部音源 (D&D対応):</b>"))
 
         r_ext1 = QHBoxLayout()
-        btn_ext_open = QPushButton("📂 伴奏選択", self)
-        btn_ext_open.setFixedWidth(84)
+        btn_ext_open = QPushButton("📂 伴奏音源を選択", self)
+        btn_ext_open.setFixedHeight(24)
         btn_ext_open.setToolTip("外部の伴奏オーディオファイル (MP3/WAV/M4A/FLAC等) を選択 [ドラッグ＆ドロップ可]")
         btn_ext_open.clicked.connect(self._on_select_ext_audio)
-        r_ext1.addWidget(btn_ext_open)
+        r_ext1.addWidget(btn_ext_open, stretch=1)
 
-        btn_ext_clear = QPushButton("✕", self)
-        btn_ext_clear.setFixedWidth(26)
+        btn_ext_clear = QPushButton("✕ 解除", self)
+        btn_ext_clear.setFixedWidth(54)
+        btn_ext_clear.setFixedHeight(24)
         btn_ext_clear.setToolTip("音源を解除")
         btn_ext_clear.clicked.connect(self._on_clear_ext_audio)
         r_ext1.addWidget(btn_ext_clear)
+        l_ext.addLayout(r_ext1)
 
         self.lbl_ext_audio = QLabel("未選択 (MP3/WAV等をD&D可)", self)
-        self.lbl_ext_audio.setStyleSheet("color: #64748B; font-size: 11px;")
+        self.lbl_ext_audio.setMinimumWidth(0)
+        self.lbl_ext_audio.setStyleSheet("color: #64748B; font-size: 11px; background-color: #121218; border: 1px solid #22222E; border-radius: 3px; padding: 2px 6px;")
         if self.ext_audio_path and os.path.exists(self.ext_audio_path):
-            self.lbl_ext_audio.setText(os.path.basename(self.ext_audio_path))
+            base_name = os.path.basename(self.ext_audio_path)
+            fm = self.lbl_ext_audio.fontMetrics()
+            self.lbl_ext_audio.setText(fm.elidedText(base_name, Qt.TextElideMode.ElideMiddle, 280))
             self.lbl_ext_audio.setToolTip(self.ext_audio_path)
-            self.lbl_ext_audio.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 11px;")
-        r_ext1.addWidget(self.lbl_ext_audio, stretch=1)
-        l_ext.addLayout(r_ext1)
+            self.lbl_ext_audio.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 11px; background-color: #121218; border: 1px solid #22222E; border-radius: 3px; padding: 2px 6px;")
+        l_ext.addWidget(self.lbl_ext_audio)
 
         r_ext2 = QHBoxLayout()
         r_ext2.addWidget(QLabel("再生モード:"))
@@ -1720,6 +1754,7 @@ class HarmonicaMainWindow(QMainWindow):
         r_fine = QHBoxLayout()
         for label, val in [("-10ms", -10), ("-1ms", -1), ("+1ms", 1), ("+10ms", 10)]:
             btn = QPushButton(label, self)
+            btn.setFixedWidth(52)
             btn.setStyleSheet("font-size: 11px; padding: 2px 4px;")
             btn.setToolTip(f"同期オフセットを {label} 微調整")
             btn.clicked.connect(lambda _, d=val: self._on_ext_offset_adjust(d))
@@ -1729,17 +1764,20 @@ class HarmonicaMainWindow(QMainWindow):
         # 試聴ボタン
         r_aud = QHBoxLayout()
         self.btn_ext_audition = QPushButton("▶ 試聴", self)
+        self.btn_ext_audition.setFixedWidth(78)
         self.btn_ext_audition.setStyleSheet("background-color: #1E3A5F; font-weight: bold;")
         self.btn_ext_audition.setToolTip("設定したオフセット位置から外部伴奏音源を試聴再生")
         self.btn_ext_audition.clicked.connect(self._on_ext_audition_play)
         r_aud.addWidget(self.btn_ext_audition)
 
         self.btn_ext_restart = QPushButton("⏮ 先頭", self)
+        self.btn_ext_restart.setFixedWidth(78)
         self.btn_ext_restart.setToolTip("外部伴奏音源を0秒(ファイル先頭)から試聴再生")
         self.btn_ext_restart.clicked.connect(self._on_ext_audition_restart)
         r_aud.addWidget(self.btn_ext_restart)
 
         self.btn_ext_stop = QPushButton("⏹ 停止", self)
+        self.btn_ext_stop.setFixedWidth(78)
         self.btn_ext_stop.setToolTip("外部伴奏音源の試聴を停止")
         self.btn_ext_stop.clicked.connect(self._on_ext_audition_stop)
         r_aud.addWidget(self.btn_ext_stop)
@@ -1796,7 +1834,9 @@ class HarmonicaMainWindow(QMainWindow):
         l_exp.addLayout(r_style)
 
         self.r_bg_chroma = QHBoxLayout()
-        self.r_bg_chroma.addWidget(QLabel("クロマキー背景色:"))
+        self.lbl_exp_bg = QLabel("クロマキー背景色:")
+        self.lbl_exp_bg.setEnabled(False)
+        self.r_bg_chroma.addWidget(self.lbl_exp_bg)
         self.combo_exp_bg = QComboBox(self)
         self.combo_exp_bg.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_exp_bg.addItems(["ノーマル（黒）", "グリーンバック", "ブルーバック", "マゼンタ（ピンク）"])
@@ -1840,7 +1880,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.spin_exp_start.setRange(0.0, 9999.0)
         self.spin_exp_start.setValue(0.0)
         self.spin_exp_start.setSuffix("s")
-        self.spin_exp_start.setFixedWidth(52)
+        self.spin_exp_start.setFixedWidth(50)
         self.spin_exp_start.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spin_exp_start.setToolTip("動画書き出しの開始秒 [直接入力 / マウスホイールで変更]")
         r_rng.addWidget(self.spin_exp_start)
@@ -1852,16 +1892,22 @@ class HarmonicaMainWindow(QMainWindow):
         self.spin_exp_end.setRange(0.1, 9999.0)
         self.spin_exp_end.setValue(float(getattr(self.timeline, "total_duration_sec", 60.0)))
         self.spin_exp_end.setSuffix("s")
-        self.spin_exp_end.setFixedWidth(52)
+        self.spin_exp_end.setFixedWidth(50)
         self.spin_exp_end.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spin_exp_end.setToolTip("動画書き出しの終了秒 [直接入力 / マウスホイールで変更]")
         r_rng.addWidget(self.spin_exp_end)
 
-        self.btn_set_ab_range = QPushButton("🔁 A-B反映", self)
-        self.btn_set_ab_range.setFixedWidth(86)
+        self.btn_set_ab_range = QPushButton("🔁 A-B", self)
+        self.btn_set_ab_range.setFixedWidth(52)
         self.btn_set_ab_range.setToolTip("現在設定されているA-Bループの小節範囲（開始秒〜終了秒）を動画の出力範囲にコピーします")
         self.btn_set_ab_range.clicked.connect(self._on_set_ab_range_to_export)
         r_rng.addWidget(self.btn_set_ab_range)
+
+        self.btn_reset_exp_range = QPushButton("↺ 全曲", self)
+        self.btn_reset_exp_range.setFixedWidth(52)
+        self.btn_reset_exp_range.setToolTip("動画書き出し範囲を曲全体 (0.0s〜総尺) にリセットします")
+        self.btn_reset_exp_range.clicked.connect(self._on_reset_export_range)
+        r_rng.addWidget(self.btn_reset_exp_range)
         l_exp.addLayout(r_rng)
 
         r_margin = QHBoxLayout()
@@ -1913,6 +1959,26 @@ class HarmonicaMainWindow(QMainWindow):
         self.chk_exp_reverb.setChecked(bool(self.user_settings.get("reverb_enabled", False)))
         self.chk_exp_reverb.setToolTip("書き出す動画の音声トラックにハーモニカ用リバーブエフェクトを適用")
         l_aud.addWidget(self.chk_exp_reverb)
+
+        self.chk_yt_limiter = QCheckBox("YouTube推奨 音割れ防止リミッター (-1.0dBFS)", self)
+        self.chk_yt_limiter.setChecked(bool(self.user_settings.get("yt_limiter", True)))
+        self.chk_yt_limiter.setToolTip("YouTubeの音声基準に準拠し、動画エンコード時の音割れを防ぐためピークを-1.0dBFSに自動抑制")
+        self.chk_yt_limiter.toggled.connect(self._save_current_settings)
+        l_aud.addWidget(self.chk_yt_limiter)
+
+        r_exp_vol = QHBoxLayout()
+        r_exp_vol.addWidget(QLabel("動画音声音量:"))
+        self.slider_exp_audio_vol = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider_exp_audio_vol.setRange(0, 150)
+        self.slider_exp_audio_vol.setValue(int(self.user_settings.get("export_audio_volume", 100)))
+        self.slider_exp_audio_vol.setToolTip("書き出す動画の音声トラック全体の音量バランス (0%〜150%)")
+        r_exp_vol.addWidget(self.slider_exp_audio_vol)
+        self.lbl_exp_audio_vol = QLabel(f"{self.slider_exp_audio_vol.value()}%", self)
+        self.lbl_exp_audio_vol.setFixedWidth(38)
+        self.slider_exp_audio_vol.valueChanged.connect(lambda v: (self.lbl_exp_audio_vol.setText(f"{v}%"), self._save_current_settings()))
+        r_exp_vol.addWidget(self.lbl_exp_audio_vol)
+        l_aud.addLayout(r_exp_vol)
+
         v_box.addWidget(f_aud)
 
         # 3. タイトル・クレジット表示
@@ -1929,7 +1995,8 @@ class HarmonicaMainWindow(QMainWindow):
         l_tit.addWidget(self.chk_exp_title)
 
         r_tpl = QHBoxLayout()
-        r_tpl.addWidget(QLabel("配置テンプレート:"))
+        self.lbl_title_tpl = QLabel("配置テンプレート:")
+        r_tpl.addWidget(self.lbl_title_tpl)
         self.combo_title_template = QComboBox(self)
         self.combo_title_template.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_title_template.addItems([
@@ -1944,14 +2011,16 @@ class HarmonicaMainWindow(QMainWindow):
         r_tpl.addWidget(self.combo_title_template, stretch=1)
         l_tit.addLayout(r_tpl)
 
-        l_tit.addWidget(QLabel("曲名 (タイトル):"))
+        self.lbl_exp_title = QLabel("曲名 (タイトル):")
+        l_tit.addWidget(self.lbl_exp_title)
         self.txt_exp_title = QLineEdit(self)
         self.txt_exp_title.setPlaceholderText("曲名を入力")
         self.txt_exp_title.setText(self.timeline.filename or "")
         self.txt_exp_title.setToolTip("動画に表示する楽曲名")
         l_tit.addWidget(self.txt_exp_title)
 
-        l_tit.addWidget(QLabel("演奏者・クレジット:"))
+        self.lbl_exp_credit = QLabel("演奏者・クレジット:")
+        l_tit.addWidget(self.lbl_exp_credit)
         self.txt_exp_credit = QLineEdit(self)
         self.txt_exp_credit.setPlaceholderText("演奏者名・楽器名等")
         self.txt_exp_credit.setText("Chromatic Harmonica Solo")
@@ -2002,7 +2071,8 @@ class HarmonicaMainWindow(QMainWindow):
         l_tit.addLayout(r_fade)
 
         r_ftitle = QHBoxLayout()
-        r_ftitle.addWidget(QLabel("フェード対象:"))
+        self.lbl_fade_title = QLabel("フェード対象:")
+        r_ftitle.addWidget(self.lbl_fade_title)
         self.combo_fade_title = QComboBox(self)
         self.combo_fade_title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_fade_title.addItems(["フェード中もタイトル表示", "画面と一緒にフェードイン", "フェード中はタイトル非表示"])
@@ -2200,6 +2270,21 @@ class HarmonicaMainWindow(QMainWindow):
         if hasattr(self, "combo_fade_title"):
             self.combo_fade_title.setCurrentText(str(s.get("export_fade_title_mode", "フェード中もタイトル表示")))
 
+        # 軌跡モード同期
+        if hasattr(self, "traj_combo"):
+            traj_m = str(s.get("trajectory_mode", "3段階 (練習標準)"))
+            self.traj_combo.blockSignals(True)
+            self.traj_combo.setCurrentText(traj_m)
+            self.traj_combo.blockSignals(False)
+            self.gl_widget.set_trajectory_mode(traj_m)
+
+        # 動画音声ボリューム設定同期
+        if hasattr(self, "slider_exp_audio_vol"):
+            vol_val = int(s.get("export_audio_volume", 100))
+            self.slider_exp_audio_vol.setValue(vol_val)
+            if hasattr(self, "lbl_exp_audio_vol"):
+                self.lbl_exp_audio_vol.setText(f"{vol_val}%")
+
         # 背景画像・スキン
         self.gl_widget.set_background_image(
             s.get("bg_image_path", ""),
@@ -2253,6 +2338,8 @@ class HarmonicaMainWindow(QMainWindow):
             self.user_settings["guide_audio_engine"] = self.combo_guide_audio.currentText()
         if hasattr(self, "chk_yt_limiter"):
             self.user_settings["yt_limiter"] = self.chk_yt_limiter.isChecked()
+        if hasattr(self, "slider_exp_audio_vol"):
+            self.user_settings["export_audio_volume"] = self.slider_exp_audio_vol.value()
         if hasattr(self, "combo_exp_intro"):
             self.user_settings["export_intro_sec"] = self.combo_exp_intro.currentText()
         if hasattr(self, "combo_exp_outro"):
@@ -2323,8 +2410,29 @@ class HarmonicaMainWindow(QMainWindow):
         is_chroma = ("クロマキー" in style)
         is_trans = ("完全背景透過" in style)
         self.combo_exp_bg.setEnabled(is_chroma)
-        self.chk_exp_title.setEnabled(not is_chroma and not is_trans)
-        self.combo_title_template.setEnabled(not is_chroma and not is_trans)
+        if hasattr(self, "lbl_exp_bg"):
+            self.lbl_exp_bg.setEnabled(is_chroma)
+
+        title_enabled = (not is_chroma and not is_trans)
+        if hasattr(self, "chk_exp_title"):
+            self.chk_exp_title.setEnabled(title_enabled)
+        if hasattr(self, "combo_title_template"):
+            self.combo_title_template.setEnabled(title_enabled)
+        if hasattr(self, "lbl_title_tpl"):
+            self.lbl_title_tpl.setEnabled(title_enabled)
+        if hasattr(self, "txt_exp_title"):
+            self.txt_exp_title.setEnabled(title_enabled)
+        if hasattr(self, "txt_exp_credit"):
+            self.txt_exp_credit.setEnabled(title_enabled)
+        if hasattr(self, "lbl_exp_title"):
+            self.lbl_exp_title.setEnabled(title_enabled)
+        if hasattr(self, "lbl_exp_credit"):
+            self.lbl_exp_credit.setEnabled(title_enabled)
+        if hasattr(self, "combo_fade_title"):
+            self.combo_fade_title.setEnabled(title_enabled)
+        if hasattr(self, "lbl_fade_title"):
+            self.lbl_fade_title.setEnabled(title_enabled)
+
         if hasattr(self, "btn_export_video") and self.btn_export_video:
             if is_trans:
                 self.btn_export_video.setText("🎥 透過MOV動画素材の書き出し開始")
@@ -2655,8 +2763,16 @@ class HarmonicaMainWindow(QMainWindow):
     def _on_loop_spin_changed(self):
         val_a = self.spin_loop_a.value()
         val_b = self.spin_loop_b.value()
+        sender = self.sender()
         if val_a > val_b:
-            self.spin_loop_b.setValue(val_a)
+            if sender == self.spin_loop_b:
+                self.spin_loop_a.blockSignals(True)
+                self.spin_loop_a.setValue(val_b)
+                self.spin_loop_a.blockSignals(False)
+            else:
+                self.spin_loop_b.blockSignals(True)
+                self.spin_loop_b.setValue(val_a)
+                self.spin_loop_b.blockSignals(False)
         self._update_loop_range()
 
     def _update_loop_range(self):
@@ -3101,6 +3217,13 @@ class HarmonicaMainWindow(QMainWindow):
         self.spin_exp_end.setValue(round(b_sec, 2))
         self.lbl_status_msg.setText(f"🔁 A-Bループ範囲 ({a_sec:.1f}s 〜 {b_sec:.1f}s) を出力範囲にセットしました")
 
+    def _on_reset_export_range(self):
+        """動画書き出し範囲を曲全体 (0.0s〜総尺) にリセット"""
+        total = self.timeline.total_duration_sec if self.timeline else 60.0
+        self.spin_exp_start.setValue(0.0)
+        self.spin_exp_end.setValue(round(max(0.1, total), 2))
+        self.lbl_status_msg.setText("↺ 動画出力範囲を全曲にリセットしました")
+
     # --- 音響制御 ---
     def _on_part_mode_changed(self, mode: str):
         self.audio_engine.set_part_mode(mode)
@@ -3220,7 +3343,7 @@ class HarmonicaMainWindow(QMainWindow):
         self._save_current_settings()
 
     def _adjust_speed(self, delta: int):
-        new_val = max(50, min(200, self.speed_slider.value() + delta))
+        new_val = max(10, min(300, self.speed_slider.value() + delta))
         self.speed_slider.setValue(new_val)
 
     def _on_fall_speed_changed(self, val: int):
@@ -3492,14 +3615,17 @@ class HarmonicaMainWindow(QMainWindow):
             return
         self.ext_audio_path = path
         self.user_settings["ext_audio_path"] = path
-        self.lbl_ext_audio.setText(os.path.basename(path))
+        base_name = os.path.basename(path)
+        fm = self.lbl_ext_audio.fontMetrics()
+        elided = fm.elidedText(base_name, Qt.TextElideMode.ElideMiddle, 280)
+        self.lbl_ext_audio.setText(elided)
         self.lbl_ext_audio.setToolTip(path)
-        self.lbl_ext_audio.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 11px;")
+        self.lbl_ext_audio.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 11px; background-color: #121218; border: 1px solid #22222E; border-radius: 3px; padding: 2px 6px;")
         self.btn_ext_audition.setEnabled(True)
         self.btn_ext_restart.setEnabled(True)
         self.btn_ext_stop.setEnabled(True)
         self._save_current_song_profile()
-        self.lbl_status_msg.setText(f"🎵 伴奏音源を設定しました: {os.path.basename(path)}")
+        self.lbl_status_msg.setText(f"🎵 伴奏音源を設定しました: {base_name}")
         self._save_current_settings()
 
     def _on_clear_ext_audio(self):
@@ -3507,7 +3633,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.user_settings["ext_audio_path"] = ""
         self.lbl_ext_audio.setText("未選択 (MP3/WAV等をD&D可)")
         self.lbl_ext_audio.setToolTip("")
-        self.lbl_ext_audio.setStyleSheet("color: #64748B; font-size: 11px;")
+        self.lbl_ext_audio.setStyleSheet("color: #64748B; font-size: 11px; background-color: #121218; border: 1px solid #22222E; border-radius: 3px; padding: 2px 6px;")
         self.btn_ext_audition.setEnabled(False)
         self.btn_ext_restart.setEnabled(False)
         self.btn_ext_stop.setEnabled(False)
@@ -3873,6 +3999,7 @@ class HarmonicaMainWindow(QMainWindow):
             "is_metro": (self.combo_metro.currentText() != "なし"),
             "metronome_pattern": self.combo_metro.currentText(),
             "yt_limiter": self.chk_yt_limiter.isChecked() if hasattr(self, "chk_yt_limiter") else True,
+            "export_audio_vol_pct": float(self.slider_exp_audio_vol.value()) if hasattr(self, "slider_exp_audio_vol") else 100.0,
             "ext_audio_offset_ms": self.spin_ext_offset.value(),
             "ext_audio_vol_pct": float(self.slider_ext_vol.value()),
             "ext_audio_mode": self.ext_audio_mode,
