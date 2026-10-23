@@ -22,6 +22,19 @@ from settings_manager import THEME_PRESETS, DEFAULT_SETTINGS
 from midi_timeline import get_gm_instrument_name
 
 
+def confirm_dialog(parent, title: str, text: str, default_yes: bool = False) -> bool:
+    """日本語「はい」「いいえ」ボタン付きの統一確認ダイアログ"""
+    msg = QMessageBox(parent)
+    msg.setIcon(QMessageBox.Icon.Question)
+    msg.setWindowTitle(title)
+    msg.setText(text)
+    btn_yes = msg.addButton("はい", QMessageBox.ButtonRole.YesRole)
+    btn_no = msg.addButton("いいえ", QMessageBox.ButtonRole.NoRole)
+    msg.setDefaultButton(btn_yes if default_yes else btn_no)
+    msg.exec()
+    return msg.clickedButton() == btn_yes
+
+
 class HarmonicaSettingsDialog(QDialog):
     """総合詳細設定ダイアログ"""
 
@@ -253,11 +266,7 @@ class HarmonicaSettingsDialog(QDialog):
             self._update_color_button(self.btn_color_draw, draw)
 
     def _on_reset_defaults(self):
-        reply = QMessageBox.question(
-            self, "確認", "全設定を初期状態にリセットしますか？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        if confirm_dialog(self, "確認", "全設定を初期状態にリセットしますか？", default_yes=False):
             self.settings.update(DEFAULT_SETTINGS)
             self._load_values()
 
@@ -1054,13 +1063,11 @@ class FingeringEditorDialog(QDialog):
         if p_name == "標準パターン (基本)":
             QMessageBox.information(self, "削除不可", "「標準パターン (基本)」は削除できません。")
             return
-        ans = QMessageBox.question(
+        if confirm_dialog(
             self, "パターンの削除確認",
             f"パターン「{p_name}」をプロファイルから完全に削除しますか？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if ans == QMessageBox.StandardButton.Yes:
+            default_yes=False
+        ):
             if p_name in self._patterns:
                 del self._patterns[p_name]
                 import harmonica_map
@@ -1191,14 +1198,12 @@ class FingeringEditorDialog(QDialog):
 
     def _on_reset_custom_only(self):
         """個別変え指カスタムのみを全初期化（除外ノーツは維持）"""
-        ans = QMessageBox.question(
+        if confirm_dialog(
             self,
             "運指カスタム初期化確認",
             "個別設定したすべての変え指を解除し、プリセット標準の運指に戻しますか？\n（除外ノーツの状態はそのまま維持されます）",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if ans == QMessageBox.StandardButton.Yes:
+            default_yes=False
+        ):
             import harmonica_map
             harmonica_map.SONG_FINGERING_OVERRIDES.clear()
             if self.timeline:
@@ -1213,14 +1218,12 @@ class FingeringEditorDialog(QDialog):
 
     def _on_reset_muted_only(self):
         """除外ノーツのみを全復活（運指カスタムは維持）"""
-        ans = QMessageBox.question(
+        if confirm_dialog(
             self,
             "除外ノーツ全復活確認",
             "除外（ミュート）されているすべてのノーツを有効化し、\n通常通り発音・表示される状態に戻しますか？\n（運指カスタムはそのまま維持されます）",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if ans == QMessageBox.StandardButton.Yes:
+            default_yes=False
+        ):
             import harmonica_map
             harmonica_map.SONG_MUTED_NOTES.clear()
             if self.timeline:
@@ -1259,16 +1262,14 @@ class FingeringEditorDialog(QDialog):
                 self._patterns != self._initial_patterns
             )
             if has_changes:
-                ans = QMessageBox.question(
+                if not confirm_dialog(
                     self,
                     "未保存の変更の確認",
                     "変え指または除外ノーツの変更が保存されていません。\n\n"
                     "変更を破棄して元の状態に戻しますか？\n"
                     "(「いいえ」を選ぶとエディタに戻ります)",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No
-                )
-                if ans != QMessageBox.StandardButton.Yes:
+                    default_yes=False
+                ):
                     return
 
             # 元の状態へ完全復元

@@ -589,6 +589,10 @@ class HarmonicaMainWindow(QMainWindow):
 
         # 6. 組み込み高品位クロマチック音階デモを即座に展開・ロード
         self.timeline.load_demo(inst_type=self.inst_combo.currentText())
+        if hasattr(self, "inst_combo") and self.timeline.inst_type:
+            self.inst_combo.blockSignals(True)
+            self.inst_combo.setCurrentText(self.timeline.inst_type)
+            self.inst_combo.blockSignals(False)
         self.gl_widget.set_timeline_data(self.timeline)
         self.audio_engine.load_timeline(self.timeline)
         self.clock.set_total_duration(self.timeline.total_duration_sec)
@@ -2692,14 +2696,13 @@ class HarmonicaMainWindow(QMainWindow):
             self.lbl_status_msg.setText("💾 変え指設定を保存・適用しました")
 
     def _on_reset_song_fingering(self):
-        ans = QMessageBox.question(
+        from dialogs import confirm_dialog
+        if confirm_dialog(
             self,
             "運指データの初期化確認",
             f"曲「{self.timeline.filename}」の個別運指データをすべて初期化（リセット）し、\n運指プリセットの初期状態へ戻しますか？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if ans == QMessageBox.StandardButton.Yes:
+            default_yes=False
+        ):
             from harmonica_map import reset_song_fingering
             reset_song_fingering(self.timeline.filepath)
             self.timeline.rebind_fingerings(self.inst_combo.currentText())
@@ -2948,7 +2951,8 @@ class HarmonicaMainWindow(QMainWindow):
     def _check_out_of_range_and_notify(self):
         """音域外ノーツの存在を検出してステータスバー等に通知 (A案スリム化＋詳細ツールチップ)"""
         if hasattr(self, "timeline") and self.timeline:
-            diag = self.timeline.diagnose_pitch_range()
+            cur_inst = self.inst_combo.currentText() if hasattr(self, "inst_combo") else None
+            diag = self.timeline.diagnose_pitch_range(inst_type=cur_inst)
             status = diag.get("status")
             if status in ("out_of_range", "exceeds_instrument"):
                 out_cnt = diag.get("out_count", 0)
@@ -2988,7 +2992,8 @@ class HarmonicaMainWindow(QMainWindow):
             QMessageBox.information(self, "音域チェック", "MIDIファイルが読み込まれていません。")
             return
 
-        diag = self.timeline.diagnose_pitch_range()
+        cur_inst = self.inst_combo.currentText()
+        diag = self.timeline.diagnose_pitch_range(inst_type=cur_inst)
         status = diag.get("status")
 
         if status == "empty":
@@ -3093,6 +3098,12 @@ class HarmonicaMainWindow(QMainWindow):
             self.chk_transpose_accomp.blockSignals(True)
             self.chk_transpose_accomp.setChecked(trans_acc)
             self.chk_transpose_accomp.blockSignals(False)
+
+            # 運指プリセットの復元
+            if "preset" in prof and hasattr(self, "combo_fing_preset"):
+                self.combo_fing_preset.blockSignals(True)
+                self.combo_fing_preset.setCurrentText(harmonica_map.normalize_fingering_preset(prof["preset"]))
+                self.combo_fing_preset.blockSignals(False)
 
             # 単音化 & 除外ノーツ非表示復元（未設定ならデフォルトにリセット）
             mono_mode = prof.get("monophonic_mode", "すべて有効")

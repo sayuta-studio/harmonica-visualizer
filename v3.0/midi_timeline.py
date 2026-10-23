@@ -522,14 +522,15 @@ class MidiTimelineData:
             self.transpose_accomp = bool(transpose_accomp)
         self.rebind_fingerings(self.inst_type)
 
-    def diagnose_pitch_range(self) -> dict:
+    def diagnose_pitch_range(self, inst_type: str = None) -> dict:
         """主旋律ノーツの音域と選択中モデルの音域適合性を診断し、最適な推奨移調量を計算"""
         active_notes = [nd for nd in self.main_notes if not nd.get("is_muted", False)]
         if not active_notes:
             return {"status": "empty", "message": "主旋律ノーツが存在しません"}
 
         from harmonica_map import get_instrument_range, get_note_name
-        inst_min, inst_max = get_instrument_range(self.inst_type)
+        target_inst = inst_type or self.inst_type
+        inst_min, inst_max = get_instrument_range(target_inst)
 
         # 現在の移調適用後の実ノート番号
         current_pitches = [nd["note"] for nd in active_notes]
