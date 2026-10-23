@@ -426,7 +426,7 @@ def format_hole_number(hole_index: int, inst_type: str = "16穴 (64音・C調)",
       - is_absolute=True: 16穴基準の絶対インデックス (0〜15)
     style:
       - "実機標準 (低音ドット付)" / "実機標準"
-      - "通し番号 (1〜N)" / "通し番号 (1〜16)" / "通し番号"
+      - "通し番号 (1〜)" / "通し番号 (1〜N)" / "通し番号 (1〜16)" / "通し番号"
     """
     k = hole_index
     if is_absolute or (("14穴" in str(inst_type) and k >= 2 and k >= 14) or (("12穴" in str(inst_type) or "標準" in str(inst_type) or "バス" in str(inst_type)) and k >= 4 and k >= 12)):

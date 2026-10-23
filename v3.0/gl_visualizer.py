@@ -688,7 +688,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
                             fx = x_offset + (disp_w - fw) * 0.5
                             fy = y_offset + (disp_h - fh) * 0.5
                             p.drawImage(QRectF(fx, fy, fw, fh), img)
-                        elif "引き伸ばし" in self.bg_fit_mode:
+                        elif any(k in self.bg_fit_mode for k in ("引き伸ば", "引き延ば", "比率無視", "変形", "ストレッチ")):
                             p.drawImage(dest_rect, img)
                         elif "横幅" in self.bg_fit_mode:
                             sc_f = disp_w / max(1, img_w)

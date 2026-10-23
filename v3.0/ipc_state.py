@@ -47,6 +47,11 @@ class SharedClockBridge:
     def get_state(self) -> int:
         return self.raw.playing_state
 
+    @property
+    def is_playing(self) -> bool:
+        """再生中または前奏カウントダウン中かどうかを安全に返却"""
+        return self.raw.playing_state in (self.STATE_PLAYING, self.STATE_COUNT_IN)
+
     def set_speed_ratio(self, speed_ratio: float):
         # 現在時刻を新アンカーとして速度切り替え時の段差ジャンプを防止
         cur_sec = self.get_current_base_sec(lookahead_sec=0.0)

@@ -1390,10 +1390,10 @@ class HarmonicaMainWindow(QMainWindow):
         r_hole_style.addWidget(QLabel("穴番号表記:"))
         self.combo_hole_num_style = QComboBox(self)
         self.combo_hole_num_style.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.combo_hole_num_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜N)"])
+        self.combo_hole_num_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜)"])
         cur_hstyle = self.user_settings.get("hole_num_style", "実機標準 (低音ドット付)")
-        self.combo_hole_num_style.setCurrentText("通し番号 (1〜N)" if "通し番号" in cur_hstyle else "実機標準 (低音ドット付)")
-        self.combo_hole_num_style.setToolTip("実機表記（C4基準1〜12、16穴:·1〜·4、14穴:・・）か、左端基準の通し番号（1〜N）かを選択")
+        self.combo_hole_num_style.setCurrentText("通し番号 (1〜)" if "通し番号" in cur_hstyle else "実機標準 (低音ドット付)")
+        self.combo_hole_num_style.setToolTip("実機表記（C4基準1〜12、16穴:·1〜·4、14穴:・・）か、左端基準の通し番号（1〜）かを選択")
         self.combo_hole_num_style.currentTextChanged.connect(self._on_hole_num_style_changed)
         r_hole_style.addWidget(self.combo_hole_num_style, stretch=1)
         l_chk.addLayout(r_hole_style)
@@ -1453,10 +1453,14 @@ class HarmonicaMainWindow(QMainWindow):
             "画面内に収める (全体表示)",
             "横幅に合わせる",
             "縦幅に合わせる",
-            "画面に引き伸ばす"
+            "画面に引き伸ばす (比率無視)"
         ])
-        self.combo_bg_fit.setCurrentText(self.user_settings.get("bg_fit_mode", "中央トリミング (画面いっぱい)"))
-        self.combo_bg_fit.setToolTip("背景画像の画面フィット方式")
+        cur_fit = self.user_settings.get("bg_fit_mode", "中央トリミング (画面いっぱい)")
+        if "引き伸ば" in cur_fit or "引き延ば" in cur_fit:
+            self.combo_bg_fit.setCurrentText("画面に引き伸ばす (比率無視)")
+        else:
+            self.combo_bg_fit.setCurrentText(cur_fit)
+        self.combo_bg_fit.setToolTip("背景画像の画面フィット方式（中央トリミング / 全体表示 / 比率を無視して画面全体に引き伸ばす）")
         self.combo_bg_fit.currentTextChanged.connect(self._on_bg_fit_changed)
         r_fit.addWidget(self.combo_bg_fit, stretch=1)
         l_bg.addLayout(r_fit)
@@ -2005,6 +2009,15 @@ class HarmonicaMainWindow(QMainWindow):
         r_exp_vol.addWidget(self.lbl_exp_audio_vol)
         l_aud.addLayout(r_exp_vol)
 
+        r_yt_preset = QHBoxLayout()
+        self.btn_yt_vol_preset = QPushButton("YouTube推奨ボリュームに合わせる", self)
+        self.btn_yt_vol_preset.setFixedHeight(25)
+        self.btn_yt_vol_preset.setStyleSheet("font-size: 11px; padding: 2px 8px; background-color: #2D1A1A; border: 1px solid #7F1D1D; color: #FCA5A5; font-weight: bold; border-radius: 3px;")
+        self.btn_yt_vol_preset.setToolTip("YouTube音声仕様（ラウドネス規準 -14 LUFS / True Peak -1.0 dBFS上限）に合わせ、動画音量を100%（0dB）かつリミッターONにワンクリック自動設定")
+        self.btn_yt_vol_preset.clicked.connect(self._apply_youtube_volume_preset)
+        r_yt_preset.addWidget(self.btn_yt_vol_preset)
+        l_aud.addLayout(r_yt_preset)
+
         v_box.addWidget(f_aud)
 
         # 3. タイトル・クレジット表示
@@ -2253,7 +2266,7 @@ class HarmonicaMainWindow(QMainWindow):
         if hasattr(self, "combo_hole_num_style"):
             cur_style = s.get("hole_num_style", "実機標準 (低音ドット付)")
             self.combo_hole_num_style.blockSignals(True)
-            self.combo_hole_num_style.setCurrentText("通し番号 (1〜N)" if "通し番号" in cur_style else "実機標準 (低音ドット付)")
+            self.combo_hole_num_style.setCurrentText("通し番号 (1〜)" if "通し番号" in cur_style else "実機標準 (低音ドット付)")
             self.combo_hole_num_style.blockSignals(False)
         self.gl_widget.set_use_ring(s.get("show_ring", s.get("use_ring", True)))
         self.gl_widget.set_show_glow(s.get("show_glow", True))
@@ -3736,41 +3749,45 @@ class HarmonicaMainWindow(QMainWindow):
             pass
         self._save_current_settings()
 
-    def _on_ext_offset_changed(self, val: int):
-        self.ext_offset_ms = int(val)
-        self.user_settings["ext_audio_offset_ms"] = val
-        if self.clock.is_playing and getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path):
-            mode = getattr(self, "ext_audio_mode", "")
-            if "ガイド音のみ" not in mode and "伴奏ミュート" not in mode and "外部音源オフ" not in mode:
-                cur_sec = self.clock.get_current_base_sec()
-                ext_time = max(0.0, cur_sec + val / 1000.0)
-                vol = (self.slider_ext_vol.value() / 100.0) * (self.vol_slider.value() / 100.0)
-                try:
-                    import pygame
-                    if pygame.mixer.get_init():
-                        pygame.mixer.music.set_volume(vol)
-                        pygame.mixer.music.play(start=ext_time)
-                except Exception as e:
-                    pass
-        self._save_current_song_profile()
+    def _apply_youtube_volume_preset(self):
+        """YouTube音声仕様（目標 -14 LUFS / True Peak -1.0 dBFS）に合わせた推奨設定を一発適用"""
+        if hasattr(self, "slider_exp_audio_vol"):
+            self.slider_exp_audio_vol.setValue(100)
+        if hasattr(self, "chk_yt_limiter"):
+            self.chk_yt_limiter.setChecked(True)
+        self.lbl_status_msg.setText("YouTube推奨設定を適用しました (音量: 100% / ピークリミッター: -1.0dBFS)")
         self._save_current_settings()
 
+    def _on_ext_offset_changed(self, val: int):
+        try:
+            self.ext_offset_ms = int(val)
+            self.user_settings["ext_audio_offset_ms"] = val
+            if self.clock.is_playing and getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path):
+                mode = getattr(self, "ext_audio_mode", "")
+                if "ガイド音のみ" not in mode and "伴奏ミュート" not in mode and "外部音源オフ" not in mode:
+                    cur_sec = self.clock.get_current_base_sec()
+                    ext_time = max(0.0, cur_sec + val / 1000.0)
+                    vol = (self.slider_ext_vol.value() / 100.0) * (self.vol_slider.value() / 100.0)
+                    try:
+                        import pygame
+                        if not pygame.mixer.get_init():
+                            pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
+                        if pygame.mixer.get_init():
+                            pygame.mixer.music.set_volume(vol)
+                            pygame.mixer.music.play(start=ext_time)
+                    except Exception as e:
+                        print(f"[ExtAudio Offset Resync Warning] {e}")
+            self._save_current_song_profile()
+            self._save_current_settings()
+        except Exception as e:
+            print(f"[ExtAudio Offset Error] {e}")
+
     def _on_ext_offset_adjust(self, delta_ms: int):
-        new_val = self.spin_ext_offset.value() + int(delta_ms)
-        self.spin_ext_offset.setValue(max(-5000, min(5000, new_val)))
-        if self.clock.is_playing and getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path):
-            mode = getattr(self, "ext_audio_mode", "")
-            if "ガイド音のみ" not in mode and "伴奏ミュート" not in mode and "外部音源オフ" not in mode:
-                cur_sec = self.clock.get_current_base_sec()
-                ext_time = max(0.0, cur_sec + self.spin_ext_offset.value() / 1000.0)
-                vol = (self.slider_ext_vol.value() / 100.0) * (self.vol_slider.value() / 100.0)
-                try:
-                    import pygame
-                    if pygame.mixer.get_init():
-                        pygame.mixer.music.set_volume(vol)
-                        pygame.mixer.music.play(start=ext_time)
-                except Exception as e:
-                    print(f"[ExtAudio Offset Resync Warning] {e}")
+        try:
+            new_val = self.spin_ext_offset.value() + int(delta_ms)
+            self.spin_ext_offset.setValue(max(-5000, min(5000, new_val)))
+        except Exception as e:
+            print(f"[ExtAudio Offset Adjust Error] {e}")
 
     def _sync_ext_audio_playback(self, is_playing: bool, target_sec: float = None):
         """外部音源をタイムラインと完全同期再生/一時停止"""

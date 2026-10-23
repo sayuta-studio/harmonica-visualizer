@@ -216,7 +216,7 @@ class OffscreenVisualizerRenderer:
                         px = x_offset + (disp_w - scaled.width()) * 0.5
                         py = y_offset + (disp_h - scaled.height()) * 0.5
                         p.drawImage(QRectF(px, py, scaled.width(), scaled.height()), scaled)
-                    elif "引き伸ばし" in self.bg_fit_mode:
+                    elif any(k in self.bg_fit_mode for k in ("引き伸ば", "引き延ば", "比率無視", "変形", "ストレッチ")):
                         scaled = bg_raw.scaled(int(disp_w), int(disp_h), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
                         p.drawImage(dest_rect, scaled)
                     elif "横幅" in self.bg_fit_mode:
