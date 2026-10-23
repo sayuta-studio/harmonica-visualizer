@@ -1999,9 +1999,9 @@ class HarmonicaMainWindow(QMainWindow):
         r_exp_vol = QHBoxLayout()
         r_exp_vol.addWidget(QLabel("動画音声音量:"))
         self.slider_exp_audio_vol = QSlider(Qt.Orientation.Horizontal, self)
-        self.slider_exp_audio_vol.setRange(0, 150)
+        self.slider_exp_audio_vol.setRange(0, 200)
         self.slider_exp_audio_vol.setValue(int(self.user_settings.get("export_audio_volume", 100)))
-        self.slider_exp_audio_vol.setToolTip("書き出す動画の音声トラック全体の音量バランス (0%〜150%)")
+        self.slider_exp_audio_vol.setToolTip("書き出す動画の音声トラック全体の音量バランス (0%〜200%)")
         r_exp_vol.addWidget(self.slider_exp_audio_vol)
         self.lbl_exp_audio_vol = QLabel(f"{self.slider_exp_audio_vol.value()}%", self)
         self.lbl_exp_audio_vol.setFixedWidth(38)
@@ -2010,10 +2010,10 @@ class HarmonicaMainWindow(QMainWindow):
         l_aud.addLayout(r_exp_vol)
 
         r_yt_preset = QHBoxLayout()
-        self.btn_yt_vol_preset = QPushButton("YouTube推奨ボリュームに合わせる", self)
-        self.btn_yt_vol_preset.setFixedHeight(25)
+        self.btn_yt_vol_preset = QPushButton("📊 YouTube最適音量に自動解析", self)
+        self.btn_yt_vol_preset.setFixedHeight(26)
         self.btn_yt_vol_preset.setStyleSheet("font-size: 11px; padding: 2px 8px; background-color: #2D1A1A; border: 1px solid #7F1D1D; color: #FCA5A5; font-weight: bold; border-radius: 3px;")
-        self.btn_yt_vol_preset.setToolTip("YouTube音声仕様（ラウドネス規準 -14 LUFS / True Peak -1.0 dBFS上限）に合わせ、動画音量を100%（0dB）かつリミッターONにワンクリック自動設定")
+        self.btn_yt_vol_preset.setToolTip("動画全体の音量をITU-R BS.1770規準で実際に測定し、YouTubeのラウドネス基準（-14 LUFS / True Peak -1.0 dBFS）で音質劣化・自動減衰されない最適音量％を自動算出・設定")
         self.btn_yt_vol_preset.clicked.connect(self._apply_youtube_volume_preset)
         r_yt_preset.addWidget(self.btn_yt_vol_preset)
         l_aud.addLayout(r_yt_preset)
@@ -3750,13 +3750,119 @@ class HarmonicaMainWindow(QMainWindow):
         self._save_current_settings()
 
     def _apply_youtube_volume_preset(self):
-        """YouTube音声仕様（目標 -14 LUFS / True Peak -1.0 dBFS）に合わせた推奨設定を一発適用"""
-        if hasattr(self, "slider_exp_audio_vol"):
-            self.slider_exp_audio_vol.setValue(100)
-        if hasattr(self, "chk_yt_limiter"):
-            self.chk_yt_limiter.setChecked(True)
-        self.lbl_status_msg.setText("YouTube推奨設定を適用しました (音量: 100% / ピークリミッター: -1.0dBFS)")
-        self._save_current_settings()
+        """YouTube音声仕様（目標 -14 LUFS / True Peak -1.0 dBFS）に基づき、動画全体の音量を自動測定・最適化"""
+        if (not hasattr(self, "timeline") or not self.timeline or self.timeline.total_duration_sec <= 0) and \
+           (not getattr(self, "ext_audio_path", "") or not os.path.isfile(self.ext_audio_path)):
+            QMessageBox.information(self, "音量解析", "解析対象の楽曲（MIDI）または外部音声ファイルが読み込まれていません。")
+            return
+
+        self.lbl_status_msg.setText("⏳ YouTube音量を解析中...")
+        QApplication.processEvents()
+
+        temp_wav = get_portable_path(os.path.join("temp", f"yt_loudness_test_{int(time.time())}.wav"))
+        os.makedirs(os.path.dirname(temp_wav), exist_ok=True)
+
+        try:
+            # 1. 出力範囲の特定
+            if hasattr(self, "radio_exp_part") and self.radio_exp_part.isChecked():
+                start_sec = max(0.0, float(self.spin_exp_start.value()))
+                end_sec = max(start_sec + 0.5, float(self.spin_exp_end.value()))
+                duration_sec = end_sec - start_sec
+            else:
+                start_sec = 0.0
+                duration_sec = self.timeline.total_duration_sec if self.timeline else 60.0
+
+            # 2. 外部音声PCM読み込み
+            has_ext = bool(getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path))
+            ext_pcm = self.audio_recorder.read_wav_file(self.ext_audio_path) if has_ext else None
+
+            # 3. 音声トラック合成 (基準ボリューム100%かつリミッターなしで生特性を測定)
+            from audio_engine import synthesize_midi_to_wav
+            synthesize_midi_to_wav(
+                midi_notes=self.timeline.main_notes if self.timeline else [],
+                current_bpm=self.timeline.default_bpm if self.timeline else 120.0,
+                max_duration=duration_sec,
+                is_count_in=False,
+                is_metro=False,
+                output_wav_path=temp_wav,
+                sample_rate=44100,
+                accompaniment_notes=self.timeline.accomp_notes if self.timeline else [],
+                part_play_mode=self.combo_part.currentText() if hasattr(self, "combo_part") else "全パート再生",
+                ext_audio_pcm=ext_pcm,
+                ext_audio_mode=getattr(self, "ext_audio_mode", ""),
+                ext_audio_offset_ms=self.spin_ext_offset.value() if hasattr(self, "spin_ext_offset") else 0,
+                ext_audio_vol_pct=self.slider_ext_vol.value() if hasattr(self, "slider_ext_vol") else 100.0,
+                sec_a_in_song=start_sec,
+                yt_limiter=False
+            )
+
+            # 4. FFmpeg loudnormフィルターによるITU-R BS.1770規格ラウドネス解析
+            import subprocess, json, re
+            cmd = [
+                "ffmpeg", "-hide_banner",
+                "-i", temp_wav,
+                "-af", "loudnorm=I=-14.0:TP=-1.0:print_format=json",
+                "-f", "null", "-"
+            ]
+            startupinfo = None
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore", startupinfo=startupinfo)
+            match = re.search(r'\{[^{}]*"input_i"[^{}]*\}', proc.stderr)
+            if not match:
+                raise RuntimeError("FFmpegによるラウドネス解析データの取得に失敗しました。")
+
+            data = json.loads(match.group(0))
+            input_i = float(data.get("input_i", -99.0))
+            input_tp = float(data.get("input_tp", -99.0))
+
+            if input_i <= -70.0:
+                opt_vol_pct = 100
+                diff_db = 0.0
+            else:
+                gain_lufs_db = -14.0 - input_i
+                max_peak_gain_db = -1.0 - input_tp
+                diff_db = min(gain_lufs_db, max_peak_gain_db)
+                gain_linear = 10.0 ** (diff_db / 20.0)
+                opt_vol_pct = max(10, min(200, int(round(100.0 * gain_linear))))
+
+            # 5. UIへの反映
+            if hasattr(self, "slider_exp_audio_vol"):
+                self.slider_exp_audio_vol.setValue(opt_vol_pct)
+            if hasattr(self, "chk_yt_limiter"):
+                self.chk_yt_limiter.setChecked(True)
+
+            sign_str = f"+{diff_db:.1f}" if diff_db > 0 else f"{diff_db:.1f}"
+            status_text = f"YouTube最適化完了: 測定 {input_i:.1f} LUFS ➔ 音量 {opt_vol_pct}% ({sign_str} dB)"
+            self.lbl_status_msg.setText(status_text)
+            self._save_current_settings()
+
+            QMessageBox.information(
+                self,
+                "YouTube音量 自動解析・最適化",
+                f"【YouTube音量 最適化完了】\n\n"
+                f"・測定ラウドネス: {input_i:.1f} LUFS （YouTube目標: -14.0 LUFS）\n"
+                f"・測定トゥルーピーク: {input_tp:.1f} dBFS （上限基準: -1.0 dBFS）\n\n"
+                f"▶ 推奨音量補正: {sign_str} dB ➔ 「動画音声音量」を 【 {opt_vol_pct}% 】 に自動設定しました。\n"
+                f"▶ 音割れ防止リミッター: 【 有効 (ON) 】 にセットしました。\n\n"
+                f"※YouTubeの自動音量減衰を受けず、最高のダイナミクスと音質で再生されます。"
+            )
+        except Exception as e:
+            print(f"[YouTube Audio Analyzer Error] {e}")
+            self.lbl_status_msg.setText(f"YouTube音量解析エラー: {e}")
+            QMessageBox.warning(self, "音量解析エラー", f"音量解析中にエラーが発生しました:\n{e}\n\n動画音量を標準の100%に設定します。")
+            if hasattr(self, "slider_exp_audio_vol"):
+                self.slider_exp_audio_vol.setValue(100)
+            if hasattr(self, "chk_yt_limiter"):
+                self.chk_yt_limiter.setChecked(True)
+        finally:
+            if os.path.exists(temp_wav):
+                try:
+                    os.remove(temp_wav)
+                except Exception:
+                    pass
 
     def _on_ext_offset_changed(self, val: int):
         try:

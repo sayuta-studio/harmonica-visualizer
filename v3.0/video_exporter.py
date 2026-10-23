@@ -1094,12 +1094,16 @@ class VideoExportThread(QThread):
                     vol_gain = max(0.0, min(2.5, export_audio_vol_pct / 100.0))
                     af_filters.append(f"volume={vol_gain:.2f}")
 
+                export_style = self.config.get("settings", {}).get("export_style", "")
+                is_transparent_mov = ("完全背景透過" in export_style or output_path.lower().endswith(".mov"))
+
                 if af_filters:
                     cmd.extend(["-af", ",".join(af_filters)])
-                cmd.extend(["-c:a", "aac", "-b:a", "256k"])
 
-            export_style = self.config.get("settings", {}).get("export_style", "")
-            is_transparent_mov = ("完全背景透過" in export_style or output_path.lower().endswith(".mov"))
+                if is_transparent_mov:
+                    cmd.extend(["-c:a", "pcm_s16le", "-ar", "48000"])
+                else:
+                    cmd.extend(["-c:a", "aac", "-b:a", "320k", "-ar", "48000"])
 
             if is_transparent_mov:
                 cmd.extend(["-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", output_path])
