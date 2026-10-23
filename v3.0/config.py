@@ -418,26 +418,33 @@ def generate_default_skins():
             shutil.copyfile(s_p, d_p)
 
 
-def format_hole_number(hole_index_0_based: int, inst_type: str = "16穴 (64音・C調)", style: str = "実機標準 (低音ドット付)") -> str:
+def format_hole_number(hole_index: int, inst_type: str = "16穴 (64音・C調)", style: str = "実機標準 (低音ドット付)", is_absolute: bool = False) -> str:
     """
     穴番号の表示文字列をフォーマット。
+    hole_index:
+      - is_absolute=False (デフォルト): 左端を0とする可視穴インデックス (0〜N-1)
+      - is_absolute=True: 16穴基準の絶対インデックス (0〜15)
     style:
       - "実機標準 (低音ドット付)" / "実機標準"
-      - "通し番号 (1〜16)"
+      - "通し番号 (1〜N)" / "通し番号 (1〜16)" / "通し番号"
     """
-    raw_num = hole_index_0_based + 1
-    if "通し番号" in str(style):
-        return str(raw_num)
+    k = hole_index
+    if is_absolute or (("14穴" in str(inst_type) and k >= 2 and k >= 14) or (("12穴" in str(inst_type) or "標準" in str(inst_type) or "バス" in str(inst_type)) and k >= 4 and k >= 12)):
+        if "14穴" in str(inst_type):
+            k = max(0, k - 2)
+        elif "12穴" in str(inst_type) or "標準" in str(inst_type) or "バス" in str(inst_type):
+            k = max(0, k - 4)
 
-    if "16穴" in inst_type:
-        if raw_num <= 4:
-            return f"·{raw_num}"
-        else:
-            return str(raw_num - 4)
-    elif "14穴" in inst_type:
-        if raw_num <= 2:
-            return f"·{raw_num}"
-        else:
-            return str(raw_num - 2)
+    if "通し番号" in str(style):
+        return str(k + 1)
+
+    if "16穴" in str(inst_type):
+        if k < 4:
+            return f"·{k + 1}"
+        return str(k - 3)
+    elif "14穴" in str(inst_type):
+        if k < 2:
+            return "・"
+        return str(k - 1)
     else:
-        return str(raw_num)
+        return str(k + 1)

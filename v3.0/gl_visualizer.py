@@ -811,7 +811,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
 
             if self.show_hole_num:
                 num_rect = QRectF(cx - w_pitch_s * 0.5, y_center_s + 14.0 * scale, w_pitch_s, 20.0 * scale)
-                num_str = format_hole_number(idx, self.inst_type, getattr(self, "hole_num_style", "実機標準 (低音ドット付)"))
+                num_str = format_hole_number(k, self.inst_type, getattr(self, "hole_num_style", "実機標準 (低音ドット付)"))
                 _draw_bordered_text_qt(p, num_rect, num_str, self.font_hole, self.color_white, self.color_black, border_w=1.5 * scale)
 
         # 3. 穴下の音名表示 (田の字4音グリッド / 1音表示)

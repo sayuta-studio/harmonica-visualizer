@@ -1356,7 +1356,7 @@ class HarmonicaMainWindow(QMainWindow):
 
         self.chk_hole_num = QCheckBox("穴番号", self)
         self.chk_hole_num.setChecked(bool(self.user_settings.get("show_hole_num", True)))
-        self.chk_hole_num.setToolTip("ハーモニカ各ホールの穴番号(1〜16)を表示")
+        self.chk_hole_num.setToolTip("ハーモニカ各ホールの穴番号を表示")
         self.chk_hole_num.toggled.connect(lambda v: (self.gl_widget.set_show_hole_num(v), self._save_current_settings()))
         grid_chk.addWidget(self.chk_hole_num, 1, 1)
 
@@ -1390,9 +1390,10 @@ class HarmonicaMainWindow(QMainWindow):
         r_hole_style.addWidget(QLabel("穴番号表記:"))
         self.combo_hole_num_style = QComboBox(self)
         self.combo_hole_num_style.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.combo_hole_num_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜16)"])
-        self.combo_hole_num_style.setCurrentText(self.user_settings.get("hole_num_style", "実機標準 (低音ドット付)"))
-        self.combo_hole_num_style.setToolTip("実機同様に低音穴にドットを付与する表記（·1〜·4, 1〜12）か、通し番号（1〜16）かを選択")
+        self.combo_hole_num_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜N)"])
+        cur_hstyle = self.user_settings.get("hole_num_style", "実機標準 (低音ドット付)")
+        self.combo_hole_num_style.setCurrentText("通し番号 (1〜N)" if "通し番号" in cur_hstyle else "実機標準 (低音ドット付)")
+        self.combo_hole_num_style.setToolTip("実機表記（C4基準1〜12、16穴:·1〜·4、14穴:・・）か、左端基準の通し番号（1〜N）かを選択")
         self.combo_hole_num_style.currentTextChanged.connect(self._on_hole_num_style_changed)
         r_hole_style.addWidget(self.combo_hole_num_style, stretch=1)
         l_chk.addLayout(r_hole_style)
@@ -2250,8 +2251,9 @@ class HarmonicaMainWindow(QMainWindow):
         self.gl_widget.set_show_hole_num(s.get("show_hole_num", True))
         self.gl_widget.set_hole_num_style(s.get("hole_num_style", "実機標準 (低音ドット付)"))
         if hasattr(self, "combo_hole_num_style"):
+            cur_style = s.get("hole_num_style", "実機標準 (低音ドット付)")
             self.combo_hole_num_style.blockSignals(True)
-            self.combo_hole_num_style.setCurrentText(s.get("hole_num_style", "実機標準 (低音ドット付)"))
+            self.combo_hole_num_style.setCurrentText("通し番号 (1〜N)" if "通し番号" in cur_style else "実機標準 (低音ドット付)")
             self.combo_hole_num_style.blockSignals(False)
         self.gl_widget.set_use_ring(s.get("show_ring", s.get("use_ring", True)))
         self.gl_widget.set_show_glow(s.get("show_glow", True))
