@@ -11,11 +11,22 @@ __pycache__/
 build/
 dist/
 *.spec
+*.spec.bak
 
-# 実行時の一時ファイル・出力動画・エラーログ
-**/temp/
+# 大容量実行ファイル・配布アーカイブ（GitHub 50MB/100MB制限・リポジトリ肥大化防止）
+*.exe
+*.zip
+
+# テスト用一時資産
+**/test_assets/
+
+# 実行時の一時ファイル・出力動画・録音・エラーログ
 **/output/
+**/recordings/
 **/error_log.txt
 *.mp4
 *.wav
 
+# temp フォルダ（組み込みデモMIDIは保護）
+**/temp/*
+!**/temp/demo_chromatic.mid
