@@ -50,8 +50,8 @@
   "reverb_type": "ルーム (自然な部屋鳴り)",
   "reverb_wet_pct": 35,
   "ext_audio_path": "",
-  "ext_audio_mode": "外部音源のみ (再生も動画も外部のみ)",
-  "ext_audio_offset_ms": 15,
+  "ext_audio_mode": "伴奏 ＋ ガイド音 (重ねて再生・出力)",
+  "ext_audio_offset_ms": 0,
   "ext_audio_volume": 100,
   "yt_limiter": true,
   "export_range": "全曲",
@@ -69,5 +69,6 @@
   "export_title_template": "なし",
   "export_title_text": "",
   "export_credit_text": "",
-  "recent_files": []
+  "recent_files": [],
+  "export_audio_vol": 100
 }
