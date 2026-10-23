@@ -8,13 +8,14 @@ Chromatic Harmonica Visualizer v3.0 - モーダルダイアログ群
 
 import os
 import sys
+import copy
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap, QImage
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget, QLabel,
     QPushButton, QComboBox, QSlider, QSpinBox, QAbstractSpinBox, QCheckBox, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QRadioButton, QButtonGroup,
-    QFrame, QMessageBox, QLineEdit, QProgressBar
+    QFrame, QMessageBox, QLineEdit, QProgressBar, QAbstractItemView, QInputDialog
 )
 
 from settings_manager import THEME_PRESETS, DEFAULT_SETTINGS
@@ -494,9 +495,21 @@ class FingeringEditorDialog(QDialog):
         self.audio_engine = audio_engine
         self.gl_widget = gl_widget
 
+        import harmonica_map
+        self._initial_overrides = copy.deepcopy(harmonica_map.SONG_FINGERING_OVERRIDES)
+        self._initial_muted = copy.deepcopy(harmonica_map.SONG_MUTED_NOTES)
+        self._initial_preset = harmonica_map.CURRENT_SONG_PRESET
+        self._initial_monophonic = harmonica_map.CURRENT_MONOPHONIC_MODE
+        self._is_saved = False
+
+        self._patterns = {}
+        if self.timeline and self.timeline.filepath:
+            prof = harmonica_map.load_song_profile(self.timeline.filepath)
+            self._patterns = dict(prof.get("patterns", {}))
+
         self.setWindowTitle(f"🎼 変え指エディタ (Custom Fingering Editor) - {timeline.filename}")
-        self.resize(960, 620)
-        self.setMinimumSize(780, 480)
+        self.resize(980, 640)
+        self.setMinimumSize(800, 500)
         self.setModal(True)
 
         self._row_note_map = []  # table_row -> note_data
@@ -529,7 +542,37 @@ class FingeringEditorDialog(QDialog):
 
         layout.addWidget(hdr_frame)
 
-        # 2. フィルタ＆プリセット操作バー
+        # 2. パターン＆プロファイル管理バー
+        pat_frame = QFrame(self)
+        pat_frame.setStyleSheet("background-color: #151520; border: 1px solid #242436; border-radius: 4px; padding: 4px;")
+        pat_layout = QHBoxLayout(pat_frame)
+        pat_layout.setContentsMargins(8, 4, 8, 4)
+        pat_layout.setSpacing(8)
+
+        pat_layout.addWidget(QLabel("📂 <b>運指パターン:</b>"))
+        self.combo_patterns = QComboBox(self)
+        self.combo_patterns.setMinimumWidth(180)
+        self.combo_patterns.setToolTip("曲ごとに保存されている複数の運指・除外パターンの切り替え")
+        self._update_pattern_combo()
+        self.combo_patterns.activated.connect(self._on_pattern_switched)
+        pat_layout.addWidget(self.combo_patterns)
+
+        self.btn_save_pattern = QPushButton("➕ パターン別名保存", self)
+        self.btn_save_pattern.setStyleSheet("font-size: 11px; padding: 3px 8px; font-weight: bold;")
+        self.btn_save_pattern.setToolTip("現在の運指・除外設定を新しいパターン名でプロファイルに保存")
+        self.btn_save_pattern.clicked.connect(self._on_save_new_pattern)
+        pat_layout.addWidget(self.btn_save_pattern)
+
+        self.btn_del_pattern = QPushButton("🗑 削除", self)
+        self.btn_del_pattern.setStyleSheet("font-size: 11px; padding: 3px 8px; color: #FCA5A5;")
+        self.btn_del_pattern.setToolTip("選択中の追加パターンを削除")
+        self.btn_del_pattern.clicked.connect(self._on_delete_pattern)
+        pat_layout.addWidget(self.btn_del_pattern)
+
+        pat_layout.addStretch()
+        layout.addWidget(pat_frame)
+
+        # 3. フィルタ＆プリセット操作バー
         ctrl_layout = QHBoxLayout()
         ctrl_layout.setSpacing(10)
 
@@ -573,7 +616,7 @@ class FingeringEditorDialog(QDialog):
 
         layout.addLayout(ctrl_layout)
 
-        # 3. ノーツ一覧テーブル (9列: 発音/除外 状態を含む)
+        # 4. ノーツ一覧テーブル (9列: 発音/除外 状態を含む)
         self.table = QTableWidget(self)
         self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels([
@@ -593,6 +636,7 @@ class FingeringEditorDialog(QDialog):
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setStyleSheet("""
             QTableWidget {
                 background-color: #12121A;
@@ -616,14 +660,21 @@ class FingeringEditorDialog(QDialog):
         self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
         layout.addWidget(self.table, stretch=1)
 
-        # 4. フッターボタンバー
+        # 5. フッターボタンバー
         foot_layout = QHBoxLayout()
         foot_layout.setSpacing(10)
 
-        btn_reset = QPushButton("🔄 この曲の運指を初期化 (リセット)", self)
-        btn_reset.setStyleSheet("background-color: #501F1F; color: #FECACA; font-weight: bold; padding: 6px 14px; border-radius: 4px;")
-        btn_reset.clicked.connect(self._on_reset_all)
-        foot_layout.addWidget(btn_reset)
+        btn_reset_fing = QPushButton("🎯 運指カスタムを全初期化", self)
+        btn_reset_fing.setStyleSheet("background-color: #372B10; color: #FDE68A; border: 1px solid #92400E; font-weight: bold; padding: 6px 12px; border-radius: 4px;")
+        btn_reset_fing.setToolTip("個別設定したすべての変え指を解除し、プリセット標準に戻します（除外ノーツは維持）")
+        btn_reset_fing.clicked.connect(self._on_reset_custom_only)
+        foot_layout.addWidget(btn_reset_fing)
+
+        btn_reset_mutes = QPushButton("🔔 除外ノーツを全復活", self)
+        btn_reset_mutes.setStyleSheet("background-color: #1E2D3D; color: #93C5FD; border: 1px solid #1E40AF; font-weight: bold; padding: 6px 12px; border-radius: 4px;")
+        btn_reset_mutes.setToolTip("除外（ミュート）されているすべてのノーツを有効（発音）状態に戻します（運指カスタムは維持）")
+        btn_reset_mutes.clicked.connect(self._on_reset_muted_only)
+        foot_layout.addWidget(btn_reset_mutes)
 
         btn_jump = QPushButton("▶ 選択位置へジャンプ", self)
         btn_jump.setToolTip("選択されているノーツの再生位置へシークします (行のダブルクリックでもジャンプ可能)")
@@ -715,6 +766,7 @@ class FingeringEditorDialog(QDialog):
             # Col 0: No.
             it_no = QTableWidgetItem(f"{orig_idx + 1}")
             it_no.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            it_no.setFlags(it_no.flags() & ~Qt.ItemFlag.ItemIsEditable)
             if is_muted:
                 it_no.setForeground(dim_col)
             self.table.setItem(r, 0, it_no)
@@ -761,6 +813,7 @@ class FingeringEditorDialog(QDialog):
             # Col 2: 小節 : 拍
             it_mb = QTableWidgetItem(f"第 {m} 小節 {b} 拍")
             it_mb.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            it_mb.setFlags(it_mb.flags() & ~Qt.ItemFlag.ItemIsEditable)
             if is_muted:
                 it_mb.setForeground(dim_col)
             self.table.setItem(r, 2, it_mb)
@@ -769,6 +822,7 @@ class FingeringEditorDialog(QDialog):
             sec = nd["start_sec"]
             it_time = QTableWidgetItem(f"{int(sec // 60):02d}:{sec % 60:05.2f}")
             it_time.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            it_time.setFlags(it_time.flags() & ~Qt.ItemFlag.ItemIsEditable)
             if is_muted:
                 it_time.setForeground(dim_col)
             self.table.setItem(r, 3, it_time)
@@ -776,6 +830,7 @@ class FingeringEditorDialog(QDialog):
             # Col 4: 音名
             it_name = QTableWidgetItem(f"{nd.get('name_jp', '')} ({nd.get('name_cde', '')})")
             it_name.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            it_name.setFlags(it_name.flags() & ~Qt.ItemFlag.ItemIsEditable)
             if is_muted:
                 it_name.setForeground(dim_col)
             self.table.setItem(r, 4, it_name)
@@ -789,6 +844,7 @@ class FingeringEditorDialog(QDialog):
 
             it_fing = QTableWidgetItem(f_str)
             it_fing.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            it_fing.setFlags(it_fing.flags() & ~Qt.ItemFlag.ItemIsEditable)
             if is_muted:
                 it_fing.setForeground(dim_col)
             elif f_act == "吹":
@@ -834,26 +890,54 @@ class FingeringEditorDialog(QDialog):
             else:
                 it_fix = QTableWidgetItem("固定運指")
                 it_fix.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                it_fix.setFlags(it_fix.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 it_fix.setForeground(dim_col)
                 self.table.setItem(r, 6, it_fix)
 
                 it_dash = QTableWidgetItem("-")
                 it_dash.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                it_dash.setFlags(it_dash.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 it_dash.setForeground(dim_col)
                 self.table.setItem(r, 7, it_dash)
 
-            # Col 8: 状態
+            # Col 8: 状態 (カスタム時はボタン化して1クリックで標準へ復帰可能)
             if is_muted:
-                it_stat = QTableWidgetItem("除外中")
+                it_stat = QTableWidgetItem("🔇 除外中")
                 it_stat.setForeground(QColor("#F87171"))
+                it_stat.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                it_stat.setFlags(it_stat.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(r, 8, it_stat)
             elif is_custom:
-                it_stat = QTableWidgetItem("★ カスタム")
-                it_stat.setForeground(QColor("#34D399"))
+                btn_rev = QPushButton("★ カスタム (戻す)", self)
+                btn_rev.setStyleSheet("""
+                    QPushButton {
+                        background-color: #064E3B;
+                        color: #6EE7B7;
+                        font-size: 11px;
+                        font-weight: bold;
+                        padding: 2px 6px;
+                        border: 1px solid #059669;
+                        border-radius: 3px;
+                    }
+                    QPushButton:hover {
+                        background-color: #047857;
+                        color: #FFFFFF;
+                    }
+                """)
+                btn_rev.setToolTip("クリックするとこの音のカスタム変え指を解除し、プリセット標準に戻します")
+                btn_rev.clicked.connect(lambda _, n_data=nd, l_note=lookup_note: self._revert_single_note(n_data, l_note))
+                cell_stat = QWidget()
+                h_stat = QHBoxLayout(cell_stat)
+                h_stat.addWidget(btn_rev)
+                h_stat.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                h_stat.setContentsMargins(2, 2, 2, 2)
+                self.table.setCellWidget(r, 8, cell_stat)
             else:
                 it_stat = QTableWidgetItem("標準")
                 it_stat.setForeground(dim_col)
-            it_stat.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.table.setItem(r, 8, it_stat)
+                it_stat.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                it_stat.setFlags(it_stat.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(r, 8, it_stat)
 
         # 統計表示更新
         total_n = len(notes)
@@ -868,16 +952,141 @@ class FingeringEditorDialog(QDialog):
         """検索ボックス入力時の軽量フィルタ"""
         self._populate_table()
 
+    def _update_pattern_combo(self):
+        """保存されている運指パターン一覧をコンボボックスへ更新"""
+        cur = self.combo_patterns.currentText() if hasattr(self, "combo_patterns") else ""
+        self.combo_patterns.blockSignals(True)
+        self.combo_patterns.clear()
+        self.combo_patterns.addItem("標準パターン (基本)")
+        for p_name in sorted(self._patterns.keys()):
+            self.combo_patterns.addItem(p_name)
+        if cur in self._patterns:
+            self.combo_patterns.setCurrentText(cur)
+        else:
+            self.combo_patterns.setCurrentIndex(0)
+        self.combo_patterns.blockSignals(False)
+
+    def _on_pattern_switched(self, idx: int):
+        """運指パターンの切替"""
+        import harmonica_map
+        p_name = self.combo_patterns.currentText()
+        if p_name == "標準パターン (基本)":
+            harmonica_map.SONG_FINGERING_OVERRIDES.clear()
+            harmonica_map.SONG_FINGERING_OVERRIDES.update(self._initial_overrides)
+            harmonica_map.SONG_MUTED_NOTES.clear()
+            harmonica_map.SONG_MUTED_NOTES.update(self._initial_muted)
+            harmonica_map.CURRENT_SONG_PRESET = self._initial_preset
+            harmonica_map.CURRENT_MONOPHONIC_MODE = self._initial_monophonic
+        elif p_name in self._patterns:
+            pat_data = self._patterns[p_name]
+            harmonica_map.SONG_FINGERING_OVERRIDES.clear()
+            for k, v in pat_data.get("custom_fingering", {}).items():
+                try:
+                    t, n = k.split("_", 1)
+                    harmonica_map.SONG_FINGERING_OVERRIDES[(int(t), int(n))] = int(v)
+                except Exception:
+                    pass
+            harmonica_map.SONG_MUTED_NOTES.clear()
+            harmonica_map.SONG_MUTED_NOTES.update(pat_data.get("muted_notes", {}))
+            if "preset" in pat_data:
+                harmonica_map.CURRENT_SONG_PRESET = pat_data["preset"]
+            if "monophonic_mode" in pat_data:
+                harmonica_map.CURRENT_MONOPHONIC_MODE = pat_data["monophonic_mode"]
+
+        self.combo_preset.blockSignals(True)
+        self.combo_preset.setCurrentText(harmonica_map.normalize_fingering_preset(harmonica_map.CURRENT_SONG_PRESET))
+        self.combo_preset.blockSignals(False)
+
+        self.combo_monophonic.blockSignals(True)
+        self.combo_monophonic.setCurrentText(harmonica_map.CURRENT_MONOPHONIC_MODE)
+        self.combo_monophonic.blockSignals(False)
+
+        harmonica_map.apply_fingering_preset(harmonica_map.CURRENT_SONG_PRESET)
+        if self.timeline:
+            self.timeline.monophonic_mode = harmonica_map.CURRENT_MONOPHONIC_MODE
+            self.timeline.rebind_fingerings(self.timeline.inst_type)
+        if self.audio_engine and self.timeline:
+            self.audio_engine.load_timeline(self.timeline)
+            self.audio_engine.seek(self.clock.get_current_base_sec() if self.clock else 0.0)
+        if self.gl_widget:
+            self.gl_widget.invalidate_static_cache()
+            self.gl_widget.update()
+        self._populate_table()
+
+    def _on_save_new_pattern(self):
+        """現在の運指設定を別名パターンとして保存"""
+        text, ok = QInputDialog.getText(
+            self, "パターン別名保存",
+            "新しい運指パターン名を入力してください:\n(例: パターンB / スライド強化 / 簡易版)",
+            text=f"パターン {len(self._patterns) + 1}"
+        )
+        if not ok or not text.strip():
+            return
+        p_name = text.strip()
+        if p_name == "標準パターン (基本)":
+            QMessageBox.warning(self, "保存不可", "「標準パターン (基本)」と同名では別名保存できません。別の名前を指定してください。")
+            return
+
+        import harmonica_map
+        custom_fg_dict = {f"{tick}_{note}": idx for (tick, note), idx in harmonica_map.SONG_FINGERING_OVERRIDES.items()}
+        self._patterns[p_name] = {
+            "preset": harmonica_map.CURRENT_SONG_PRESET,
+            "monophonic_mode": harmonica_map.CURRENT_MONOPHONIC_MODE,
+            "custom_fingering": custom_fg_dict,
+            "muted_notes": dict(harmonica_map.SONG_MUTED_NOTES),
+        }
+        if self.timeline and self.timeline.filepath:
+            harmonica_map.save_song_profile(self.timeline.filepath, {"patterns": self._patterns})
+
+        self._update_pattern_combo()
+        self.combo_patterns.setCurrentText(p_name)
+        QMessageBox.information(self, "パターン保存完了", f"パターン「{p_name}」をプロファイルに保存しました！")
+
+    def _on_delete_pattern(self):
+        """選択中パターンの削除"""
+        p_name = self.combo_patterns.currentText()
+        if p_name == "標準パターン (基本)":
+            QMessageBox.information(self, "削除不可", "「標準パターン (基本)」は削除できません。")
+            return
+        ans = QMessageBox.question(
+            self, "パターンの削除確認",
+            f"パターン「{p_name}」をプロファイルから完全に削除しますか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            if p_name in self._patterns:
+                del self._patterns[p_name]
+                import harmonica_map
+                if self.timeline and self.timeline.filepath:
+                    harmonica_map.save_song_profile(self.timeline.filepath, {"patterns": self._patterns})
+            self._update_pattern_combo()
+            self._on_pattern_switched(0)
+
+    def _revert_single_note(self, nd: dict, lookup_note: int):
+        """指定ノーツの個別変え指カスタムを解除し標準に戻す"""
+        from harmonica_map import SONG_FINGERING_OVERRIDES
+        start_tick = nd["start_tick"]
+        key = (start_tick, lookup_note)
+        if key in SONG_FINGERING_OVERRIDES:
+            del SONG_FINGERING_OVERRIDES[key]
+
+        if self.timeline:
+            self.timeline.rebind_fingerings(self.timeline.inst_type)
+        if self.gl_widget:
+            self.gl_widget.invalidate_static_cache()
+            self.gl_widget.update()
+        if self.audio_engine:
+            self.audio_engine.play_ui_click()
+
+        self._populate_table()
+
     def _on_candidate_changed(self, row: int, nd: dict, lookup_note: int, candidates: list, new_idx: int):
-        """候補コンボ変更時のリアルタイム反映"""
-        from harmonica_map import SONG_FINGERING_OVERRIDES, save_song_fingering
+        """候補コンボ変更時のリアルタイム反映 (メモリ上のみ更新・明示保存までファイル未保存)"""
+        from harmonica_map import SONG_FINGERING_OVERRIDES
 
         start_tick = nd["start_tick"]
         SONG_FINGERING_OVERRIDES[(start_tick, lookup_note)] = new_idx
-
-        # ファイル自動保存
-        if self.timeline and self.timeline.filepath:
-            save_song_fingering(self.timeline.filepath)
 
         # タイムライン再バインド
         if self.timeline:
@@ -891,32 +1100,17 @@ class FingeringEditorDialog(QDialog):
         if self.audio_engine:
             self.audio_engine.play_ui_click()
 
-        # テーブルのCol 5 (現在の運指) と Col 8 (状態) を更新
-        new_cand = candidates[new_idx]
-        f_str = f"{new_cand['hole']}穴 {new_cand['action']} {new_cand['lever']}"
-        it_fing = self.table.item(row, 5)
-        if it_fing:
-            it_fing.setText(f_str)
-            if new_cand["action"] == "吹":
-                it_fing.setForeground(QColor("#FF7A33"))
-            else:
-                it_fing.setForeground(QColor("#38BDF8"))
-
-        it_stat = self.table.item(row, 8)
-        if it_stat:
-            it_stat.setText("★ カスタム")
-            it_stat.setForeground(QColor("#34D399"))
+        self._populate_table()
 
     def _toggle_note_mute(self, nd: dict):
-        """ノーツの発音/除外 (Mute) 状態を反転"""
+        """ノーツの発音/除外 (Mute) 状態を反転 (メモリ上のみ更新・明示保存までファイル未保存)"""
         start_sec = nd["start_sec"]
         raw_pitch = nd.get("raw_note", nd["note"])
         key = f"{round(start_sec, 3)}_{raw_pitch}"
         new_muted = not nd.get("is_muted", False)
-        from harmonica_map import SONG_MUTED_NOTES, save_song_profile
+        from harmonica_map import SONG_MUTED_NOTES
         SONG_MUTED_NOTES[key] = new_muted
 
-        # 単音化モード（高音優先/低音優先）設定時のみ、有効化した際に同タイミングの重複ノーツを自動除外 (シーソー動作)
         mono_mode = getattr(self.timeline, "monophonic_mode", "すべて有効") if self.timeline else "すべて有効"
         if not new_muted and mono_mode != "すべて有効":
             for other_nd in (self.timeline.main_notes if self.timeline else []):
@@ -928,8 +1122,6 @@ class FingeringEditorDialog(QDialog):
                         SONG_MUTED_NOTES[other_key] = True
 
         if self.timeline:
-            if self.timeline.filepath:
-                save_song_profile(self.timeline.filepath)
             self.timeline.rebind_fingerings(self.timeline.inst_type)
 
         if self.audio_engine:
@@ -939,7 +1131,6 @@ class FingeringEditorDialog(QDialog):
 
         if self.gl_widget:
             self.gl_widget.invalidate_static_cache()
-            self.gl_widget.update()
 
         self._populate_table()
 
@@ -949,8 +1140,6 @@ class FingeringEditorDialog(QDialog):
         harmonica_map.CURRENT_MONOPHONIC_MODE = mode
         if self.timeline:
             self.timeline.set_monophonic_mode(mode)
-            if self.timeline.filepath:
-                harmonica_map.save_song_profile(self.timeline.filepath)
 
         if self.audio_engine:
             self.audio_engine.load_timeline(self.timeline)
@@ -958,7 +1147,6 @@ class FingeringEditorDialog(QDialog):
 
         if self.gl_widget:
             self.gl_widget.invalidate_static_cache()
-            self.gl_widget.update()
 
         self._populate_table()
 
@@ -987,9 +1175,6 @@ class FingeringEditorDialog(QDialog):
         harmonica_map.CURRENT_SONG_PRESET = preset_name
         harmonica_map.apply_fingering_preset(preset_name)
 
-        if self.timeline and self.timeline.filepath:
-            harmonica_map.save_song_fingering(self.timeline.filepath)
-
         if self.timeline:
             self.timeline.rebind_fingerings(self.timeline.inst_type)
 
@@ -998,18 +1183,40 @@ class FingeringEditorDialog(QDialog):
 
         self._populate_table()
 
-    def _on_reset_all(self):
-        """この曲の個別カスタム運指を初期化"""
+    def _on_reset_custom_only(self):
+        """個別変え指カスタムのみを全初期化（除外ノーツは維持）"""
         ans = QMessageBox.question(
             self,
-            "運指データの初期化確認",
-            "この曲のすべての個別変え指設定を初期化し、\n初期状態に戻しますか？",
+            "運指カスタム初期化確認",
+            "個別設定したすべての変え指を解除し、プリセット標準の運指に戻しますか？\n（除外ノーツの状態はそのまま維持されます）",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
         if ans == QMessageBox.StandardButton.Yes:
-            from harmonica_map import reset_song_fingering
-            reset_song_fingering(self.timeline.filepath)
+            import harmonica_map
+            harmonica_map.SONG_FINGERING_OVERRIDES.clear()
+            if self.timeline:
+                self.timeline.rebind_fingerings(self.timeline.inst_type)
+            if self.audio_engine and self.timeline:
+                self.audio_engine.load_timeline(self.timeline)
+                self.audio_engine.seek(self.clock.get_current_base_sec() if self.clock else 0.0)
+            if self.gl_widget:
+                self.gl_widget.invalidate_static_cache()
+                self.gl_widget.update()
+            self._populate_table()
+
+    def _on_reset_muted_only(self):
+        """除外ノーツのみを全復活（運指カスタムは維持）"""
+        ans = QMessageBox.question(
+            self,
+            "除外ノーツ全復活確認",
+            "除外（ミュート）されているすべてのノーツを有効化し、\n通常通り発音・表示される状態に戻しますか？\n（運指カスタムはそのまま維持されます）",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            import harmonica_map
+            harmonica_map.SONG_MUTED_NOTES.clear()
             if self.timeline:
                 self.timeline.rebind_fingerings(self.timeline.inst_type)
             if self.audio_engine and self.timeline:
@@ -1021,15 +1228,61 @@ class FingeringEditorDialog(QDialog):
             self._populate_table()
 
     def _on_save_and_close(self):
-        """保存して閉じる"""
-        from harmonica_map import save_song_fingering
+        """明示的に設定をファイルへ保存して閉じる"""
+        import harmonica_map
         if self.timeline and self.timeline.filepath:
-            save_song_fingering(self.timeline.filepath)
+            extra = {"patterns": self._patterns}
+            harmonica_map.save_song_profile(self.timeline.filepath, extra)
+            harmonica_map.save_song_fingering(self.timeline.filepath)
         if self.timeline:
             self.timeline.rebind_fingerings(self.timeline.inst_type)
         if self.gl_widget:
             self.gl_widget.invalidate_static_cache()
+        self._is_saved = True
         self.accept()
+
+    def reject(self):
+        """ダイアログキャンセル/閉じる時の未保存変更破棄およびロールバック処理"""
+        if not self._is_saved:
+            import harmonica_map
+            has_changes = (
+                harmonica_map.SONG_FINGERING_OVERRIDES != self._initial_overrides or
+                harmonica_map.SONG_MUTED_NOTES != self._initial_muted or
+                harmonica_map.CURRENT_SONG_PRESET != self._initial_preset or
+                harmonica_map.CURRENT_MONOPHONIC_MODE != self._initial_monophonic
+            )
+            if has_changes:
+                ans = QMessageBox.question(
+                    self,
+                    "未保存の変更の確認",
+                    "変え指または除外ノーツの変更が保存されていません。\n\n"
+                    "変更を破棄して元の状態に戻しますか？\n"
+                    "(「いいえ」を選ぶとエディタに戻ります)",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                if ans != QMessageBox.StandardButton.Yes:
+                    return
+
+            # 元の状態へ完全復元
+            harmonica_map.SONG_FINGERING_OVERRIDES.clear()
+            harmonica_map.SONG_FINGERING_OVERRIDES.update(self._initial_overrides)
+            harmonica_map.SONG_MUTED_NOTES.clear()
+            harmonica_map.SONG_MUTED_NOTES.update(self._initial_muted)
+            harmonica_map.CURRENT_SONG_PRESET = self._initial_preset
+            harmonica_map.CURRENT_MONOPHONIC_MODE = self._initial_monophonic
+            harmonica_map.apply_fingering_preset(self._initial_preset)
+            if self.timeline:
+                self.timeline.monophonic_mode = self._initial_monophonic
+                self.timeline.rebind_fingerings(self.timeline.inst_type)
+            if self.audio_engine and self.timeline:
+                self.audio_engine.load_timeline(self.timeline)
+                self.audio_engine.seek(self.clock.get_current_base_sec() if self.clock else 0.0)
+            if self.gl_widget:
+                self.gl_widget.invalidate_static_cache()
+                self.gl_widget.update()
+
+        super().reject()
 
 
 
