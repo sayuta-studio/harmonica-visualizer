@@ -1202,12 +1202,14 @@ class HarmonicaMainWindow(QMainWindow):
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
 
-        # 1. 軌道・比率・音名
-        f_geom = QFrame()
-        f_geom.setObjectName("groupFrame")
-        l_geom = QVBoxLayout(f_geom)
-        l_geom.setContentsMargins(6, 6, 6, 6)
-        l_geom.setSpacing(6)
+        # 1. 演奏・ノーツ表示（練習・動画共通）
+        f_disp = QFrame()
+        f_disp.setObjectName("groupFrame")
+        l_disp = QVBoxLayout(f_disp)
+        l_disp.setContentsMargins(6, 6, 6, 6)
+        l_disp.setSpacing(6)
+
+        l_disp.addWidget(QLabel("🎵 <b>演奏・ノーツ表示（共通）:</b>"))
 
         r_traj = QHBoxLayout()
         r_traj.addWidget(QLabel("ノーツ軌道:"))
@@ -1218,30 +1220,49 @@ class HarmonicaMainWindow(QMainWindow):
         self.traj_combo.setToolTip("ノーツが画面上部からハーモニカ穴へ向かう軌道の形状")
         self.traj_combo.currentTextChanged.connect(self._on_traj_changed)
         r_traj.addWidget(self.traj_combo, stretch=1)
-        l_geom.addLayout(r_traj)
+        l_disp.addLayout(r_traj)
 
         r_lang = QHBoxLayout()
         r_lang.addWidget(QLabel("音名表記:"))
         self.lang_combo = QComboBox(self)
-        self.lang_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.lang_combo.setMinimumContentsLength(6)
+        self.lang_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.lang_combo.addItems(["ドレミ", "CDE", "なし"])
         self.lang_combo.setCurrentText(self.user_settings.get("lang_mode", "ドレミ"))
         self.lang_combo.setToolTip("画面上の音名表示（ドレミ / 英語音名 CDE / 非表示）")
         self.lang_combo.currentTextChanged.connect(self._on_lang_changed)
-        r_lang.addWidget(self.lang_combo)
+        r_lang.addWidget(self.lang_combo, stretch=1)
+        l_disp.addLayout(r_lang)
+        v_box.addWidget(f_disp)
 
-        r_lang.addWidget(QLabel("比率:"))
+        # 2. 画面比率（動画制作・構図プレビュー）
+        f_ratio = QFrame()
+        f_ratio.setObjectName("groupFrame")
+        l_ratio = QVBoxLayout(f_ratio)
+        l_ratio.setContentsMargins(6, 6, 6, 6)
+        l_ratio.setSpacing(6)
+
+        l_ratio.addWidget(QLabel("📐 <b>画面比率（動画制作・構図確認用）:</b>"))
+
+        r_ratio = QHBoxLayout()
+        r_ratio.addWidget(QLabel("比率:"))
         self.ratio_combo = QComboBox(self)
-        self.ratio_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.ratio_combo.setMinimumContentsLength(4)
-        self.ratio_combo.addItems(["16:9", "4:3", "9:16"])
-        self.ratio_combo.setCurrentText(self.user_settings.get("aspect_ratio", "16:9"))
-        self.ratio_combo.setToolTip("ビジュアライザー描画のアスペクト比 (横長16:9 / 縦長9:16等)")
+        self.ratio_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.ratio_combo.addItems(["16:9 (横長・練習標準)", "9:16 (縦長・Shorts/TikTok)", "4:3 (スタンダード)"])
+        saved_ratio = str(self.user_settings.get("aspect_ratio", "16:9"))
+        for item_idx in range(self.ratio_combo.count()):
+            if saved_ratio in self.ratio_combo.itemText(item_idx):
+                self.ratio_combo.setCurrentIndex(item_idx)
+                break
+        self.ratio_combo.setToolTip("書き出す動画の構図に合わせてフレームをプレビュー表示します（普段の練習は16:9推奨）")
         self.ratio_combo.currentTextChanged.connect(self._on_ratio_changed)
-        r_lang.addWidget(self.ratio_combo)
-        l_geom.addLayout(r_lang)
-        v_box.addWidget(f_geom)
+        r_ratio.addWidget(self.ratio_combo, stretch=1)
+        l_ratio.addLayout(r_ratio)
+
+        lbl_ratio_note = QLabel("※動画書き出し時の縦横比に合わせて画面内に構図枠を表示します。日常の練習時は「16:9 (標準)」をお使いください。")
+        lbl_ratio_note.setStyleSheet("color: #94A3B8; font-size: 11px; line-height: 1.3;")
+        lbl_ratio_note.setWordWrap(True)
+        l_ratio.addWidget(lbl_ratio_note)
+        v_box.addWidget(f_ratio)
 
         # 2. カラーテーマ & 吹吸カラー選択
         f_col = QFrame()
@@ -2187,8 +2208,8 @@ class HarmonicaMainWindow(QMainWindow):
         self._on_jump_measure()
 
     def _on_tab_changed(self, index: int):
-        if index == 0:
-            # 練習タブ: 常に全画面 16:9 で広々と表示
+        if index in (0, 2):
+            # 練習タブ / 録音音響タブ: 常に全画面 16:9 で広々と表示
             self.gl_widget.set_aspect_ratio("16:9")
             self.gl_widget.set_canvas_bg_color("ノーマル（黒）", is_chromakey=False)
         elif index in (1, 3):
@@ -2274,6 +2295,16 @@ class HarmonicaMainWindow(QMainWindow):
         if hasattr(self, "combo_fade_title"):
             self.combo_fade_title.setCurrentText(str(s.get("export_fade_title_mode", "フェード中もタイトル表示")))
 
+        # 画面比率同期
+        if hasattr(self, "ratio_combo"):
+            saved_ratio = str(s.get("aspect_ratio", "16:9"))
+            self.ratio_combo.blockSignals(True)
+            for item_idx in range(self.ratio_combo.count()):
+                if saved_ratio in self.ratio_combo.itemText(item_idx):
+                    self.ratio_combo.setCurrentIndex(item_idx)
+                    break
+            self.ratio_combo.blockSignals(False)
+
         # 軌跡モード同期
         if hasattr(self, "traj_combo"):
             traj_m = str(s.get("trajectory_mode", "3段階 (練習標準)"))
@@ -2308,7 +2339,9 @@ class HarmonicaMainWindow(QMainWindow):
         self.user_settings["inst_type"] = self.inst_combo.currentText()
         self.user_settings["trajectory_mode"] = self.traj_combo.currentText()
         self.user_settings["lang_mode"] = self.lang_combo.currentText()
-        self.user_settings["aspect_ratio"] = self.ratio_combo.currentText()
+        ratio_raw = self.ratio_combo.currentText()
+        clean_ratio = "9:16" if "9:16" in ratio_raw else ("4:3" if "4:3" in ratio_raw else "16:9")
+        self.user_settings["aspect_ratio"] = clean_ratio
         self.user_settings["speed_ratio"] = self.speed_slider.value() / 100.0
         self.user_settings["fall_speed_ratio"] = self.fall_slider.value() / 100.0
         self.user_settings["volume"] = self.vol_slider.value()

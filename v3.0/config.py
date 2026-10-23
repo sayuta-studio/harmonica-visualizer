@@ -37,9 +37,10 @@ def get_canvas_height_by_ratio(ratio_str):
     """
     アスペクト比文字列から、横幅960基準の縦幅ピクセル数を正確に返します。
     """
-    if ratio_str == "9:16":
+    s = str(ratio_str)
+    if "9:16" in s:
         return 1706  # 960 * 16 / 9 (縦長ショート)
-    elif ratio_str == "4:3":
+    elif "4:3" in s:
         return 720   # 960 * 3 / 4 (スタンダード)
     else:
         return 540   # 16:9 (ワイド標準)
