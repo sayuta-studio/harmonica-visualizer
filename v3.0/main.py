@@ -2457,16 +2457,24 @@ class HarmonicaMainWindow(QMainWindow):
 
     def _on_stepup_toggled(self, checked: bool):
         self.user_settings["stepup_enabled"] = bool(checked)
+        self._stepup_running = False
         if checked:
             self.chk_loop.setChecked(True)
             self.speed_slider.setValue(self.spin_sp_start.value())
+            self._stepup_running = True
         self.lbl_status_msg.setText(f"📈 ステップアップ練習: {'ON' if checked else 'OFF'}")
         self._save_current_settings()
 
     def _handle_loop_wrapped(self):
         """ループ折り返し時にバックグラウンド音声スレッドから安全に発火"""
         loop_start_sec = self.audio_engine.loop_a_sec if (self.loop_playback and self.audio_engine.loop_a_sec is not None) else 0.0
-        self._sync_ext_audio_playback(self.clock.get_state() == SharedClockBridge.STATE_PLAYING, loop_start_sec)
+        cur_sec = self.clock.get_current_base_sec()
+        if cur_sec < loop_start_sec:
+            self._loop_waiting_for_a_sec = loop_start_sec
+            self._sync_ext_audio_playback(False)
+        else:
+            self._loop_waiting_for_a_sec = None
+            self._sync_ext_audio_playback(self.clock.get_state() == SharedClockBridge.STATE_PLAYING, loop_start_sec)
 
         if self.chk_stepup.isChecked():
             start_pct = int(self.spin_sp_start.value())
@@ -2776,7 +2784,9 @@ class HarmonicaMainWindow(QMainWindow):
             cur_sec = self.clock.get_current_base_sec()
             if st == SharedClockBridge.STATE_STOPPED:
                 if hasattr(self, "chk_stepup") and self.chk_stepup.isChecked():
-                    self.speed_slider.setValue(self.spin_sp_start.value())
+                    if not getattr(self, "_stepup_running", False):
+                        self.speed_slider.setValue(self.spin_sp_start.value())
+                        self._stepup_running = True
                 if 0.0 <= cur_sec <= 0.05:
                     ci_dur = self._get_count_in_duration()
                     cur_sec = -ci_dur if ci_dur > 0 else 0.0
@@ -2847,6 +2857,13 @@ class HarmonicaMainWindow(QMainWindow):
         spd = val / 100.0
         self.lbl_speed_val.setText(f"{val}%")
         self.clock.set_speed_ratio(spd)
+        if hasattr(self, "chk_stepup") and self.chk_stepup.isChecked():
+            self._stepup_running = False
+            self.chk_stepup.blockSignals(True)
+            self.chk_stepup.setChecked(False)
+            self.chk_stepup.blockSignals(False)
+            self.user_settings["stepup_enabled"] = False
+            self.lbl_status_msg.setText(f"⏩ 速度: {val}% (ステップアップ練習を解除しました)")
         self._save_current_settings()
 
     def _adjust_speed(self, delta: int):
@@ -2887,10 +2904,14 @@ class HarmonicaMainWindow(QMainWindow):
         total_sec = self.timeline.total_duration_sec
         state = self.clock.get_state()
 
-        # 前奏カウントダウンから本編(0.0s)への遷移検知で外部音源を頭出し同期再生
+        # 前奏カウントダウンから本編への遷移検知で外部音源を頭出し同期再生
         prev_s = getattr(self, "_prev_sec", 0.0)
         if prev_s < 0.0 <= cur_sec and state == SharedClockBridge.STATE_PLAYING:
             self._sync_ext_audio_playback(True, 0.0)
+        waiting_a = getattr(self, "_loop_waiting_for_a_sec", None)
+        if waiting_a is not None and prev_s < waiting_a <= cur_sec and state == SharedClockBridge.STATE_PLAYING:
+            self._loop_waiting_for_a_sec = None
+            self._sync_ext_audio_playback(True, waiting_a)
         self._prev_sec = cur_sec
 
         # シークバーと現在時刻の更新
@@ -3048,8 +3069,7 @@ class HarmonicaMainWindow(QMainWindow):
             target_path = self.last_recorded_path
             if self.chk_reverb.isChecked():
                 rev_path = os.path.splitext(self.last_recorded_path)[0] + "_reverb.wav"
-                if not os.path.exists(rev_path):
-                    apply_harmonica_reverb_numpy(self.last_recorded_path, rev_path, self.combo_reverb_type.currentText(), self.slider_reverb_wet.value())
+                apply_harmonica_reverb_numpy(self.last_recorded_path, rev_path, self.combo_reverb_type.currentText(), self.slider_reverb_wet.value())
                 if os.path.exists(rev_path):
                     target_path = rev_path
 
@@ -3057,6 +3077,18 @@ class HarmonicaMainWindow(QMainWindow):
             if ok:
                 self.btn_rec_listen.setText("⏹ 停止")
                 self.lbl_status_msg.setText(f"▶ 試聴中: {os.path.basename(target_path)}")
+
+    def _refresh_live_audition_reverb(self):
+        """試聴再生中にリバーブ設定（ON/OFF、タイプ、深さ）が変更された際に即座に再生成・反映"""
+        if getattr(self, "last_recorded_path", None) and os.path.exists(self.last_recorded_path):
+            target_path = self.last_recorded_path
+            if self.chk_reverb.isChecked():
+                rev_path = os.path.splitext(self.last_recorded_path)[0] + "_reverb.wav"
+                apply_harmonica_reverb_numpy(self.last_recorded_path, rev_path, self.combo_reverb_type.currentText(), self.slider_reverb_wet.value())
+                if os.path.exists(rev_path):
+                    target_path = rev_path
+            if self.audition_player.is_playing():
+                self.audition_player.play(target_path, volume=self.vol_slider.value() / 100.0)
 
     def _on_open_rec_folder(self):
         """録音フォルダを開く"""
@@ -3068,18 +3100,21 @@ class HarmonicaMainWindow(QMainWindow):
     def _on_reverb_toggled(self, checked: bool):
         self.reverb_enabled = bool(checked)
         self.user_settings["reverb_enabled"] = self.reverb_enabled
+        self._refresh_live_audition_reverb()
         self._save_current_settings()
         self.lbl_status_msg.setText(f"✨ リバーブ: {'有効' if checked else '無効'}")
 
     def _on_reverb_type_changed(self, r_type: str):
         self.reverb_type = str(r_type)
         self.user_settings["reverb_type"] = self.reverb_type
+        self._refresh_live_audition_reverb()
         self._save_current_settings()
 
     def _on_reverb_slider_changed(self, val: int):
         self.reverb_wet_pct = int(val)
         self.lbl_reverb_wet.setText(f"深さ: {val}%")
         self.user_settings["reverb_wet_pct"] = self.reverb_wet_pct
+        self._refresh_live_audition_reverb()
         self._save_current_settings()
 
     def _on_select_ext_audio(self):
@@ -3485,10 +3520,15 @@ class HarmonicaMainWindow(QMainWindow):
         }
 
         # 書き出しワーカースレッド生成＆ダイアログ表示
-        export_thread = VideoExportThread(self.timeline, export_config, parent=self)
-        dlg = ExportProgressDialog(export_thread, out_path, parent=self)
-        export_thread.start()
-        dlg.exec()
+        try:
+            export_thread = VideoExportThread(self.timeline, export_config, parent=self)
+            dlg = ExportProgressDialog(export_thread, out_path, parent=self)
+            export_thread.start()
+            dlg.exec()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "動画書き出しエラー", f"動画書き出し処理の開始中にエラーが発生しました:\n{e}")
 
 
 def main():

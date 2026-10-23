@@ -6,6 +6,8 @@ Chromatic Harmonica Visualizer v3.0 - モーダルダイアログ群
 - PartSelectDialog: MIDI全トラック一覧・主旋律トラック選定
 """
 
+import os
+import sys
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap, QImage
 from PyQt6.QtWidgets import (

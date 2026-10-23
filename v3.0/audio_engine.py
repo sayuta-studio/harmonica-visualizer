@@ -82,6 +82,8 @@ class AudioEngine:
         self.loop_a_sec = 0.0
         self.loop_b_sec = None
         self.on_loop_wrapped_callback = None
+        self._suppress_notes_until_sec = None
+        self._loop_ci_events = []
 
         # コンパイル済イベントキュー
         self._lock = threading.RLock()
@@ -582,13 +584,17 @@ class AudioEngine:
         self.loop_b_sec = float(b_sec) if b_sec is not None else None
         self.loop_enabled = bool(enabled)
 
-    def seek(self, target_sec: float = 0.0):
+    def seek(self, target_sec: float = 0.0, is_loop_ci: bool = False):
         """シーク・曲頭戻し・ループ折り返し時に直接再生位置を再同期"""
         self.all_notes_off()
         sec = float(target_sec)
         self._last_cur_sec = sec
+        if not is_loop_ci:
+            self._suppress_notes_until_sec = None
+            self._loop_ci_events = []
         self._next_ev_idx = bisect.bisect_left(self.event_secs, max(0.0, sec))
-        self._next_metro_idx = bisect.bisect_left(self.metro_secs, sec)
+        # 1拍目落ち防止: sec 直上にあるイベント（境界イベント）を取りこぼさないよう、0.04秒の先行マージンでbisect
+        self._next_metro_idx = bisect.bisect_left(self.metro_secs, sec - 0.04)
         self.sync_midi_channel_states(max(0.0, sec))
 
     def _get_ui_beep_sound(self):
@@ -664,14 +670,14 @@ class AudioEngine:
                 self.all_notes_off()
                 self.sync_midi_channel_states(max(0.0, cur_sec))
                 self._next_ev_idx = bisect.bisect_left(self.event_secs, max(0.0, cur_sec))
-                self._next_metro_idx = bisect.bisect_left(self.metro_secs, cur_sec)
+                self._next_metro_idx = bisect.bisect_left(self.metro_secs, cur_sec - 0.04)
                 self._last_cur_sec = cur_sec
 
             # シーク・ジャンプ・ループ折り返しの検知 (時刻が戻った、または0.08秒以上急激に飛んだ場合)
             if cur_sec < self._last_cur_sec or abs(cur_sec - self._last_cur_sec) > 0.08:
                 self.all_notes_off()
                 self._next_ev_idx = bisect.bisect_left(self.event_secs, max(0.0, cur_sec))
-                self._next_metro_idx = bisect.bisect_left(self.metro_secs, cur_sec)
+                self._next_metro_idx = bisect.bisect_left(self.metro_secs, cur_sec - 0.04)
                 self.sync_midi_channel_states(max(0.0, cur_sec))
 
             self._last_cur_sec = cur_sec
@@ -682,8 +688,36 @@ class AudioEngine:
                 wrap_to = self.loop_a_sec if self.loop_a_sec is not None else 0.0
                 speed = self.clock.get_speed_ratio()
                 self.all_notes_off()
-                self.clock.set_anchor(wrap_to, speed_ratio=speed, state=SharedClockBridge.STATE_PLAYING)
-                self.seek(wrap_to)
+
+                # カウントイン小節数が設定されている場合、A点直前に予備拍（カウントイン）を実行
+                num = getattr(self.timeline, "time_sig_num", 4) if (hasattr(self, "timeline") and self.timeline) else 4
+                den = getattr(self.timeline, "time_sig_den", 4) if (hasattr(self, "timeline") and self.timeline) else 4
+                bpm = getattr(self.timeline, "default_bpm", 120.0) if (hasattr(self, "timeline") and self.timeline) else 120.0
+                beat_dur = (60.0 / bpm) * (4.0 / den)
+                ci_beats = self.count_in_measures * num if self.count_in_measures > 0 else 0
+                ci_dur = ci_beats * beat_dur
+
+                if ci_dur > 0:
+                    start_sec = wrap_to - ci_dur
+                    self._suppress_notes_until_sec = wrap_to
+                    self._loop_ci_events = []
+                    for b in range(ci_beats):
+                        t = start_sec + b * beat_dur
+                        self._loop_ci_events.append({
+                            "sec": t,
+                            "is_accent": (b % num == 0),
+                            "measure": -(self.count_in_measures - (b // num)),
+                            "beat": (b % num) + 1,
+                            "is_count_in": True,
+                        })
+                    self.clock.set_anchor(start_sec, speed_ratio=speed, state=SharedClockBridge.STATE_PLAYING)
+                    self.seek(start_sec, is_loop_ci=True)
+                else:
+                    self._suppress_notes_until_sec = None
+                    self._loop_ci_events = []
+                    self.clock.set_anchor(wrap_to, speed_ratio=speed, state=SharedClockBridge.STATE_PLAYING)
+                    self.seek(wrap_to)
+
                 if callable(self.on_loop_wrapped_callback):
                     try:
                         self.on_loop_wrapped_callback()
@@ -707,39 +741,63 @@ class AudioEngine:
 
             # メトロノーム・カウントイン発音処理 (WinMM Ch.10 / 内蔵シンセ対応)
             if not self.is_muted:
-                while self._next_metro_idx < len(self.metro_events):
-                    m_ev = self.metro_events[self._next_metro_idx]
-                    if m_ev["sec"] <= cur_sec:
-                        is_ci = m_ev.get("is_count_in", False)
-                        if is_ci or self.metronome_mode != "なし":
-                            is_accent = m_ev.get("is_accent", False)
-                            play_metro = True
-                            if not is_ci:
-                                if self.metronome_mode == "小節頭のみ" and not is_accent:
-                                    play_metro = False
-                                elif self.metronome_mode == "全拍均一":
-                                    is_accent = False
+                # 1. ループ周回時カウントイン拍の処理
+                if self._loop_ci_events:
+                    while self._loop_ci_events and self._loop_ci_events[0]["sec"] <= cur_sec:
+                        m_ev = self._loop_ci_events.pop(0)
+                        is_accent = m_ev.get("is_accent", False)
+                        if use_synth:
+                            if not hasattr(self, "synth_click_hi") or self.synth_click_hi is None:
+                                self.init_internal_synth()
+                            snd = self.synth_click_hi if is_accent else self.synth_click_lo
+                            if snd:
+                                try:
+                                    snd.play()
+                                except Exception:
+                                    pass
+                        elif self.device_opened and winmm:
+                            note = 76 if is_accent else 77
+                            vel = 110 if is_accent else 85
+                            try:
+                                winmm.midiOutShortMsg(self.h_midi_out, 0x99 | (note << 8) | (vel << 16))
+                            except Exception:
+                                pass
 
-                            if play_metro:
-                                if use_synth:
-                                    if not hasattr(self, "synth_click_hi") or self.synth_click_hi is None:
-                                        self.init_internal_synth()
-                                    snd = self.synth_click_hi if is_accent else self.synth_click_lo
-                                    if snd:
+                # 2. 通常のメトロノーム・曲頭カウントインの処理 (周回カウントイン中は抑制)
+                if not self._loop_ci_events:
+                    while self._next_metro_idx < len(self.metro_events):
+                        m_ev = self.metro_events[self._next_metro_idx]
+                        if m_ev["sec"] <= cur_sec:
+                            is_ci = m_ev.get("is_count_in", False)
+                            if is_ci or self.metronome_mode != "なし":
+                                is_accent = m_ev.get("is_accent", False)
+                                play_metro = True
+                                if not is_ci:
+                                    if self.metronome_mode == "小節頭のみ" and not is_accent:
+                                        play_metro = False
+                                    elif self.metronome_mode == "全拍均一":
+                                        is_accent = False
+
+                                if play_metro:
+                                    if use_synth:
+                                        if not hasattr(self, "synth_click_hi") or self.synth_click_hi is None:
+                                            self.init_internal_synth()
+                                        snd = self.synth_click_hi if is_accent else self.synth_click_lo
+                                        if snd:
+                                            try:
+                                                snd.play()
+                                            except Exception:
+                                                pass
+                                    elif self.device_opened and winmm:
+                                        note = 76 if is_accent else 77
+                                        vel = 110 if is_accent else 85
                                         try:
-                                            snd.play()
+                                            winmm.midiOutShortMsg(self.h_midi_out, 0x99 | (note << 8) | (vel << 16))
                                         except Exception:
                                             pass
-                                elif self.device_opened and winmm:
-                                    note = 76 if is_accent else 77
-                                    vel = 110 if is_accent else 85
-                                    try:
-                                        winmm.midiOutShortMsg(self.h_midi_out, 0x99 | (note << 8) | (vel << 16))
-                                    except Exception:
-                                        pass
-                        self._next_metro_idx += 1
-                    else:
-                        break
+                            self._next_metro_idx += 1
+                        else:
+                            break
 
             with self._lock:
                 if not self.events or self._next_ev_idx >= len(self.events):
@@ -749,6 +807,11 @@ class AudioEngine:
                 # 現在時刻に達したイベントを一括送信
                 while self._next_ev_idx < len(self.events):
                     ev = self.events[self._next_ev_idx]
+                    if self._suppress_notes_until_sec is not None:
+                        if cur_sec < self._suppress_notes_until_sec:
+                            break
+                        else:
+                            self._suppress_notes_until_sec = None
                     if ev["sec"] <= cur_sec:
                         if not self.is_muted and self.is_track_audible(ev["track_idx"]):
                             if ev.get("is_muted_note", False):

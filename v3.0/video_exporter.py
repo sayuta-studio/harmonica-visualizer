@@ -16,6 +16,7 @@ import time
 import bisect
 import subprocess
 import math
+import threading
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QRectF, QPointF
 from PyQt6.QtGui import (
     QImage, QPainter, QColor, QPen, QBrush, QFont, QPolygonF, QTransform, QRadialGradient
