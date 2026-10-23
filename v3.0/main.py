@@ -1253,12 +1253,12 @@ class HarmonicaMainWindow(QMainWindow):
             if saved_ratio in self.ratio_combo.itemText(item_idx):
                 self.ratio_combo.setCurrentIndex(item_idx)
                 break
-        self.ratio_combo.setToolTip("書き出す動画の構図に合わせてフレームをプレビュー表示します（普段の練習は16:9推奨）")
+        self.ratio_combo.setToolTip("書き出す動画の構図に合わせてフレームをプレビュー表示します（練習・録音タブでは自動的に16:9表示になります）")
         self.ratio_combo.currentTextChanged.connect(self._on_ratio_changed)
         r_ratio.addWidget(self.ratio_combo, stretch=1)
         l_ratio.addLayout(r_ratio)
 
-        lbl_ratio_note = QLabel("※動画書き出し時の縦横比に合わせて画面内に構図枠を表示します。日常の練習時は「16:9 (標準)」をお使いください。")
+        lbl_ratio_note = QLabel("※動画書き出し時の縦横比に合わせて画面内に構図枠を表示します。（「練習」や「録音・音響」タブに戻ると自動的に広々とした16:9表示になります）")
         lbl_ratio_note.setStyleSheet("color: #94A3B8; font-size: 11px; line-height: 1.3;")
         lbl_ratio_note.setWordWrap(True)
         l_ratio.addWidget(lbl_ratio_note)
