@@ -1283,20 +1283,20 @@ class HarmonicaMainWindow(QMainWindow):
         l_skin.setSpacing(6)
         l_skin.addWidget(QLabel("🎷 <b>ハーモニカスキン装飾:</b>"))
 
-        self.chk_skin = QCheckBox("メタルスキン表示", self)
+        self.chk_skin = QCheckBox("カスタム表示適用", self)
         self.chk_skin.setChecked(bool(self.user_settings.get("skin_enabled", True)))
-        self.chk_skin.setToolTip("ハーモニカ本体のリアルな3Dメタルテクスチャを表示")
+        self.chk_skin.setToolTip("ハーモニカ本体のマウスピース・カバープレート・スライドレバーのカスタムスキンを表示")
         self.chk_skin.toggled.connect(self._on_skin_toggled)
         l_skin.addWidget(self.chk_skin)
 
         r_skin_btns = QHBoxLayout()
-        self.btn_custom_skin = QPushButton("🎨 カスタム...", self)
-        self.btn_custom_skin.setToolTip("独自のマウスピース・カバープレートPNGを選択")
+        self.btn_custom_skin = QPushButton("🎨 スキン選択...", self)
+        self.btn_custom_skin.setToolTip("本体カバー（メタル/ウッド/マットブラック/ゴールド）やスライドレバーのスキンを切り替え")
         self.btn_custom_skin.clicked.connect(self._on_select_custom_skin)
         r_skin_btns.addWidget(self.btn_custom_skin)
 
-        self.btn_reset_skin = QPushButton("↺ プリセット", self)
-        self.btn_reset_skin.setToolTip("標準のメタルスキンに戻す")
+        self.btn_reset_skin = QPushButton("↺ 初期化", self)
+        self.btn_reset_skin.setToolTip("標準のメタルスキン・シルバーレバーに戻す")
         self.btn_reset_skin.clicked.connect(self._on_reset_preset_skin)
         r_skin_btns.addWidget(self.btn_reset_skin)
         l_skin.addLayout(r_skin_btns)
@@ -2326,19 +2326,41 @@ class HarmonicaMainWindow(QMainWindow):
         self._save_current_settings()
 
     def _on_select_custom_skin(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "マウスピース画像を選択 (PNG)", "",
-            "画像ファイル (*.png);;全ファイル (*)"
-        )
-        if path:
-            self.gl_widget.set_custom_skins(mouthpiece_path=path)
-            self.lbl_status_msg.setText(f"🎷 カスタムマウスピーススキンを適用: {os.path.basename(path)}")
+        from dialogs import SkinSelectDialog
+        dlg = SkinSelectDialog(self.user_settings, parent=self)
+        if dlg.exec():
+            res = dlg.get_selected_skins()
+            self.user_settings["skin_mouthpiece_path"] = res["mouthpiece_path"]
+            self.user_settings["skin_lever_off_path"] = res["lever_off_path"]
+            self.user_settings["skin_lever_on_path"] = res["lever_on_path"]
+            self.user_settings["skin_enabled"] = res["skin_enabled"]
+            self.chk_skin.setChecked(res["skin_enabled"])
+            self.gl_widget.set_skin_enabled(res["skin_enabled"])
+            self.gl_widget.set_custom_skins(
+                mouthpiece_path=res["mouthpiece_path"],
+                lever_off_path=res["lever_off_path"],
+                lever_on_path=res["lever_on_path"]
+            )
+            self.gl_widget.invalidate_static_cache()
+            self.gl_widget.update()
             self._save_current_settings()
+            self.lbl_status_msg.setText("🎨 ハーモニカスキン設定を更新しました")
 
     def _on_reset_preset_skin(self):
-        self.gl_widget.set_custom_skins("", "", "")
-        self.lbl_status_msg.setText("↺ プリセットメタルスキンに戻しました")
+        from config import get_portable_path
+        skins_dir = get_portable_path("skins")
+        self.gl_widget.set_custom_skins(
+            mouthpiece_path=os.path.join(skins_dir, "マウスピース_メタル.png"),
+            lever_off_path=os.path.join(skins_dir, "レバーオフ_シルバー.png"),
+            lever_on_path=os.path.join(skins_dir, "レバーオン_シルバー.png")
+        )
+        self.user_settings["skin_mouthpiece_path"] = os.path.join(skins_dir, "マウスピース_メタル.png")
+        self.user_settings["skin_lever_off_path"] = os.path.join(skins_dir, "レバーオフ_シルバー.png")
+        self.user_settings["skin_lever_on_path"] = os.path.join(skins_dir, "レバーオン_シルバー.png")
+        self.gl_widget.invalidate_static_cache()
+        self.gl_widget.update()
         self._save_current_settings()
+        self.lbl_status_msg.setText("↺ スキンを標準メタル・シルバーに初期化しました")
 
     def _on_fingering_preset_changed(self, preset_name: str):
         import harmonica_map

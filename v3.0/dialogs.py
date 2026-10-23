@@ -9,13 +9,13 @@ Chromatic Harmonica Visualizer v3.0 - モーダルダイアログ群
 import os
 import sys
 import copy
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QPixmap, QImage
+from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtGui import QColor, QPixmap, QImage, QPainter, QPen, QBrush, QFont
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget, QLabel,
     QPushButton, QComboBox, QSlider, QSpinBox, QAbstractSpinBox, QCheckBox, QColorDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QRadioButton, QButtonGroup,
-    QFrame, QMessageBox, QLineEdit, QProgressBar, QAbstractItemView, QInputDialog
+    QFrame, QMessageBox, QLineEdit, QProgressBar, QAbstractItemView, QInputDialog, QFileDialog, QSizePolicy
 )
 
 from settings_manager import THEME_PRESETS, DEFAULT_SETTINGS
@@ -1456,3 +1456,283 @@ class SingleFramePreviewDialog(QDialog):
         btn_close.clicked.connect(self.accept)
         bottom_box.addWidget(btn_close)
         layout.addLayout(bottom_box)
+
+
+class SkinSelectDialog(QDialog):
+    """
+    ハーモニカ外観スキン選択・リアルタイムプレビューダイアログ
+    - 本体スキン: メタル / ウッド / マットブラック / ゴールド / カスタムPNG
+    - スライドレバー: シルバー / ゴールド / ウッド / カスタムPNG
+    - リアルタイム合成プレビュー (本体 + 丸穴 + 穴番号 + レバー)
+    """
+
+    def __init__(self, current_settings: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("🎨 ハーモニカスキン設定 (Custom Skins)")
+        self.resize(760, 520)
+        self.setMinimumSize(680, 480)
+        self.setModal(True)
+
+        from config import get_portable_path
+        self.skins_dir = get_portable_path("skins")
+
+        self.body_options = [
+            ("スタンダードメタル (ステンレスシルバー)", "マウスピース_メタル.png"),
+            ("ウッドカバー仕様 (高級木製ウォールナット調)", "マウスピース_ウッド.png"),
+            ("マットブラック仕様 (艶消しブラック＆メタル口金)", "マウスピース_マットブラック.png"),
+            ("ゴールド口金仕様 (真鍮ゴールド口金＆シルバー)", "マウスピース_ゴールド.png"),
+            ("カスタム画像 (外部PNGファイル指定)", ""),
+        ]
+
+        self.lever_options = [
+            ("スタンダードシルバー (ステンレス扁平ボタン)", ("レバーオフ_シルバー.png", "レバーオン_シルバー.png")),
+            ("ブラスゴールド (真鍮金メッキボタン)", ("レバーオフ_ゴールド.png", "レバーオン_ゴールド.png")),
+            ("ウッドボタン (高級木製カバーボタン)", ("レバーオフ_ウッド.png", "レバーオン_ウッド.png")),
+            ("カスタム画像 (外部PNGファイル指定)", ("", "")),
+        ]
+
+        self.cur_mouthpiece_path = current_settings.get("skin_mouthpiece_path", "")
+        self.cur_lever_off_path = current_settings.get("skin_lever_off_path", "")
+        self.cur_lever_on_path = current_settings.get("skin_lever_on_path", "")
+        self.skin_enabled = bool(current_settings.get("skin_enabled", True))
+
+        self._init_ui()
+        self._update_preview()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(12)
+
+        # ヘッダー
+        lbl_hdr = QLabel("<b>ハーモニカ本体カバー＆スライドレバーの外観スキンカスタマイズ</b>", self)
+        lbl_hdr.setStyleSheet("font-size: 13px; color: #38BDF8;")
+        layout.addWidget(lbl_hdr)
+
+        # プレビューボックス (中央表示)
+        f_prev = QFrame(self)
+        f_prev.setStyleSheet("background-color: #0E0E14; border: 1px solid #232334; border-radius: 6px; padding: 8px;")
+        l_prev = QVBoxLayout(f_prev)
+        l_prev.setContentsMargins(8, 6, 8, 6)
+        l_prev.setSpacing(4)
+
+        lbl_prev_title = QLabel("👁 <b>リアルタイム合成プレビュー (4穴＋レバー表示例):</b>", self)
+        lbl_prev_title.setStyleSheet("font-size: 11px; color: #94A3B8;")
+        l_prev.addWidget(lbl_prev_title)
+
+        self.lbl_preview_canvas = QLabel(self)
+        self.lbl_preview_canvas.setFixedHeight(120)
+        self.lbl_preview_canvas.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_preview_canvas.setStyleSheet("background-color: #08080C; border: 1px dashed #333346; border-radius: 4px;")
+        l_prev.addWidget(self.lbl_preview_canvas)
+        layout.addWidget(f_prev)
+
+        # 選択グループ
+        f_opts = QFrame(self)
+        f_opts.setStyleSheet("background-color: #161622; border: 1px solid #272738; border-radius: 6px; padding: 10px;")
+        l_opts = QVBoxLayout(f_opts)
+        l_opts.setSpacing(10)
+
+        # 1. 本体スキン
+        l_opts.addWidget(QLabel("🎷 <b>ハーモニカ本体カバー＆口金スキン:</b>"))
+        r_body = QHBoxLayout()
+        self.combo_body = QComboBox(self)
+        self.combo_body.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        for label, _ in self.body_options:
+            self.combo_body.addItem(label)
+        self._select_body_by_path(self.cur_mouthpiece_path)
+        self.combo_body.currentIndexChanged.connect(self._on_body_combo_changed)
+        r_body.addWidget(self.combo_body, stretch=1)
+
+        self.btn_browse_body = QPushButton("📂 ファイル選択...", self)
+        self.btn_browse_body.setToolTip("自作・カスタムのマウスピース/カバーPNG画像(推奨: 800x90px)を選択")
+        self.btn_browse_body.clicked.connect(self._on_browse_body)
+        r_body.addWidget(self.btn_browse_body)
+        l_opts.addLayout(r_body)
+
+        # 2. スライドレバースキン
+        l_opts.addWidget(QLabel("🔘 <b>スライドレバーボタン (OFF / ON):</b>"))
+        r_lever = QHBoxLayout()
+        self.combo_lever = QComboBox(self)
+        self.combo_lever.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        for label, _ in self.lever_options:
+            self.combo_lever.addItem(label)
+        self._select_lever_by_path(self.cur_lever_off_path)
+        self.combo_lever.currentIndexChanged.connect(self._on_lever_combo_changed)
+        r_lever.addWidget(self.combo_lever, stretch=1)
+
+        self.btn_browse_lever = QPushButton("📂 ファイル選択...", self)
+        self.btn_browse_lever.setToolTip("自作・カスタムのスライドレバー通常時(OFF)画像(48x48px)を選択")
+        self.btn_browse_lever.clicked.connect(self._on_browse_lever)
+        r_lever.addWidget(self.btn_browse_lever)
+        l_opts.addLayout(r_lever)
+
+        # 有効チェックボックス
+        self.chk_enable_skin = QCheckBox("カスタムスキンを有効にする (OFF時は標準プロシージャル描画)", self)
+        self.chk_enable_skin.setChecked(self.skin_enabled)
+        self.chk_enable_skin.toggled.connect(self._on_enable_toggled)
+        l_opts.addWidget(self.chk_enable_skin)
+
+        layout.addWidget(f_opts)
+
+        layout.addStretch()
+
+        # フッターボタン
+        foot = QHBoxLayout()
+        foot.addStretch()
+        btn_apply = QPushButton("💾 適用して閉じる", self)
+        btn_apply.setObjectName("playBtn")
+        btn_apply.setStyleSheet("background-color: #0284C7; color: white; font-weight: bold; padding: 6px 18px; border-radius: 4px;")
+        btn_apply.clicked.connect(self.accept)
+        foot.addWidget(btn_apply)
+
+        btn_cancel = QPushButton("キャンセル", self)
+        btn_cancel.clicked.connect(self.reject)
+        foot.addWidget(btn_cancel)
+        layout.addLayout(foot)
+
+    def _select_body_by_path(self, path: str):
+        if not path:
+            self.combo_body.setCurrentIndex(0)
+            return
+        base = os.path.basename(path)
+        for idx, (label, fname) in enumerate(self.body_options[:-1]):
+            if fname and (fname == base or (fname == "マウスピース_メタル.png" and base == "マウスピース.png")):
+                self.combo_body.setCurrentIndex(idx)
+                return
+        self.combo_body.setCurrentIndex(len(self.body_options) - 1)
+
+    def _select_lever_by_path(self, path: str):
+        if not path:
+            self.combo_lever.setCurrentIndex(0)
+            return
+        base = os.path.basename(path)
+        for idx, (label, (foff, fon)) in enumerate(self.lever_options[:-1]):
+            if foff and (foff == base or (foff == "レバーオフ_シルバー.png" and base == "レバーオフ.png")):
+                self.combo_lever.setCurrentIndex(idx)
+                return
+        self.combo_lever.setCurrentIndex(len(self.lever_options) - 1)
+
+    def _on_body_combo_changed(self, idx: int):
+        if idx < len(self.body_options) - 1:
+            fname = self.body_options[idx][1]
+            self.cur_mouthpiece_path = os.path.join(self.skins_dir, fname)
+        self._update_preview()
+
+    def _on_lever_combo_changed(self, idx: int):
+        if idx < len(self.lever_options) - 1:
+            foff, fon = self.lever_options[idx][1]
+            self.cur_lever_off_path = os.path.join(self.skins_dir, foff)
+            self.cur_lever_on_path = os.path.join(self.skins_dir, fon)
+        self._update_preview()
+
+    def _on_browse_body(self):
+        f, _ = QFileDialog.getOpenFileName(self, "本体マウスピース/カバー画像を選択", self.skins_dir, "Images (*.png *.jpg *.jpeg *.bmp)")
+        if f:
+            self.cur_mouthpiece_path = f
+            self.combo_body.blockSignals(True)
+            self.combo_body.setCurrentIndex(len(self.body_options) - 1)
+            self.combo_body.blockSignals(False)
+            self._update_preview()
+
+    def _on_browse_lever(self):
+        f, _ = QFileDialog.getOpenFileName(self, "スライドレバー画像(OFF)を選択", self.skins_dir, "Images (*.png *.jpg *.jpeg *.bmp)")
+        if f:
+            self.cur_lever_off_path = f
+            dir_n = os.path.dirname(f)
+            base_n = os.path.basename(f)
+            on_n = base_n.replace("オフ", "オン").replace("off", "on")
+            cand_on = os.path.join(dir_n, on_n)
+            self.cur_lever_on_path = cand_on if os.path.exists(cand_on) else f
+            self.combo_lever.blockSignals(True)
+            self.combo_lever.setCurrentIndex(len(self.lever_options) - 1)
+            self.combo_lever.blockSignals(False)
+            self._update_preview()
+
+    def _on_enable_toggled(self, checked: bool):
+        self.skin_enabled = checked
+        self._update_preview()
+
+    def _update_preview(self):
+        """プレビュー画像を描画合成"""
+        w, h = 600, 110
+        pix = QPixmap(w, h)
+        pix.fill(QColor("#08080C"))
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # 1. 本体描画
+        plate_w, plate_h = 480, 80
+        px, py = 20, 15
+        plate_rect = QRectF(px, py, plate_w, plate_h)
+
+        target_mp = self.cur_mouthpiece_path or os.path.join(self.skins_dir, "マウスピース_メタル.png")
+        if not os.path.exists(target_mp):
+            target_mp = os.path.join(self.skins_dir, "マウスピース.png")
+
+        if self.skin_enabled and os.path.exists(target_mp):
+            mp_pix = QPixmap(target_mp)
+            if not mp_pix.isNull():
+                p.drawPixmap(plate_rect.toRect(), mp_pix)
+            else:
+                p.setPen(QPen(QColor("#777777"), 2))
+                p.setBrush(QColor("#2d2f31"))
+                p.drawRoundedRect(plate_rect, 12, 12)
+        else:
+            p.setPen(QPen(QColor("#777777"), 2))
+            p.setBrush(QColor("#2d2f31"))
+            p.drawRoundedRect(plate_rect, 12, 12)
+
+        # 2. 5つの穴と穴番号サンプル
+        hole_cnt = 5
+        pitch = plate_w / (hole_cnt + 1)
+        for i in range(hole_cnt):
+            hx = px + (i + 1) * pitch
+            hy = py + plate_h / 2.0
+            hr = 15.0
+            p.setPen(QPen(QColor("#999999"), 1.5))
+            p.setBrush(QColor("#111116"))
+            p.drawEllipse(QRectF(hx - hr, hy - hr, hr * 2, hr * 2))
+
+            # 穴番号
+            font = QFont("Arial", 9, QFont.Weight.Bold)
+            p.setFont(font)
+            p.setPen(QColor("#FFFFFF"))
+            p.drawText(QRectF(hx - 20, hy - 9, 40, 18), Qt.AlignmentFlag.AlignCenter, f"{i + 1}")
+
+        # 3. スライドレバー (通常時OFF)
+        lever_x = px + plate_w + 4
+        lever_y = py + (plate_h - 48) / 2.0
+        lever_rect = QRectF(lever_x, lever_y, 48, 48)
+
+        target_lo = self.cur_lever_off_path or os.path.join(self.skins_dir, "レバーオフ_シルバー.png")
+        if not os.path.exists(target_lo):
+            target_lo = os.path.join(self.skins_dir, "レバーオフ.png")
+
+        if self.skin_enabled and os.path.exists(target_lo):
+            lo_pix = QPixmap(target_lo)
+            if not lo_pix.isNull():
+                p.drawPixmap(lever_rect.toRect(), lo_pix)
+            else:
+                p.setPen(QPen(QColor("#888888"), 1.5))
+                p.setBrush(QColor("#444444"))
+                p.drawRoundedRect(QRectF(lever_x, lever_y + 16, 24, 16), 3, 3)
+                p.setBrush(QColor("#CCCCCC"))
+                p.drawEllipse(QRectF(lever_x + 20, lever_y + 6, 16, 36))
+        else:
+            p.setPen(QPen(QColor("#888888"), 1.5))
+            p.setBrush(QColor("#444444"))
+            p.drawRoundedRect(QRectF(lever_x, lever_y + 16, 24, 16), 3, 3)
+            p.setBrush(QColor("#CCCCCC"))
+            p.drawEllipse(QRectF(lever_x + 20, lever_y + 6, 16, 36))
+
+        p.end()
+        self.lbl_preview_canvas.setPixmap(pix)
+
+    def get_selected_skins(self) -> dict:
+        return {
+            "mouthpiece_path": self.cur_mouthpiece_path,
+            "lever_off_path": self.cur_lever_off_path,
+            "lever_on_path": self.cur_lever_on_path,
+            "skin_enabled": self.skin_enabled,
+        }

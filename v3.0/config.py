@@ -405,6 +405,17 @@ def generate_default_skins():
         lon_img.save(lever_on_path, "PNG")
         print("[システム] skins/レバーオン.png の自動書き出しに成功しました。")
 
+    import shutil
+    for src, dst in [
+        ("マウスピース.png", "マウスピース_メタル.png"),
+        ("レバーオフ.png", "レバーオフ_シルバー.png"),
+        ("レバーオン.png", "レバーオン_シルバー.png"),
+    ]:
+        s_p = os.path.join(skins_dir, src)
+        d_p = os.path.join(skins_dir, dst)
+        if os.path.exists(s_p) and not os.path.exists(d_p):
+            shutil.copyfile(s_p, d_p)
+
 
 def format_hole_number(hole_index_0_based: int, inst_type: str = "16穴 (64音・C調)", style: str = "実機標準 (低音ドット付)") -> str:
     """
