@@ -435,7 +435,7 @@ def format_hole_number(hole_index_0_based: int, inst_type: str = "16穴 (64音�
             return str(raw_num - 4)
     elif "14穴" in inst_type:
         if raw_num <= 2:
-            return "·"
+            return f"·{raw_num}"
         else:
             return str(raw_num - 2)
     else:

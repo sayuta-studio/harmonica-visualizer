@@ -592,10 +592,18 @@ class AudioEngine:
         if not is_loop_ci:
             self._suppress_notes_until_sec = None
             self._loop_ci_events = []
-        self._next_ev_idx = bisect.bisect_left(self.event_secs, max(0.0, sec))
+            target_note_sec = max(0.0, sec)
+            target_metro_sec = sec - 0.04
+        else:
+            # ループ周回カウントイン中は、A点（_suppress_notes_until_sec）以前のノーツ発音を抑制
+            suppress_sec = self._suppress_notes_until_sec if self._suppress_notes_until_sec is not None else sec
+            target_note_sec = max(0.0, suppress_sec)
+            target_metro_sec = suppress_sec - 0.04
+
+        self._next_ev_idx = bisect.bisect_left(self.event_secs, target_note_sec)
         # 1拍目落ち防止: sec 直上にあるイベント（境界イベント）を取りこぼさないよう、0.04秒の先行マージンでbisect
-        self._next_metro_idx = bisect.bisect_left(self.metro_secs, sec - 0.04)
-        self.sync_midi_channel_states(max(0.0, sec))
+        self._next_metro_idx = bisect.bisect_left(self.metro_secs, target_metro_sec)
+        self.sync_midi_channel_states(target_note_sec)
 
     def _get_ui_beep_sound(self):
         """v2.1仕様の1600Hz電子音「ピッ」効果音オブジェクトを生成・返却"""
@@ -764,7 +772,7 @@ class AudioEngine:
                                 pass
 
                 # 2. 通常のメトロノーム・曲頭カウントインの処理 (周回カウントイン中は抑制)
-                if not self._loop_ci_events:
+                if not self._loop_ci_events and self._suppress_notes_until_sec is None:
                     while self._next_metro_idx < len(self.metro_events):
                         m_ev = self.metro_events[self._next_metro_idx]
                         if m_ev["sec"] <= cur_sec:
@@ -805,13 +813,17 @@ class AudioEngine:
                     continue
 
                 # 現在時刻に達したイベントを一括送信
+                if self._suppress_notes_until_sec is not None:
+                    if cur_sec < self._suppress_notes_until_sec:
+                        time.sleep(0.005)
+                        continue
+                    else:
+                        # A点到達：抑止期間中の過去イベントを一斉発音しないようA点インデックスへ同期
+                        self._next_ev_idx = bisect.bisect_left(self.event_secs, max(0.0, self._suppress_notes_until_sec))
+                        self._suppress_notes_until_sec = None
+
                 while self._next_ev_idx < len(self.events):
                     ev = self.events[self._next_ev_idx]
-                    if self._suppress_notes_until_sec is not None:
-                        if cur_sec < self._suppress_notes_until_sec:
-                            break
-                        else:
-                            self._suppress_notes_until_sec = None
                     if ev["sec"] <= cur_sec:
                         if not self.is_muted and self.is_track_audible(ev["track_idx"]):
                             if ev.get("is_muted_note", False):
@@ -1072,20 +1084,48 @@ class AuditionPlayer:
         except Exception as e:
             print(f"[AuditionPlayer] mixer初期化失敗: {e}")
 
-    def play(self, file_path: str, volume: float = 1.0):
+    def play(self, file_path: str, volume: float = 1.0, start_sec: float = 0.0):
         self.stop()
         if not file_path or not os.path.exists(file_path):
             return False
         try:
             import pygame
+            import wave
             self._init_mixer()
-            self._current_sound = pygame.mixer.Sound(file_path)
+            start_sec = max(0.0, float(start_sec))
+            sound_created = False
+            if start_sec > 0.05:
+                try:
+                    with wave.open(file_path, "rb") as wf:
+                        sr = wf.getframerate()
+                        n_frames = wf.getnframes()
+                        start_frame = int(start_sec * sr)
+                        if start_frame < n_frames:
+                            wf.setpos(start_frame)
+                            raw_data = wf.readframes(n_frames - start_frame)
+                            self._current_sound = pygame.mixer.Sound(buffer=raw_data)
+                            sound_created = True
+                except Exception as e:
+                    print(f"[AuditionPlayer] シーク再生バッファ抽出失敗: {e}")
+
+            if not sound_created:
+                self._current_sound = pygame.mixer.Sound(file_path)
+                start_sec = 0.0
+
             self._current_sound.set_volume(max(0.0, min(1.0, float(volume))))
             self._current_channel = self._current_sound.play()
+            self._play_start_time = time.time()
+            self._start_offset_sec = start_sec
             return True
         except Exception as e:
             print(f"[AuditionPlayer] 再生失敗: {e}")
             return False
+
+    def get_position_sec(self) -> float:
+        """現在の試聴再生位置（秒）を取得"""
+        if self.is_playing() and hasattr(self, "_play_start_time"):
+            return (time.time() - self._play_start_time) + getattr(self, "_start_offset_sec", 0.0)
+        return 0.0
 
     def stop(self):
         try:

@@ -394,10 +394,15 @@ class HarmonicaMainWindow(QMainWindow):
         self._init_ui()
         self._setup_shortcuts()
 
-        # 4. 定周期UI更新タイマー (30Hz)
+        # 4. 定周期UI更新タイマー (30Hz) ＆ リバーブ変更デバウンスタイマー
         self.ui_timer = QTimer(self)
         self.ui_timer.setInterval(33)
         self.ui_timer.timeout.connect(self._on_ui_tick)
+
+        self._reverb_debounce_timer = QTimer(self)
+        self._reverb_debounce_timer.setSingleShot(True)
+        self._reverb_debounce_timer.setInterval(180)
+        self._reverb_debounce_timer.timeout.connect(self._refresh_live_audition_reverb)
         self.ui_timer.start()
 
         # 5. ユーザー設定の反映
@@ -2414,9 +2419,14 @@ class HarmonicaMainWindow(QMainWindow):
         )
         if dlg.exec():
             import harmonica_map
-            self.combo_fing_preset.blockSignals(True)
-            self.combo_fing_preset.setCurrentText(harmonica_map.CURRENT_SONG_PRESET)
-            self.combo_fing_preset.blockSignals(False)
+            if hasattr(self, "combo_fing_preset"):
+                self.combo_fing_preset.blockSignals(True)
+                self.combo_fing_preset.setCurrentText(harmonica_map.normalize_fingering_preset(harmonica_map.CURRENT_SONG_PRESET))
+                self.combo_fing_preset.blockSignals(False)
+            if hasattr(self, "combo_monophonic_mode"):
+                self.combo_monophonic_mode.blockSignals(True)
+                self.combo_monophonic_mode.setCurrentText(harmonica_map.CURRENT_MONOPHONIC_MODE)
+                self.combo_monophonic_mode.blockSignals(False)
             self._update_song_info_labels()
             self.lbl_status_msg.setText("💾 変え指設定を保存・適用しました")
 
@@ -3251,7 +3261,8 @@ class HarmonicaMainWindow(QMainWindow):
                 if os.path.exists(rev_path):
                     target_path = rev_path
             if self.audition_player.is_playing():
-                self.audition_player.play(target_path, volume=self.vol_slider.value() / 100.0)
+                cur_pos = self.audition_player.get_position_sec() if hasattr(self.audition_player, "get_position_sec") else 0.0
+                self.audition_player.play(target_path, volume=self.vol_slider.value() / 100.0, start_sec=cur_pos)
 
     def _on_open_rec_folder(self):
         """録音フォルダを開く"""
@@ -3277,7 +3288,10 @@ class HarmonicaMainWindow(QMainWindow):
         self.reverb_wet_pct = int(val)
         self.lbl_reverb_wet.setText(f"深さ: {val}%")
         self.user_settings["reverb_wet_pct"] = self.reverb_wet_pct
-        self._refresh_live_audition_reverb()
+        if hasattr(self, "_reverb_debounce_timer"):
+            self._reverb_debounce_timer.start(180)
+        else:
+            self._refresh_live_audition_reverb()
         self._save_current_settings()
 
     def _on_select_ext_audio(self):

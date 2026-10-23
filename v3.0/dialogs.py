@@ -506,6 +506,7 @@ class FingeringEditorDialog(QDialog):
         if self.timeline and self.timeline.filepath:
             prof = harmonica_map.load_song_profile(self.timeline.filepath)
             self._patterns = dict(prof.get("patterns", {}))
+        self._initial_patterns = copy.deepcopy(self._patterns)
 
         self.setWindowTitle(f"🎼 変え指エディタ (Custom Fingering Editor) - {timeline.filename}")
         self.resize(980, 640)
@@ -1249,7 +1250,8 @@ class FingeringEditorDialog(QDialog):
                 harmonica_map.SONG_FINGERING_OVERRIDES != self._initial_overrides or
                 harmonica_map.SONG_MUTED_NOTES != self._initial_muted or
                 harmonica_map.CURRENT_SONG_PRESET != self._initial_preset or
-                harmonica_map.CURRENT_MONOPHONIC_MODE != self._initial_monophonic
+                harmonica_map.CURRENT_MONOPHONIC_MODE != self._initial_monophonic or
+                self._patterns != self._initial_patterns
             )
             if has_changes:
                 ans = QMessageBox.question(
@@ -1272,6 +1274,13 @@ class FingeringEditorDialog(QDialog):
             harmonica_map.CURRENT_SONG_PRESET = self._initial_preset
             harmonica_map.CURRENT_MONOPHONIC_MODE = self._initial_monophonic
             harmonica_map.apply_fingering_preset(self._initial_preset)
+            self._patterns = copy.deepcopy(self._initial_patterns)
+
+            # ディスク上のプロファイルも初期状態へロールバック
+            if self.timeline and self.timeline.filepath:
+                harmonica_map.save_song_profile(self.timeline.filepath, {"patterns": self._initial_patterns})
+                harmonica_map.save_song_fingering(self.timeline.filepath)
+
             if self.timeline:
                 self.timeline.monophonic_mode = self._initial_monophonic
                 self.timeline.rebind_fingerings(self.timeline.inst_type)
