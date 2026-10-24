@@ -863,14 +863,14 @@ class OffscreenVisualizerRenderer:
         has_title = (not self.is_chromakey_mode and not self.is_transparent_mode and title_overlay and title_overlay.get("enabled", False))
 
         if has_title and fade_title_mode == "画面と一緒にフェードイン":
-            self._draw_title_overlay(p, cur_sec, title_overlay, x_start, y_offset, total_w, scale)
+            self._draw_title_overlay(p, cur_sec, title_overlay, x_start, y_offset, total_w, scale, t_in_video=t_in_video)
 
         if fade_alpha > 0 and not self.is_transparent_mode:
             p.fillRect(QRectF(0, 0, w, h), QColor(0, 0, 0, fade_alpha))
 
         if has_title and fade_title_mode != "画面と一緒にフェードイン":
             if not (fade_title_mode == "フェード中はタイトル非表示" and t_in_video < f_in_dur):
-                self._draw_title_overlay(p, cur_sec, title_overlay, x_start, y_offset, total_w, scale)
+                self._draw_title_overlay(p, cur_sec, title_overlay, x_start, y_offset, total_w, scale, t_in_video=t_in_video)
 
         p.end()
         ptr = frame_img.constBits()
@@ -884,8 +884,8 @@ class OffscreenVisualizerRenderer:
 
     render_single_frame_qimage = render_frame_qimage
 
-    def _draw_title_overlay(self, painter, cur_sec, overlay_info, x_start, y_offset, total_w, scale):
-        """タイトル配置テンプレート (実解像度対応動的スケーリング・中央配置・マージンクリッピング)"""
+    def _draw_title_overlay(self, painter, cur_sec, overlay_info, x_start, y_offset, total_w, scale, t_in_video=0.0):
+        """タイトル配置テンプレート (動画時間・前余白・フェードイン完全同期 ＆ マージンクリッピング)"""
         tpl = overlay_info.get("template", "なし")
         title_text = str(overlay_info.get("title", "")).strip()
         credit_text = str(overlay_info.get("credit", "")).strip()
@@ -894,17 +894,31 @@ class OffscreenVisualizerRenderer:
 
         w, h = self.width, self.height
         is_vertical = (w < h) or ("9:16" in str(self.aspect_ratio))
-        intro_dur = float(overlay_info.get("intro_dur", 2.5))
-        show_intro = ("イントロ中央" in tpl and cur_sec < intro_dur)
+
+        # 動画タイムライン (t_in_video) 基準で前余白 (intro_sec) と完全同期
+        t_ref = t_in_video if t_in_video > 0.0 else max(0.0, cur_sec)
+        configured_intro = float(overlay_info.get("intro_dur", 2.5))
+        intro_sec = float(overlay_info.get("intro_sec", 0.0))
+
+        if intro_sec >= 2.0:
+            effective_intro_dur = intro_sec
+            fade_in_time = min(1.0, intro_sec * 0.25)
+            fade_out_time = min(0.8, intro_sec * 0.2)
+        else:
+            effective_intro_dur = max(configured_intro, intro_sec)
+            fade_in_time = 0.5
+            fade_out_time = 0.5
+
+        show_intro = ("イントロ中央" in tpl and t_ref < effective_intro_dur)
         show_left = ("左上常時" in tpl)
         show_right = ("右上常時" in tpl)
 
         if show_intro:
             fade = 1.0
-            if cur_sec < 0.35:
-                fade = max(0.15, cur_sec / 0.35)
-            elif cur_sec > intro_dur - 0.45:
-                fade = max(0.0, (intro_dur - cur_sec) / 0.45)
+            if t_ref < fade_in_time:
+                fade = max(0.1, t_ref / max(0.01, fade_in_time))
+            elif t_ref > (effective_intro_dur - fade_out_time):
+                fade = max(0.0, (effective_intro_dur - t_ref) / max(0.01, fade_out_time))
 
             base_f_t = QFont("Meiryo UI", max(14, int(28.0 * scale)), QFont.Weight.Bold)
             base_f_c = QFont("Meiryo UI", max(10, int(15.0 * scale)), QFont.Weight.Bold)
@@ -948,7 +962,7 @@ class OffscreenVisualizerRenderer:
                 rect_c = QRectF(cx0 + pad_x, cy0, avail_w, card_h)
                 _draw_bordered_text_qt(painter, rect_c, credit_text, f_c, QColor(0, 229, 255, int(240 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=1.5 * scale)
 
-        if (show_left or show_right) and (not show_intro or cur_sec >= intro_dur):
+        if (show_left or show_right) and (not show_intro or t_ref >= (effective_intro_dur - fade_out_time)):
             base_f_t = QFont("Meiryo UI", max(10, int(13.0 * scale)), QFont.Weight.Bold)
             base_f_c = QFont("Meiryo UI", max(8, int(10.0 * scale)))
             fm_t = QFontMetricsF(base_f_t)
@@ -1226,7 +1240,9 @@ class VideoExportThread(QThread):
 
             # 4. フレームレンダリング＆ストリーミングパイプ
             t_start = time.perf_counter()
-            title_overlay = self.config.get("title_overlay", {})
+            title_overlay = dict(self.config.get("title_overlay", {}))
+            title_overlay["intro_sec"] = intro_sec
+            title_overlay["fade_in_sec"] = fade_in_sec
 
             for f_idx in range(total_frames):
                 if self._is_cancelled:
