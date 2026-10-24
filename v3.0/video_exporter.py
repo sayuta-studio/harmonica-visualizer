@@ -207,14 +207,29 @@ class OffscreenVisualizerRenderer:
         self.bg_rotation = int(self.settings.get("bg_rotation", 0))
         self.skin_enabled = bool(self.settings.get("skin_enabled", self.settings.get("use_skin", True)))
 
-        # スキン画像
-        skins_dir = get_portable_path("skins")
-        mp_path = self.settings.get("skin_mouthpiece_path", "") or os.path.join(skins_dir, "マウスピース.png")
-        self._img_mouthpiece = QImage(mp_path) if os.path.isfile(mp_path) else None
-        lo_path = self.settings.get("skin_lever_off_path", "") or os.path.join(skins_dir, "レバーオフ.png")
-        self._img_lever_off = QImage(lo_path) if os.path.isfile(lo_path) else None
-        lon_path = self.settings.get("skin_lever_on_path", "") or os.path.join(skins_dir, "レバーオン.png")
-        self._img_lever_on = QImage(lon_path) if os.path.isfile(lon_path) else None
+        # スキン画像（カスタムスキン・ポータブルパス自動解決対応）
+        def _resolve_skin_file(raw_path: str, default_name: str) -> str:
+            skins_dir = get_portable_path("skins")
+            if raw_path and os.path.isfile(raw_path):
+                return raw_path
+            if raw_path:
+                cand = os.path.join(skins_dir, os.path.basename(raw_path))
+                if os.path.isfile(cand):
+                    return cand
+            cand_def = os.path.join(skins_dir, default_name)
+            if os.path.isfile(cand_def):
+                return cand_def
+            cand_alt = os.path.join(skins_dir, default_name.replace(".png", "_メタル.png").replace("レバーオフ.png", "レバーオフ_シルバー.png").replace("レバーオン.png", "レバーオン_シルバー.png"))
+            if os.path.isfile(cand_alt):
+                return cand_alt
+            return ""
+
+        mp_path = _resolve_skin_file(self.settings.get("skin_mouthpiece_path", ""), "マウスピース.png")
+        self._img_mouthpiece = QImage(mp_path) if mp_path and os.path.isfile(mp_path) else None
+        lo_path = _resolve_skin_file(self.settings.get("skin_lever_off_path", ""), "レバーオフ.png")
+        self._img_lever_off = QImage(lo_path) if lo_path and os.path.isfile(lo_path) else None
+        lon_path = _resolve_skin_file(self.settings.get("skin_lever_on_path", ""), "レバーオン.png")
+        self._img_lever_on = QImage(lon_path) if lon_path and os.path.isfile(lon_path) else None
 
         # 静的背景事前ベイク
         self.base_image = None
