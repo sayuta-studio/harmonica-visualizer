@@ -532,10 +532,18 @@ class HarmonicaMainWindow(QMainWindow):
     def _set_elided_label_text(self, label: QLabel, text: str, full_tooltip: str = "", max_width: int = 280):
         """可変長テキスト・ファイル名を安全に中略表示 (ElideMiddle) し、ラベル幅の肥大化・枠はみ出しを防ぐ"""
         label.setMinimumWidth(0)
+        label.setMaximumWidth(max_width)
         label.setToolTip(full_tooltip or text)
         fm = label.fontMetrics()
         elided = fm.elidedText(text, Qt.TextElideMode.ElideMiddle, max_width)
         label.setText(elided)
+
+    def _configure_sidebar_combo(self, combo: QComboBox, max_width: int = 240):
+        """サイドバー内コンボボックスの最小サイズヒント膨張を防ぎ、親フレームの横幅を固定枠内に保つ"""
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(1)
+        if max_width > 0:
+            combo.setMaximumWidth(max_width)
 
     def __init__(self):
         super().__init__()
@@ -1030,6 +1038,7 @@ class HarmonicaMainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
+        content.setMaximumWidth(340)
         v_box = QVBoxLayout(content)
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
@@ -1037,6 +1046,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 1. 🎷 ハーモニカモデル ＆ 運指設定グループ
         f_inst = QFrame()
         f_inst.setObjectName("groupFrame")
+        f_inst.setMaximumWidth(328)
         l_inst = QVBoxLayout(f_inst)
         l_inst.setContentsMargins(6, 6, 6, 6)
         l_inst.setSpacing(6)
@@ -1055,6 +1065,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.inst_combo.setCurrentText(self.user_settings.get("inst_type", "16穴 (64音・C調)"))
         self.inst_combo.setToolTip("使用するクロマチックハーモニカの穴数・音域モデルを選択")
         self.inst_combo.currentTextChanged.connect(self._on_inst_changed)
+        self._configure_sidebar_combo(self.inst_combo, max_width=180)
         r_model.addWidget(self.inst_combo, stretch=1)
 
         self.btn_range_check = QPushButton("🔍 音域チェック", self)
@@ -1074,6 +1085,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_fing_preset.setCurrentText(normalize_fingering_preset(self.user_settings.get("fingering_preset", "スライド最小化 (標準)")))
         self.combo_fing_preset.setToolTip("同音異穴が存在するノーツの自動運指選択ルール（最小化＝スライドOFF優先 / 優先＝同音異名ON活用）")
         self.combo_fing_preset.currentTextChanged.connect(self._on_fingering_preset_changed)
+        self._configure_sidebar_combo(self.combo_fing_preset, max_width=230)
         r_fing.addWidget(self.combo_fing_preset, stretch=1)
         l_inst.addLayout(r_fing)
 
@@ -1084,6 +1096,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_monophonic_mode.addItems(["すべて有効", "高音優先 (上パート)", "低音優先 (下パート)"])
         self.combo_monophonic_mode.setToolTip("和音やハモリが重なった際の単音化ルール (キャンバス上のShift+右クリックで個別変更可)")
         self.combo_monophonic_mode.currentTextChanged.connect(self._on_monophonic_mode_changed)
+        self._configure_sidebar_combo(self.combo_monophonic_mode, max_width=230)
         r_mono.addWidget(self.combo_monophonic_mode, stretch=1)
         l_inst.addLayout(r_mono)
 
@@ -1126,6 +1139,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 2. ⚡ ノーツ落下速度グループ
         f_fall = QFrame()
         f_fall.setObjectName("groupFrame")
+        f_fall.setMaximumWidth(328)
         l_fall = QVBoxLayout(f_fall)
         l_fall.setContentsMargins(6, 6, 6, 6)
         r_fall = QHBoxLayout()
@@ -1153,6 +1167,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 3. 📈 ステップアップ練習グループ
         f_stepup = QFrame()
         f_stepup.setObjectName("groupFrame")
+        f_stepup.setMaximumWidth(328)
         l_sp = QVBoxLayout(f_stepup)
         l_sp.setContentsMargins(6, 6, 6, 6)
         l_sp.setSpacing(6)
@@ -1219,6 +1234,7 @@ class HarmonicaMainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
+        content.setMaximumWidth(340)
         v_box = QVBoxLayout(content)
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
@@ -1226,6 +1242,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 1. 演奏・ノーツ表示（練習・動画共通）
         f_disp = QFrame()
         f_disp.setObjectName("groupFrame")
+        f_disp.setMaximumWidth(328)
         l_disp = QVBoxLayout(f_disp)
         l_disp.setContentsMargins(6, 6, 6, 6)
         l_disp.setSpacing(6)
@@ -1240,6 +1257,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.traj_combo.setCurrentText(self.user_settings.get("trajectory_mode", "3段階 (練習標準)"))
         self.traj_combo.setToolTip("ノーツが画面上部からハーモニカ穴へ向かう軌道の形状")
         self.traj_combo.currentTextChanged.connect(self._on_traj_changed)
+        self._configure_sidebar_combo(self.traj_combo, max_width=230)
         r_traj.addWidget(self.traj_combo, stretch=1)
         l_disp.addLayout(r_traj)
 
@@ -1251,6 +1269,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.lang_combo.setCurrentText(self.user_settings.get("lang_mode", "ドレミ"))
         self.lang_combo.setToolTip("画面上の音名表示（ドレミ / 英語音名 CDE / 非表示）")
         self.lang_combo.currentTextChanged.connect(self._on_lang_changed)
+        self._configure_sidebar_combo(self.lang_combo, max_width=230)
         r_lang.addWidget(self.lang_combo, stretch=1)
         l_disp.addLayout(r_lang)
         v_box.addWidget(f_disp)
@@ -1258,6 +1277,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 2. 画面比率（動画制作・構図プレビュー）
         f_ratio = QFrame()
         f_ratio.setObjectName("groupFrame")
+        f_ratio.setMaximumWidth(328)
         l_ratio = QVBoxLayout(f_ratio)
         l_ratio.setContentsMargins(6, 6, 6, 6)
         l_ratio.setSpacing(6)
@@ -1276,6 +1296,7 @@ class HarmonicaMainWindow(QMainWindow):
                 break
         self.ratio_combo.setToolTip("書き出す動画の構図に合わせてフレームをプレビュー表示します（練習・録音タブでは自動的に16:9表示になります）")
         self.ratio_combo.currentTextChanged.connect(self._on_ratio_changed)
+        self._configure_sidebar_combo(self.ratio_combo, max_width=230)
         r_ratio.addWidget(self.ratio_combo, stretch=1)
         l_ratio.addLayout(r_ratio)
 
@@ -1288,6 +1309,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 2. カラーテーマ & 吹吸カラー選択
         f_col = QFrame()
         f_col.setObjectName("groupFrame")
+        f_col.setMaximumWidth(328)
         l_col = QVBoxLayout(f_col)
         l_col.setContentsMargins(6, 6, 6, 6)
         l_col.setSpacing(6)
@@ -1300,6 +1322,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_theme.setCurrentText(self.user_settings.get("color_theme", "ノーマル"))
         self.combo_theme.setToolTip("ノーツ全体のプリセットカラーテーマ")
         self.combo_theme.currentTextChanged.connect(self._on_theme_changed)
+        self._configure_sidebar_combo(self.combo_theme, max_width=230)
         r_theme.addWidget(self.combo_theme, stretch=1)
         l_col.addLayout(r_theme)
 
@@ -1330,6 +1353,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_lever.setCurrentText(self.user_settings.get("lever_deco_mode", "センターライン (芯線)"))
         self.combo_lever.setToolTip("スライドレバーON（半音）ノーツの視覚的アクセント装飾")
         self.combo_lever.currentTextChanged.connect(self._on_lever_changed)
+        self._configure_sidebar_combo(self.combo_lever, max_width=230)
         r_deco.addWidget(self.combo_lever, stretch=1)
         l_col.addLayout(r_deco)
 
@@ -1349,6 +1373,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 3. 表示要素チェックボックス群 (2列グリッド)
         f_chk = QFrame()
         f_chk.setObjectName("groupFrame")
+        f_chk.setMaximumWidth(328)
         l_chk = QVBoxLayout(f_chk)
         l_chk.setContentsMargins(6, 6, 6, 6)
         l_chk.setSpacing(4)
@@ -1416,6 +1441,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_hole_num_style.setCurrentText("通し番号 (1〜)" if "通し番号" in cur_hstyle else "実機標準 (低音ドット付)")
         self.combo_hole_num_style.setToolTip("実機表記（C4基準1〜12、16穴:·1〜·4、14穴:・・）か、左端基準の通し番号（1〜）かを選択")
         self.combo_hole_num_style.currentTextChanged.connect(self._on_hole_num_style_changed)
+        self._configure_sidebar_combo(self.combo_hole_num_style, max_width=230)
         r_hole_style.addWidget(self.combo_hole_num_style, stretch=1)
         l_chk.addLayout(r_hole_style)
 
@@ -1427,6 +1453,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_grid4.setCurrentText(self.user_settings.get("grid4_mode", self.user_settings.get("show_grid4", "4音グリッド表示")))
         self.combo_grid4.setToolTip("穴の下に配置する音名（田の字4音グリッド / 単一吹音表示）")
         self.combo_grid4.currentTextChanged.connect(self._on_grid4_changed)
+        self._configure_sidebar_combo(self.combo_grid4, max_width=230)
         r_grid4.addWidget(self.combo_grid4, stretch=1)
         l_chk.addLayout(r_grid4)
         v_box.addWidget(f_chk)
@@ -1434,6 +1461,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 4. 背景画像 & 減光 (コントラスト)
         f_bg = QFrame()
         f_bg.setObjectName("groupFrame")
+        f_bg.setMaximumWidth(328)
         l_bg = QVBoxLayout(f_bg)
         l_bg.setContentsMargins(6, 6, 6, 6)
         l_bg.setSpacing(6)
@@ -1488,6 +1516,7 @@ class HarmonicaMainWindow(QMainWindow):
             self.combo_bg_fit.setCurrentText(cur_fit)
         self.combo_bg_fit.setToolTip("背景画像の画面フィット方式（中央トリミング / 全体表示 / 比率を無視して画面全体に引き伸ばす）")
         self.combo_bg_fit.currentTextChanged.connect(self._on_bg_fit_changed)
+        self._configure_sidebar_combo(self.combo_bg_fit, max_width=230)
         r_fit.addWidget(self.combo_bg_fit, stretch=1)
         l_bg.addLayout(r_fit)
 
@@ -1520,6 +1549,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 5. ハーモニカスキン装飾
         f_skin = QFrame()
         f_skin.setObjectName("groupFrame")
+        f_skin.setMaximumWidth(328)
         l_skin = QVBoxLayout(f_skin)
         l_skin.setContentsMargins(6, 6, 6, 6)
         l_skin.setSpacing(6)
@@ -1561,6 +1591,7 @@ class HarmonicaMainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
+        content.setMaximumWidth(340)
         v_box = QVBoxLayout(content)
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
@@ -1568,6 +1599,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 1. 音量制御
         f_vol = QFrame()
         f_vol.setObjectName("groupFrame")
+        f_vol.setMaximumWidth(328)
         l_vol = QVBoxLayout(f_vol)
         l_vol.setContentsMargins(6, 6, 6, 6)
         l_vol.setSpacing(6)
@@ -1600,6 +1632,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_guide_audio.setCurrentText(cur_guide)
         self.combo_guide_audio.setToolTip("再生に使用するMIDI音源エンジン")
         self.combo_guide_audio.currentTextChanged.connect(self._on_guide_audio_changed)
+        self._configure_sidebar_combo(self.combo_guide_audio, max_width=230)
         r_gas.addWidget(self.combo_guide_audio, stretch=1)
         l_vol.addLayout(r_gas)
 
@@ -1613,6 +1646,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 2. 🎙️ マイク録音 (ワンクリック録音)
         f_rec = QFrame()
         f_rec.setObjectName("groupFrame")
+        f_rec.setMaximumWidth(328)
         f_rec.setStyleSheet("QFrame#groupFrame { border: 1px solid #7F1D1D; }")
         l_rec = QVBoxLayout(f_rec)
         l_rec.setContentsMargins(6, 6, 6, 6)
@@ -1632,6 +1666,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_rec_dev.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_rec_dev.setToolTip("使用するマイク入力デバイスを選択")
         self._refresh_audio_devices()
+        self._configure_sidebar_combo(self.combo_rec_dev, max_width=230)
         r_dev.addWidget(self.combo_rec_dev)
 
         btn_ref_dev = QPushButton("🔄", self)
@@ -1650,34 +1685,37 @@ class HarmonicaMainWindow(QMainWindow):
         ch_idx = 0 if int(self.user_settings.get("rec_channels", 1)) == 1 else 1
         self.combo_rec_ch.setCurrentIndex(ch_idx)
         self.combo_rec_ch.setToolTip("録音のチャンネル数 (モノラル推奨)")
+        self._configure_sidebar_combo(self.combo_rec_ch, max_width=230)
         r_ch.addWidget(self.combo_rec_ch, stretch=1)
         l_rec.addLayout(r_ch)
 
-        # テイク＆試聴
-        r_take = QHBoxLayout()
+        # テイク＆試聴 (2段に分離して横幅溢れを物理的に防止)
         self.lbl_rec_take = QLabel("録音テイク: 未録音", self)
         self.lbl_rec_take.setMinimumWidth(0)
+        self.lbl_rec_take.setMaximumWidth(310)
         self.lbl_rec_take.setStyleSheet("color: #64748B; font-size: 11px;")
-        r_take.addWidget(self.lbl_rec_take, stretch=1)
+        l_rec.addWidget(self.lbl_rec_take)
 
+        r_take = QHBoxLayout()
+        r_take.setSpacing(6)
         self.btn_rec_listen = QPushButton("▶ 試聴", self)
-        self.btn_rec_listen.setFixedWidth(64)
+        self.btn_rec_listen.setFixedWidth(70)
         self.btn_rec_listen.setEnabled(False)
         self.btn_rec_listen.setToolTip("直前に録音したテイクを試聴再生")
         self.btn_rec_listen.clicked.connect(self._on_rec_listen_toggle)
         r_take.addWidget(self.btn_rec_listen)
 
-        btn_open_rec = QPushButton("📂 フォルダ", self)
-        btn_open_rec.setFixedWidth(74)
+        btn_open_rec = QPushButton("📂 保存先フォルダ", self)
         btn_open_rec.setToolTip("録音されたWAVファイルが保存されるフォルダを開く")
         btn_open_rec.clicked.connect(self._on_open_rec_folder)
-        r_take.addWidget(btn_open_rec)
+        r_take.addWidget(btn_open_rec, stretch=1)
         l_rec.addLayout(r_take)
         v_box.addWidget(f_rec)
 
         # 3. ✨ ハーモニカ用リバーブ (空間残響エフェクト)
         f_rev = QFrame()
         f_rev.setObjectName("groupFrame")
+        f_rev.setMaximumWidth(328)
         l_rev = QVBoxLayout(f_rev)
         l_rev.setContentsMargins(6, 6, 6, 6)
         l_rev.setSpacing(6)
@@ -1697,6 +1735,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_reverb_type.setCurrentText(self.user_settings.get("reverb_type", "ルーム (自然な部屋鳴り)"))
         self.combo_reverb_type.setToolTip("リバーブの空間タイプ")
         self.combo_reverb_type.currentTextChanged.connect(self._on_reverb_type_changed)
+        self._configure_sidebar_combo(self.combo_reverb_type, max_width=230)
         r_rev_type.addWidget(self.combo_reverb_type, stretch=1)
         l_rev.addLayout(r_rev_type)
 
@@ -1717,6 +1756,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 4. 🎵 伴奏・外部音源 (D&D対応)
         f_ext = QFrame()
         f_ext.setObjectName("groupFrame")
+        f_ext.setMaximumWidth(328)
         l_ext = QVBoxLayout(f_ext)
         l_ext.setContentsMargins(6, 6, 6, 6)
         l_ext.setSpacing(6)
@@ -1767,6 +1807,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_ext_mode.setCurrentText(cur_mode)
         self.combo_ext_mode.setToolTip("スピーカー再生時の出力構成（伴奏合わせ・カラオケ練習・単独練習）")
         self.combo_ext_mode.currentTextChanged.connect(self._on_ext_mode_changed)
+        self._configure_sidebar_combo(self.combo_ext_mode, max_width=230)
         r_ext2.addWidget(self.combo_ext_mode, stretch=1)
         l_ext.addLayout(r_ext2)
 
@@ -1793,7 +1834,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.spin_ext_offset.setValue(int(self.user_settings.get("ext_audio_offset_ms", 0)))
         self.spin_ext_offset.setSuffix(" ms")
         self.spin_ext_offset.setSingleStep(10)
-        self.spin_ext_offset.setFixedWidth(68)
+        self.spin_ext_offset.setFixedWidth(90)
         self.spin_ext_offset.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spin_ext_offset.setToolTip("MIDIと外部伴奏音源の発音タイミングのズレを調整 [直接入力 / マウスホイールで変更 / [ ] キーで±10ms]")
         self.spin_ext_offset.valueChanged.connect(self._on_ext_offset_changed)
@@ -1864,6 +1905,7 @@ class HarmonicaMainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
+        content.setMaximumWidth(340)
         v_box = QVBoxLayout(content)
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
@@ -1871,6 +1913,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 1. 動画レンダリング品質＆解像度
         f_exp = QFrame()
         f_exp.setObjectName("groupFrame")
+        f_exp.setMaximumWidth(328)
         l_exp = QVBoxLayout(f_exp)
         l_exp.setContentsMargins(6, 6, 6, 6)
         l_exp.setSpacing(6)
@@ -1887,6 +1930,7 @@ class HarmonicaMainWindow(QMainWindow):
         ])
         self.combo_exp_style.setToolTip("動画の出力フォーマットスタイル")
         self.combo_exp_style.currentTextChanged.connect(self._on_export_style_changed)
+        self._configure_sidebar_combo(self.combo_exp_style, max_width=230)
         r_style.addWidget(self.combo_exp_style, stretch=1)
         l_exp.addLayout(r_style)
 
@@ -1927,6 +1971,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_exp_codec.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_exp_codec.addItems(["自動 (MediaFoundation GPU優先)", "MediaFoundation GPU (高速)", "CPU libx264 (高画質標準)"])
         self.combo_exp_codec.setToolTip("動画エンコードエンジン")
+        self._configure_sidebar_combo(self.combo_exp_codec, max_width=230)
         r_enc.addWidget(self.combo_exp_codec, stretch=1)
         l_exp.addLayout(r_enc)
 
@@ -1993,6 +2038,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 2. 動画の音声トラック設定
         f_aud = QFrame()
         f_aud.setObjectName("groupFrame")
+        f_aud.setMaximumWidth(328)
         l_aud = QVBoxLayout(f_aud)
         l_aud.setContentsMargins(6, 6, 6, 6)
         l_aud.setSpacing(6)
@@ -2009,6 +2055,7 @@ class HarmonicaMainWindow(QMainWindow):
             "無音 (映像のみ)"
         ])
         self.combo_exp_audio.setToolTip("動画に合成する音声ソースの優先順位")
+        self._configure_sidebar_combo(self.combo_exp_audio, max_width=230)
         r_asrc.addWidget(self.combo_exp_audio, stretch=1)
         l_aud.addLayout(r_asrc)
 
@@ -2017,7 +2064,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.chk_exp_reverb.setToolTip("書き出す動画の音声トラックにハーモニカ用リバーブエフェクトを適用")
         l_aud.addWidget(self.chk_exp_reverb)
 
-        self.chk_yt_limiter = QCheckBox("YouTube推奨 音割れ防止リミッター (-1.0dBFS)", self)
+        self.chk_yt_limiter = QCheckBox("YouTube推奨 リミッター (-1.0dBFS)", self)
         self.chk_yt_limiter.setChecked(bool(self.user_settings.get("yt_limiter", True)))
         self.chk_yt_limiter.setToolTip("YouTubeの音声基準に準拠し、動画エンコード時の音割れを防ぐためピークを-1.0dBFSに自動抑制")
         self.chk_yt_limiter.toggled.connect(self._save_current_settings)
@@ -2050,6 +2097,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 3. タイトル・クレジット表示
         f_tit = QFrame()
         f_tit.setObjectName("groupFrame")
+        f_tit.setMaximumWidth(328)
         l_tit = QVBoxLayout(f_tit)
         l_tit.setContentsMargins(6, 6, 6, 6)
         l_tit.setSpacing(6)
@@ -2074,6 +2122,7 @@ class HarmonicaMainWindow(QMainWindow):
             "なし"
         ])
         self.combo_title_template.setToolTip("タイトルカードの画面上配置位置")
+        self._configure_sidebar_combo(self.combo_title_template, max_width=230)
         r_tpl.addWidget(self.combo_title_template, stretch=1)
         l_tit.addLayout(r_tpl)
 
@@ -2144,6 +2193,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_fade_title.addItems(["フェード中もタイトル表示", "画面と一緒にフェードイン", "フェード中はタイトル非表示"])
         self.combo_fade_title.setCurrentText(str(self.user_settings.get("export_fade_title_mode", "フェード中もタイトル表示")))
         self.combo_fade_title.setToolTip("フェードイン/アウト時のタイトルカードの表示連動動作")
+        self._configure_sidebar_combo(self.combo_fade_title, max_width=230)
         r_ftitle.addWidget(self.combo_fade_title, stretch=1)
         l_tit.addLayout(r_ftitle)
         v_box.addWidget(f_tit)
@@ -2151,6 +2201,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 4. 出力実行
         f_btn = QFrame()
         f_btn.setObjectName("groupFrame")
+        f_btn.setMaximumWidth(328)
         l_btn = QVBoxLayout(f_btn)
         l_btn.setContentsMargins(6, 6, 6, 6)
         l_btn.setSpacing(8)
@@ -3622,7 +3673,7 @@ class HarmonicaMainWindow(QMainWindow):
 
             if saved_path and dur > 0:
                 self.last_recorded_path = saved_path
-                self._set_elided_label_text(self.lbl_rec_take, f"録音テイク: {os.path.basename(saved_path)} ({dur:.1f}秒)", saved_path, max_width=270)
+                self._set_elided_label_text(self.lbl_rec_take, f"録音テイク: {os.path.basename(saved_path)} ({dur:.1f}秒)", saved_path, max_width=300)
                 self.lbl_rec_take.setStyleSheet("color: #34D399; font-weight: bold; font-size: 11px;")
                 self.btn_rec_listen.setEnabled(True)
 
