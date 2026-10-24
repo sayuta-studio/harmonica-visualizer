@@ -92,22 +92,32 @@ def _calc_trajectory_x(yv, lane_l, lane_r, dest_l, dest_r, y_col, y_str, h_diag)
 def _draw_bordered_text_qt(painter, rect: QRectF, text: str, font: QFont,
                            text_color: QColor, border_color: QColor = QColor("#000000"),
                            border_w: float = 1.5, alignment=Qt.AlignmentFlag.AlignCenter):
+    if not text:
+        return
+    painter.save()
+    painter.setClipRect(rect)
     painter.setFont(font)
+    fm = QFontMetricsF(font)
+    disp_text = text
+    if fm.horizontalAdvance(text) > rect.width():
+        disp_text = fm.elidedText(text, Qt.TextElideMode.ElideRight, rect.width())
+
     painter.setPen(border_color)
     bw = max(1.0, border_w)
     for dx in (-bw, bw):
         for dy in (-bw, bw):
-            painter.drawText(rect.translated(dx, dy), alignment, text)
-    painter.drawText(rect.translated(0, -bw), alignment, text)
-    painter.drawText(rect.translated(0, bw), alignment, text)
-    painter.drawText(rect.translated(-bw, 0), alignment, text)
-    painter.drawText(rect.translated(bw, 0), alignment, text)
+            painter.drawText(rect.translated(dx, dy), alignment, disp_text)
+    painter.drawText(rect.translated(0, -bw), alignment, disp_text)
+    painter.drawText(rect.translated(0, bw), alignment, disp_text)
+    painter.drawText(rect.translated(-bw, 0), alignment, disp_text)
+    painter.drawText(rect.translated(bw, 0), alignment, disp_text)
     painter.setPen(text_color)
-    painter.drawText(rect, alignment, text)
+    painter.drawText(rect, alignment, disp_text)
+    painter.restore()
 
 
-def _fit_font(text: str, base_font: QFont, max_w: float, min_pt: float = 6.0) -> QFont:
-    """枠幅 max_w を超える場合に文字サイズを自動縮小した QFont を返す"""
+def _fit_font(text: str, base_font: QFont, max_w: float, min_pt: float = 5.0) -> QFont:
+    """枠幅 max_w を超える場合に文字サイズを動的に自動縮小した QFont を返す"""
     if not text or max_w <= 0:
         return base_font
     font = QFont(base_font)
@@ -860,7 +870,7 @@ class OffscreenVisualizerRenderer:
     render_single_frame_qimage = render_frame_qimage
 
     def _draw_title_overlay(self, painter, cur_sec, overlay_info, x_start, y_offset, total_w, scale):
-        """タイトル配置テンプレート (イントロ中央 / 左上常時 / 右上常時 など)"""
+        """タイトル配置テンプレート (実解像度対応動的スケーリング・中央配置・マージンクリッピング)"""
         tpl = overlay_info.get("template", "なし")
         title_text = str(overlay_info.get("title", "")).strip()
         credit_text = str(overlay_info.get("credit", "")).strip()
@@ -868,6 +878,7 @@ class OffscreenVisualizerRenderer:
             return
 
         w, h = self.width, self.height
+        is_vertical = (w < h) or ("9:16" in str(self.aspect_ratio))
         intro_dur = float(overlay_info.get("intro_dur", 2.5))
         show_intro = ("イントロ中央" in tpl and cur_sec < intro_dur)
         show_left = ("左上常時" in tpl)
@@ -889,12 +900,12 @@ class OffscreenVisualizerRenderer:
             raw_w_c = fm_c.horizontalAdvance(credit_text) if credit_text else 0.0
             max_text_w = max(raw_w_t, raw_w_c)
 
-            max_card_w = w * 0.88
-            ideal_card_w = max(360.0 * scale, max_text_w + 80.0 * scale)
+            max_card_w = w * (0.90 if is_vertical else 0.88)
+            ideal_card_w = max(320.0 * scale, max_text_w + 64.0 * scale)
             card_w = min(max_card_w, ideal_card_w)
             card_h = (130.0 if (title_text and credit_text) else 90.0) * scale
             cx0 = (w - card_w) * 0.5
-            cy0 = max(15.0 * scale, h * 0.22 - card_h * 0.5)
+            cy0 = max(15.0 * scale, (h * 0.18 if is_vertical else h * 0.22) - card_h * 0.5)
             card_rect = QRectF(cx0, cy0, card_w, card_h)
 
             painter.setPen(QPen(QColor(0, 210, 255, int(210 * fade)), max(1.0, 2.0 * scale)))
@@ -905,17 +916,22 @@ class OffscreenVisualizerRenderer:
             painter.setPen(QPen(QColor(255, 165, 30, int(200 * fade)), max(1.0, 2.0 * scale)))
             painter.drawLine(QPointF(cx0 + 18.0 * scale, cy0 + 6.0 * scale), QPointF(cx0 + card_w - 18.0 * scale, cy0 + 6.0 * scale))
 
-            avail_w = card_w - 40.0 * scale
-            f_t = _fit_font(title_text, base_f_t, avail_w, min_pt=max(8.0, 9.0 * scale))
-            f_c = _fit_font(credit_text, base_f_c, avail_w, min_pt=max(6.0, 7.0 * scale))
+            pad_x = 20.0 * scale
+            avail_w = max(10.0, card_w - pad_x * 2.0)
+            f_t = _fit_font(title_text, base_f_t, avail_w, min_pt=max(7.0, 7.5 * scale))
+            f_c = _fit_font(credit_text, base_f_c, avail_w, min_pt=max(5.5, 6.0 * scale))
 
             if title_text and credit_text:
-                _draw_bordered_text_qt(painter, QRectF(cx0, cy0 + 12.0 * scale, card_w, 48.0 * scale), title_text, f_t, QColor(255, 255, 255, int(255 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=2.0 * scale)
-                _draw_bordered_text_qt(painter, QRectF(cx0, cy0 + 68.0 * scale, card_w, 32.0 * scale), credit_text, f_c, QColor(0, 229, 255, int(240 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=1.5 * scale)
+                rect_t = QRectF(cx0 + pad_x, cy0 + 12.0 * scale, avail_w, 48.0 * scale)
+                rect_c = QRectF(cx0 + pad_x, cy0 + 68.0 * scale, avail_w, 32.0 * scale)
+                _draw_bordered_text_qt(painter, rect_t, title_text, f_t, QColor(255, 255, 255, int(255 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=2.0 * scale)
+                _draw_bordered_text_qt(painter, rect_c, credit_text, f_c, QColor(0, 229, 255, int(240 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=1.5 * scale)
             elif title_text:
-                _draw_bordered_text_qt(painter, card_rect, title_text, f_t, QColor(255, 255, 255, int(255 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=2.0 * scale)
+                rect_t = QRectF(cx0 + pad_x, cy0, avail_w, card_h)
+                _draw_bordered_text_qt(painter, rect_t, title_text, f_t, QColor(255, 255, 255, int(255 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=2.0 * scale)
             else:
-                _draw_bordered_text_qt(painter, card_rect, credit_text, f_c, QColor(0, 229, 255, int(240 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=1.5 * scale)
+                rect_c = QRectF(cx0 + pad_x, cy0, avail_w, card_h)
+                _draw_bordered_text_qt(painter, rect_c, credit_text, f_c, QColor(0, 229, 255, int(240 * fade)), QColor(0, 0, 0, int(255 * fade)), border_w=1.5 * scale)
 
         if (show_left or show_right) and (not show_intro or cur_sec >= intro_dur):
             base_f_t = QFont("Meiryo UI", max(10, int(13.0 * scale)), QFont.Weight.Bold)
@@ -927,29 +943,36 @@ class OffscreenVisualizerRenderer:
             raw_w_c = fm_c.horizontalAdvance(credit_text) if credit_text else 0.0
             max_text_w = max(raw_w_t, raw_w_c)
 
-            max_card_w = w * 0.45
+            max_card_w = w * (0.70 if is_vertical else 0.45)
             ideal_card_w = max(120.0 * scale, max_text_w + 36.0 * scale)
             card_w = min(max_card_w, ideal_card_w)
             card_h = (52.0 if (title_text and credit_text) else 34.0) * scale
-            cx0 = (w - card_w - 20.0 * scale) if show_right else (20.0 * scale)
-            cy0 = 18.0 * scale
+            margin_x = 16.0 * scale
+            cx0 = (w - card_w - margin_x) if show_right else margin_x
+            cx0 = max(margin_x, min(w - card_w - margin_x, cx0))
+            cy0 = 16.0 * scale
             card_rect = QRectF(cx0, cy0, card_w, card_h)
 
             painter.setPen(QPen(QColor(80, 130, 170, 180), max(1.0, 1.2 * scale)))
             painter.setBrush(QColor(14, 18, 28, 195))
             painter.drawRoundedRect(card_rect, 8.0 * scale, 8.0 * scale)
 
-            avail_w = card_w - 20.0 * scale
-            f_t = _fit_font(title_text, base_f_t, avail_w, min_pt=max(6.0, 7.0 * scale))
-            f_c = _fit_font(credit_text, base_f_c, avail_w, min_pt=max(5.0, 6.0 * scale))
+            pad_x = 12.0 * scale
+            avail_w = max(10.0, card_w - pad_x * 2.0)
+            f_t = _fit_font(title_text, base_f_t, avail_w, min_pt=max(5.5, 6.0 * scale))
+            f_c = _fit_font(credit_text, base_f_c, avail_w, min_pt=max(4.5, 5.0 * scale))
 
             if title_text and credit_text:
-                _draw_bordered_text_qt(painter, QRectF(cx0, cy0 + 4.0 * scale, card_w, 24.0 * scale), title_text, f_t, self.color_white, self.color_black, border_w=1.5 * scale)
-                _draw_bordered_text_qt(painter, QRectF(cx0, cy0 + 26.0 * scale, card_w, 20.0 * scale), credit_text, f_c, QColor("#B2EBF2"), self.color_black, border_w=1.0 * scale)
+                rect_t = QRectF(cx0 + pad_x, cy0 + 4.0 * scale, avail_w, 24.0 * scale)
+                rect_c = QRectF(cx0 + pad_x, cy0 + 26.0 * scale, avail_w, 20.0 * scale)
+                _draw_bordered_text_qt(painter, rect_t, title_text, f_t, self.color_white, self.color_black, border_w=1.5 * scale)
+                _draw_bordered_text_qt(painter, rect_c, credit_text, f_c, QColor("#B2EBF2"), self.color_black, border_w=1.0 * scale)
             elif title_text:
-                _draw_bordered_text_qt(painter, card_rect, title_text, f_t, self.color_white, self.color_black, border_w=1.5 * scale)
+                rect_t = QRectF(cx0 + pad_x, cy0, avail_w, card_h)
+                _draw_bordered_text_qt(painter, rect_t, title_text, f_t, self.color_white, self.color_black, border_w=1.5 * scale)
             else:
-                _draw_bordered_text_qt(painter, card_rect, credit_text, f_c, QColor("#B2EBF2"), self.color_black, border_w=1.0 * scale)
+                rect_c = QRectF(cx0 + pad_x, cy0, avail_w, card_h)
+                _draw_bordered_text_qt(painter, rect_c, credit_text, f_c, QColor("#B2EBF2"), self.color_black, border_w=1.0 * scale)
 
     def _draw_procedural_lever(self, painter, lever_x, y_center_s, scale, lever_pressed):
         btn_w = max(1.0, 16.0 * scale)
