@@ -36,6 +36,7 @@ from gl_visualizer import HarmonicaGLWidget
 from audio_engine import AudioEngine, AudioRecorder, AuditionPlayer, apply_harmonica_reverb_numpy
 from dialogs import PartSelectDialog
 import settings_manager
+import harmonica_map
 from harmonica_map import CURRENT_SONG_PRESET, apply_fingering_preset
 from config import get_portable_path
 
@@ -527,6 +528,14 @@ class HarmonicaMainWindow(QMainWindow):
 
     sig_loop_wrapped = pyqtSignal()
     sig_playback_finished = pyqtSignal()
+
+    def _set_elided_label_text(self, label: QLabel, text: str, full_tooltip: str = "", max_width: int = 280):
+        """可変長テキスト・ファイル名を安全に中略表示 (ElideMiddle) し、ラベル幅の肥大化・枠はみ出しを防ぐ"""
+        label.setMinimumWidth(0)
+        label.setToolTip(full_tooltip or text)
+        fm = label.fontMetrics()
+        elided = fm.elidedText(text, Qt.TextElideMode.ElideMiddle, max_width)
+        label.setText(elided)
 
     def __init__(self):
         super().__init__()
@@ -1437,9 +1446,14 @@ class HarmonicaMainWindow(QMainWindow):
         l_bg.addWidget(self.chk_bg_enable)
 
         cur_bg = self.user_settings.get("bg_image_path", "")
-        bg_name = os.path.basename(cur_bg) if cur_bg and os.path.exists(cur_bg) else "未設定 (ダーク背景)"
-        self.lbl_bg_info = QLabel(f"画像: {bg_name}", self)
+        self.lbl_bg_info = QLabel(self)
+        self.lbl_bg_info.setMinimumWidth(0)
         self.lbl_bg_info.setStyleSheet("color: #94A3B8; font-size: 10px;")
+        if cur_bg and os.path.exists(cur_bg):
+            self._set_elided_label_text(self.lbl_bg_info, f"画像: {os.path.basename(cur_bg)}", cur_bg, max_width=270)
+        else:
+            self.lbl_bg_info.setText("画像: 未設定 (ダーク背景)")
+            self.lbl_bg_info.setToolTip("")
         l_bg.addWidget(self.lbl_bg_info)
 
         r_bg_btn = QHBoxLayout()
@@ -1642,6 +1656,7 @@ class HarmonicaMainWindow(QMainWindow):
         # テイク＆試聴
         r_take = QHBoxLayout()
         self.lbl_rec_take = QLabel("録音テイク: 未録音", self)
+        self.lbl_rec_take.setMinimumWidth(0)
         self.lbl_rec_take.setStyleSheet("color: #64748B; font-size: 11px;")
         r_take.addWidget(self.lbl_rec_take, stretch=1)
 
@@ -2625,13 +2640,14 @@ class HarmonicaMainWindow(QMainWindow):
             fit_mode=self.combo_bg_fit.currentText(),
             rotation=self.bg_rotation_deg
         )
-        self.lbl_bg_info.setText(f"画像: {os.path.basename(filepath)}")
+        self._set_elided_label_text(self.lbl_bg_info, f"画像: {os.path.basename(filepath)}", filepath, max_width=270)
         self.lbl_status_msg.setText(f"🖼️ 背景画像を設定しました: {os.path.basename(filepath)}")
         self._save_current_settings()
 
     def _on_clear_bg_image(self):
         self.gl_widget.clear_background_image()
         self.lbl_bg_info.setText("画像: 未設定 (ダーク背景)")
+        self.lbl_bg_info.setToolTip("")
         self.lbl_status_msg.setText("🗑️ 背景画像を解除しました")
         self._save_current_settings()
 
@@ -3128,8 +3144,8 @@ class HarmonicaMainWindow(QMainWindow):
                 self._on_record_toggle()
             self._is_loading_midi = True
             settings_manager.add_recent_file(filepath)
-            from harmonica_map import load_song_profile
-            prof = load_song_profile(filepath)
+            import harmonica_map
+            prof = harmonica_map.load_song_profile(filepath)
 
             # 楽器復元 (プロファイル指定または現在のUI値)
             inst = prof.get("inst_type", self.inst_combo.currentText())
@@ -3202,8 +3218,7 @@ class HarmonicaMainWindow(QMainWindow):
             self.audio_engine.all_notes_off()
             self.audio_engine.seek(0.0)
 
-            self.lbl_song_title.setText(self.timeline.filename)
-            self.lbl_song_title.setToolTip(filepath)
+            self._set_elided_label_text(self.lbl_song_title, self.timeline.filename, filepath, max_width=240)
             self._update_track_list()
             self._update_song_info_labels()
             self._reset_loop_ranges_to_song()
@@ -3607,7 +3622,7 @@ class HarmonicaMainWindow(QMainWindow):
 
             if saved_path and dur > 0:
                 self.last_recorded_path = saved_path
-                self.lbl_rec_take.setText(f"録音テイク: {os.path.basename(saved_path)} ({dur:.1f}秒)")
+                self._set_elided_label_text(self.lbl_rec_take, f"録音テイク: {os.path.basename(saved_path)} ({dur:.1f}秒)", saved_path, max_width=270)
                 self.lbl_rec_take.setStyleSheet("color: #34D399; font-weight: bold; font-size: 11px;")
                 self.btn_rec_listen.setEnabled(True)
 
