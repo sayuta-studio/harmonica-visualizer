@@ -12,6 +12,7 @@ Harmonica Visualizer v3.0 - メインエントリーポイント (PyQt6 64-bit O
 import os
 import sys
 import time
+import numpy as np
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
@@ -565,6 +566,9 @@ class HarmonicaMainWindow(QMainWindow):
         self.audio_engine = AudioEngine(self.clock)
         self.audio_recorder = AudioRecorder()
         self.audition_player = AuditionPlayer()
+        self._ext_pcm = None
+        self._ext_channel = None
+        self._ext_pending_start = False
         self.is_seeking = False
         self._is_loading_midi = False
         self.loop_playback = bool(self.user_settings.get("loop_enabled", False))
@@ -3535,14 +3539,18 @@ class HarmonicaMainWindow(QMainWindow):
         total_sec = self.timeline.total_duration_sec
         state = self.clock.get_state()
 
-        # 前奏カウントダウンから本編への遷移検知で外部音源を頭出し同期再生
+        # 前奏カウントダウンから本編への遷移検知、および外部音源の待機発音同期
         prev_s = getattr(self, "_prev_sec", 0.0)
-        if prev_s < 0.0 <= cur_sec and state == SharedClockBridge.STATE_PLAYING:
-            self._sync_ext_audio_playback(True, 0.0)
-        waiting_a = getattr(self, "_loop_waiting_for_a_sec", None)
-        if waiting_a is not None and prev_s < waiting_a <= cur_sec and state == SharedClockBridge.STATE_PLAYING:
-            self._loop_waiting_for_a_sec = None
-            self._sync_ext_audio_playback(True, waiting_a)
+        offset_sec = float(self.spin_ext_offset.value()) / 1000.0 if hasattr(self, "spin_ext_offset") else 0.0
+        if state == SharedClockBridge.STATE_PLAYING:
+            if getattr(self, "_ext_pending_start", False) and (cur_sec - offset_sec >= 0.0):
+                self._sync_ext_audio_playback(True, cur_sec)
+            elif prev_s < 0.0 <= cur_sec:
+                self._sync_ext_audio_playback(True, 0.0)
+            waiting_a = getattr(self, "_loop_waiting_for_a_sec", None)
+            if waiting_a is not None and prev_s < waiting_a <= cur_sec:
+                self._loop_waiting_for_a_sec = None
+                self._sync_ext_audio_playback(True, waiting_a)
         self._prev_sec = cur_sec
 
         # シークバーと現在時刻の更新
@@ -3710,17 +3718,10 @@ class HarmonicaMainWindow(QMainWindow):
                 self.lbl_status_msg.setText(f"▶ 試聴中: {os.path.basename(target_path)}")
 
     def _refresh_live_audition_reverb(self):
-        """試聴再生中にリバーブ設定（ON/OFF、タイプ、深さ）が変更された際に即座に再生成・反映"""
-        if getattr(self, "last_recorded_path", None) and os.path.exists(self.last_recorded_path):
-            target_path = self.last_recorded_path
-            if self.chk_reverb.isChecked():
-                rev_path = os.path.splitext(self.last_recorded_path)[0] + "_reverb.wav"
-                apply_harmonica_reverb_numpy(self.last_recorded_path, rev_path, self.combo_reverb_type.currentText(), self.slider_reverb_wet.value())
-                if os.path.exists(rev_path):
-                    target_path = rev_path
-            if self.audition_player.is_playing():
-                cur_pos = self.audition_player.get_position_sec() if hasattr(self.audition_player, "get_position_sec") else 0.0
-                self.audition_player.play(target_path, volume=self.vol_slider.value() / 100.0, start_sec=cur_pos)
+        """試聴停止し設定反映"""
+        if hasattr(self, "audition_player") and self.audition_player.is_playing():
+            self.audition_player.stop()
+            self.btn_rec_listen.setText("▶ 試聴")
 
     def _on_open_rec_folder(self):
         """録音フォルダを開く"""
@@ -3732,24 +3733,33 @@ class HarmonicaMainWindow(QMainWindow):
     def _on_reverb_toggled(self, checked: bool):
         self.reverb_enabled = bool(checked)
         self.user_settings["reverb_enabled"] = self.reverb_enabled
-        self._refresh_live_audition_reverb()
+        if hasattr(self, "audition_player") and self.audition_player.is_playing():
+            self.audition_player.stop()
+            self.btn_rec_listen.setText("▶ 試聴")
+            self.lbl_status_msg.setText("✨ リバーブ有効状態を変更しました ([▶ 試聴] で確認)")
+        else:
+            self.lbl_status_msg.setText(f"✨ リバーブ: {'有効' if checked else '無効'} ([▶ 試聴] で確認)")
         self._save_current_settings()
-        self.lbl_status_msg.setText(f"✨ リバーブ: {'有効' if checked else '無効'}")
 
     def _on_reverb_type_changed(self, r_type: str):
         self.reverb_type = str(r_type)
         self.user_settings["reverb_type"] = self.reverb_type
-        self._refresh_live_audition_reverb()
+        if hasattr(self, "audition_player") and self.audition_player.is_playing():
+            self.audition_player.stop()
+            self.btn_rec_listen.setText("▶ 試聴")
+            self.lbl_status_msg.setText("✨ リバーブ空間タイプを変更しました ([▶ 試聴] で確認)")
+        else:
+            self.lbl_status_msg.setText(f"✨ リバーブタイプ: {r_type} ([▶ 試聴] で確認)")
         self._save_current_settings()
 
     def _on_reverb_slider_changed(self, val: int):
         self.reverb_wet_pct = int(val)
         self.lbl_reverb_wet.setText(f"深さ: {val}%")
         self.user_settings["reverb_wet_pct"] = self.reverb_wet_pct
-        if hasattr(self, "_reverb_debounce_timer"):
-            self._reverb_debounce_timer.start(180)
-        else:
-            self._refresh_live_audition_reverb()
+        if hasattr(self, "audition_player") and self.audition_player.is_playing():
+            self.audition_player.stop()
+            self.btn_rec_listen.setText("▶ 試聴")
+            self.lbl_status_msg.setText("✨ リバーブ深さを変更しました ([▶ 試聴] で確認)")
         self._save_current_settings()
 
     def _on_select_ext_audio(self):
@@ -3760,16 +3770,39 @@ class HarmonicaMainWindow(QMainWindow):
         if path:
             self._set_ext_audio(path)
 
+    def _ensure_ext_pcm_loaded(self):
+        """外部音源のPCMデータをメモリにキャッシュロード"""
+        if getattr(self, "_ext_pcm", None) is not None:
+            return self._ext_pcm
+        if getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path):
+            try:
+                from audio_engine import load_external_audio_pcm
+                self._ext_pcm = load_external_audio_pcm(self.ext_audio_path, sample_rate=44100)
+                return self._ext_pcm
+            except Exception as e:
+                print(f"[ExtAudio Load Error] {e}")
+                self._ext_pcm = None
+        return None
+
+    def _stop_ext_playback(self):
+        """外部音源の再生を安全に停止"""
+        try:
+            if hasattr(self, "_ext_channel") and self._ext_channel is not None:
+                self._ext_channel.stop()
+            self._ext_pending_start = False
+        except Exception:
+            pass
+
     def _set_ext_audio(self, path: str):
         if not path or not os.path.isfile(path):
             return
         self.ext_audio_path = path
         self.user_settings["ext_audio_path"] = path
+        self._ext_pcm = None
+        self._ensure_ext_pcm_loaded()
+
         base_name = os.path.basename(path)
-        fm = self.lbl_ext_audio.fontMetrics()
-        elided = fm.elidedText(base_name, Qt.TextElideMode.ElideMiddle, 280)
-        self.lbl_ext_audio.setText(elided)
-        self.lbl_ext_audio.setToolTip(path)
+        self._set_elided_label_text(self.lbl_ext_audio, base_name, path, max_width=290)
         self.lbl_ext_audio.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 11px; background-color: #121218; border: 1px solid #22222E; border-radius: 3px; padding: 2px 6px;")
         self.btn_ext_audition.setEnabled(True)
         self.btn_ext_restart.setEnabled(True)
@@ -3781,18 +3814,14 @@ class HarmonicaMainWindow(QMainWindow):
     def _on_clear_ext_audio(self):
         self.ext_audio_path = ""
         self.user_settings["ext_audio_path"] = ""
+        self._ext_pcm = None
+        self._stop_ext_playback()
         self.lbl_ext_audio.setText("未選択 (MP3/WAV等をD&D可)")
         self.lbl_ext_audio.setToolTip("")
         self.lbl_ext_audio.setStyleSheet("color: #64748B; font-size: 11px; background-color: #121218; border: 1px solid #22222E; border-radius: 3px; padding: 2px 6px;")
         self.btn_ext_audition.setEnabled(False)
         self.btn_ext_restart.setEnabled(False)
         self.btn_ext_stop.setEnabled(False)
-        try:
-            import pygame
-            if pygame.mixer.get_init():
-                pygame.mixer.music.stop()
-        except Exception:
-            pass
         self._save_current_song_profile()
         self.lbl_status_msg.setText("伴奏音源を解除しました")
         self._save_current_settings()
@@ -3801,12 +3830,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.ext_audio_mode = str(mode)
         self.user_settings["ext_audio_mode"] = self.ext_audio_mode
         if "ガイド音のみ" in mode or "伴奏ミュート" in mode or "外部音源オフ" in mode:
-            try:
-                import pygame
-                if pygame.mixer.get_init():
-                    pygame.mixer.music.stop()
-            except Exception:
-                pass
+            self._stop_ext_playback()
 
         if "伴奏のみ" in mode or "外部音源のみ" in mode:
             self.audio_engine.set_midi_notes_muted(True)
@@ -3819,10 +3843,9 @@ class HarmonicaMainWindow(QMainWindow):
         self.lbl_ext_vol.setText(f"{val}%")
         self.user_settings["ext_audio_volume"] = val
         try:
-            import pygame
-            if pygame.mixer.get_init():
-                v = (val / 100.0) * (self.vol_slider.value() / 100.0)
-                pygame.mixer.music.set_volume(v)
+            v = max(0.0, min(1.0, (val / 100.0) * (self.vol_slider.value() / 100.0)))
+            if hasattr(self, "_ext_channel") and self._ext_channel is not None:
+                self._ext_channel.set_volume(v)
         except Exception:
             pass
         self._save_current_settings()
@@ -3989,19 +4012,9 @@ class HarmonicaMainWindow(QMainWindow):
 
     def _do_ext_audio_resync(self):
         try:
-            if self.clock.get_state() == SharedClockBridge.STATE_PLAYING and getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path):
+            if self.clock.get_state() == SharedClockBridge.STATE_PLAYING:
                 cur_sec = self.clock.get_current_base_sec()
-                if cur_sec >= 0.0:
-                    mode = getattr(self, "ext_audio_mode", "")
-                    if "ガイド音のみ" not in mode and "伴奏ミュート" not in mode and "外部音源オフ" not in mode:
-                        ext_time = max(0.0, cur_sec + self.ext_offset_ms / 1000.0)
-                        vol = (self.slider_ext_vol.value() / 100.0) * (self.vol_slider.value() / 100.0)
-                        import pygame
-                        if not pygame.mixer.get_init():
-                            pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
-                        if pygame.mixer.get_init():
-                            pygame.mixer.music.set_volume(vol)
-                            pygame.mixer.music.play(start=ext_time)
+                self._sync_ext_audio_playback(True, cur_sec)
         except Exception as e:
             print(f"[ExtAudio Offset Resync Warning] {e}")
 
@@ -4020,16 +4033,14 @@ class HarmonicaMainWindow(QMainWindow):
             print(f"[ExtAudio Offset Adjust Error] {e}")
 
     def _sync_ext_audio_playback(self, is_playing: bool, target_sec: float = None):
-        """外部音源をタイムラインと完全同期再生/一時停止"""
-        if not getattr(self, "ext_audio_path", "") or not os.path.isfile(self.ext_audio_path):
+        """外部音源をタイムラインと完全同期再生/一時停止 (PCMスライス再生方式)"""
+        pcm = self._ensure_ext_pcm_loaded()
+        if pcm is None or len(pcm) == 0:
             return
-        if "外部音源オフ" in getattr(self, "ext_audio_mode", "") or "ガイド音のみ" in getattr(self, "ext_audio_mode", "") or "伴奏ミュート" in getattr(self, "ext_audio_mode", ""):
-            try:
-                import pygame
-                if pygame.mixer.get_init():
-                    pygame.mixer.music.stop()
-            except Exception:
-                pass
+
+        mode = getattr(self, "ext_audio_mode", "")
+        if "外部音源オフ" in mode or "ガイド音のみ" in mode or "伴奏ミュート" in mode:
+            self._stop_ext_playback()
             return
 
         try:
@@ -4037,32 +4048,44 @@ class HarmonicaMainWindow(QMainWindow):
             if not pygame.mixer.get_init():
                 pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
 
-            cur_sec = self.clock.get_current_base_sec() if target_sec is None else target_sec
-            ext_time = max(0.0, cur_sec + self.spin_ext_offset.value() / 1000.0)
-            vol = (self.slider_ext_vol.value() / 100.0) * (self.vol_slider.value() / 100.0)
+            if not hasattr(self, "_ext_channel") or self._ext_channel is None:
+                self._ext_channel = pygame.mixer.Channel(1)
 
-            if is_playing and cur_sec >= 0.0:
-                try:
-                    pygame.mixer.music.load(self.ext_audio_path)
-                    pygame.mixer.music.set_volume(vol)
-                    pygame.mixer.music.play(start=ext_time)
-                except Exception as e:
-                    print(f"[ExtAudio Warning] play failed: {e}")
+            cur_sec = self.clock.get_current_base_sec() if target_sec is None else target_sec
+            offset_sec = float(self.spin_ext_offset.value()) / 1000.0
+            # 共通計算式: src_sec = cur_sec - offset_sec (+offsetで遅らせる / -offsetで早める)
+            src_sec = cur_sec - offset_sec
+            vol = max(0.0, min(1.0, (self.slider_ext_vol.value() / 100.0) * (self.vol_slider.value() / 100.0)))
+
+            if is_playing:
+                if src_sec >= 0.0:
+                    start_sample = int(round(src_sec * 44100))
+                    if start_sample < len(pcm):
+                        sound_slice = np.ascontiguousarray(pcm[start_sample:])
+                        snd = pygame.sndarray.make_sound(sound_slice)
+                        self._ext_channel.set_volume(vol)
+                        self._ext_channel.play(snd)
+                        self._ext_pending_start = False
+                    else:
+                        self._ext_channel.stop()
+                        self._ext_pending_start = False
+                else:
+                    # まだ外部音源開始時刻に達していない (待機状態)
+                    self._ext_channel.stop()
+                    self._ext_pending_start = True
             else:
-                try:
-                    pygame.mixer.music.pause()
-                except Exception:
-                    pass
+                self._ext_channel.stop()
+                self._ext_pending_start = False
         except Exception as e:
-            print(f"[ExtAudio Warning] sync failed: {e}")
+            print(f"[ExtAudio Sync Error] {e}")
 
     def _on_ext_audition_play(self):
         """外部音源の頭出し試聴（メイン再生・画面描画・ガイド音と完全同期）"""
         self._on_play_toggle()
 
     def _on_ext_audition_restart(self):
-        """外部音源を先頭から再生（0.0sシーク＆再生同期キック）"""
-        self.seek(0.0)
+        """外部音源を先頭から再生（巻き戻し＆再生同期キック）"""
+        self._on_rewind()
         if self.clock.get_state() != SharedClockBridge.STATE_PLAYING:
             self._on_play_toggle()
 
