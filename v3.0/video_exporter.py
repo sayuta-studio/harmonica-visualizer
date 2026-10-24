@@ -34,6 +34,41 @@ from harmonica_map import (
 from audio_engine import get_reverb_filter_arg, synthesize_midi_to_wav
 
 
+def calc_export_resolution(res_text: str, ratio_text: str) -> tuple[int, int]:
+    """
+    動画解像度コンボおよびアスペクト比コンボの選択文字列から、
+    真のピクセル解像度 (width, height) を計算して返します。
+    すべての解像度は FFmpeg/H.264 エンコード要件である偶数ピクセル (mod 2 == 0) を保証します。
+    """
+    ratio_s = str(ratio_text)
+    res_s = str(res_text)
+
+    is_4k = "4K" in res_s
+    is_720p = "720p" in res_s
+
+    if "9:16" in ratio_s:
+        if is_4k:
+            return 2160, 3840
+        elif is_720p:
+            return 720, 1280
+        else:
+            return 1080, 1920
+    elif "4:3" in ratio_s:
+        if is_4k:
+            return 2880, 2160
+        elif is_720p:
+            return 960, 720
+        else:
+            return 1440, 1080
+    else:  # 16:9 (デフォルト)
+        if is_4k:
+            return 3840, 2160
+        elif is_720p:
+            return 1280, 720
+        else:
+            return 1920, 1080
+
+
 def check_ffmpeg_available() -> bool:
     """システムで ffmpeg コマンドが実行可能か判定"""
     try:

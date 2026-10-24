@@ -39,11 +39,11 @@ def get_canvas_height_by_ratio(ratio_str):
     """
     s = str(ratio_str)
     if "9:16" in s:
-        return 1706  # 960 * 16 / 9 (縦長ショート)
+        return 960.0 * 16.0 / 9.0  # 1706.6666666666667 (縦長ショート)
     elif "4:3" in s:
-        return 720   # 960 * 3 / 4 (スタンダード)
+        return 720.0   # 960 * 3 / 4 (スタンダード)
     else:
-        return 540   # 16:9 (ワイド標準)
+        return 540.0   # 16:9 (ワイド標準)
 
 def get_y_layout_params(canvas_height):
     """

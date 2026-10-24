@@ -4249,17 +4249,11 @@ class HarmonicaMainWindow(QMainWindow):
 
     def _on_preview_frame(self):
         """現在の再生位置のフレームを1枚オフスクリーンレンダリングしてポップアップ表示"""
-        from video_exporter import OffscreenVisualizerRenderer
+        from video_exporter import OffscreenVisualizerRenderer, calc_export_resolution
         from dialogs import SingleFramePreviewDialog
 
         cur_sec = max(0.0, self.clock.get_current_base_sec())
-        res_text = self.combo_exp_res.currentText()
-        if "4K" in res_text:
-            w, h = 3840, 2160
-        elif "720p" in res_text:
-            w, h = 1280, 720
-        else:
-            w, h = 1920, 1080
+        w, h = calc_export_resolution(self.combo_exp_res.currentText(), self.ratio_combo.currentText())
 
         render_settings = {
             "inst_type": self.inst_combo.currentText(),
@@ -4318,7 +4312,7 @@ class HarmonicaMainWindow(QMainWindow):
             QMessageBox.information(self, "書き出しエラー", "MIDIファイルが読み込まれていません。\n先にMIDIファイルを開いてください。")
             return
 
-        from video_exporter import check_ffmpeg_available, VideoExportThread
+        from video_exporter import check_ffmpeg_available, VideoExportThread, calc_export_resolution
         from dialogs import ExportProgressDialog
 
         if not check_ffmpeg_available():
@@ -4355,14 +4349,8 @@ class HarmonicaMainWindow(QMainWindow):
         if is_transparent and not out_path.lower().endswith(".mov"):
             out_path = os.path.splitext(out_path)[0] + ".mov"
 
-        # 解像度設定
-        res_text = self.combo_exp_res.currentText()
-        if "4K" in res_text:
-            w, h = 3840, 2160
-        elif "720p" in res_text:
-            w, h = 1280, 720
-        else:
-            w, h = 1920, 1080
+        # 解像度設定 (アスペクト比連動の真の解像度)
+        w, h = calc_export_resolution(self.combo_exp_res.currentText(), self.ratio_combo.currentText())
 
         # フレームレート
         fps = 30 if "30" in self.combo_exp_fps.currentText() else 60
