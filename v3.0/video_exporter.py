@@ -993,6 +993,9 @@ class VideoExportThread(QThread):
             total_frames = int(round(total_video_dur * fps))
 
             # 1. オフスクリーンレンダラー初期化
+            export_style = self.config.get("settings", {}).get("export_style", "")
+            is_transparent_mov = ("完全背景透過" in export_style or output_path.lower().endswith(".mov"))
+
             renderer = OffscreenVisualizerRenderer(
                 timeline=self.timeline,
                 width=width,
@@ -1094,8 +1097,10 @@ class VideoExportThread(QThread):
                     vol_gain = max(0.0, min(2.5, export_audio_vol_pct / 100.0))
                     af_filters.append(f"volume={vol_gain:.2f}")
 
-                export_style = self.config.get("settings", {}).get("export_style", "")
-                is_transparent_mov = ("完全背景透過" in export_style or output_path.lower().endswith(".mov"))
+                # YouTube True Peak リミッター (-1.0 dBFS ≒ 0.89125) をボリューム等の最終段に適用
+                yt_limiter = bool(self.config.get("yt_limiter", True))
+                if yt_limiter:
+                    af_filters.append("alimiter=limit=0.89125:level=0:asc=0:attack=5:release=50")
 
                 if af_filters:
                     cmd.extend(["-af", ",".join(af_filters)])

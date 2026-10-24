@@ -582,6 +582,18 @@ class HarmonicaMainWindow(QMainWindow):
         self._reverb_debounce_timer.setSingleShot(True)
         self._reverb_debounce_timer.setInterval(180)
         self._reverb_debounce_timer.timeout.connect(self._refresh_live_audition_reverb)
+
+        # 外部音源ズレ補正のデバウンスタイマー (連打時の多重再生＆ディスクI/O抑制)
+        self._ext_resync_timer = QTimer(self)
+        self._ext_resync_timer.setSingleShot(True)
+        self._ext_resync_timer.setInterval(60)
+        self._ext_resync_timer.timeout.connect(self._do_ext_audio_resync)
+
+        self._ext_save_timer = QTimer(self)
+        self._ext_save_timer.setSingleShot(True)
+        self._ext_save_timer.setInterval(500)
+        self._ext_save_timer.timeout.connect(self._do_ext_offset_save)
+
         self.ui_timer.start()
 
         # 5. ユーザー設定の反映
@@ -3750,31 +3762,58 @@ class HarmonicaMainWindow(QMainWindow):
         self._save_current_settings()
 
     def _apply_youtube_volume_preset(self):
-        """YouTube音声仕様（目標 -14 LUFS / True Peak -1.0 dBFS）に基づき、動画全体の音量を自動測定・最適化"""
+        """YouTube音声仕様（目標 -14.0 LUFS / True Peak -1.0 dBFS）に基づき、動画出力全体の音量を自動測定・最適化"""
         if (not hasattr(self, "timeline") or not self.timeline or self.timeline.total_duration_sec <= 0) and \
            (not getattr(self, "ext_audio_path", "") or not os.path.isfile(self.ext_audio_path)):
             QMessageBox.information(self, "音量解析", "解析対象の楽曲（MIDI）または外部音声ファイルが読み込まれていません。")
             return
 
-        self.lbl_status_msg.setText("⏳ YouTube音量を解析中...")
+        # 音声ソース判定
+        audio_choice = self.combo_exp_audio.currentText() if hasattr(self, "combo_exp_audio") else "MIDIガイド音 (内部音源)"
+        if "無音" in audio_choice:
+            QMessageBox.information(self, "YouTube音量 自動解析", "動画の音声ソースが「無音」に設定されているため、音量解析は不要です。")
+            return
+
+        self.lbl_status_msg.setText("⏳ YouTube音量を解析中 (FFmpegラウドネス測定)...")
         QApplication.processEvents()
 
         temp_wav = get_portable_path(os.path.join("temp", f"yt_loudness_test_{int(time.time())}.wav"))
         os.makedirs(os.path.dirname(temp_wav), exist_ok=True)
 
         try:
-            # 1. 出力範囲の特定
-            if hasattr(self, "radio_exp_part") and self.radio_exp_part.isChecked():
-                start_sec = max(0.0, float(self.spin_exp_start.value()))
-                end_sec = max(start_sec + 0.5, float(self.spin_exp_end.value()))
-                duration_sec = end_sec - start_sec
-            else:
-                start_sec = 0.0
-                duration_sec = self.timeline.total_duration_sec if self.timeline else 60.0
+            # 1. 出力範囲の特定 (動画出力設定の指定範囲と一致させる)
+            start_sec = max(0.0, float(self.spin_exp_start.value())) if hasattr(self, "spin_exp_start") else 0.0
+            end_sec = float(self.spin_exp_end.value()) if hasattr(self, "spin_exp_end") else (self.timeline.total_duration_sec if self.timeline else 60.0)
+            if end_sec <= start_sec:
+                end_sec = float(getattr(self.timeline, "total_duration_sec", start_sec + 60.0))
+            duration_sec = max(0.5, end_sec - start_sec)
 
-            # 2. 外部音声PCM読み込み
-            has_ext = bool(getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path))
-            ext_pcm = self.audio_recorder.read_wav_file(self.ext_audio_path) if has_ext else None
+            # 2. 外部音声ソースの選定とPCM読み込み
+            audio_path = ""
+            if "伴奏音源" in audio_choice:
+                if getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path):
+                    audio_path = self.ext_audio_path
+                elif getattr(self, "last_recorded_path", "") and os.path.isfile(self.last_recorded_path):
+                    audio_path = self.last_recorded_path
+            elif "マイク録音" in audio_choice:
+                if getattr(self, "last_recorded_path", "") and os.path.isfile(self.last_recorded_path):
+                    audio_path = self.last_recorded_path
+                elif getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path):
+                    audio_path = self.ext_audio_path
+
+            ext_pcm = None
+            if audio_path and os.path.isfile(audio_path):
+                try:
+                    from audio_engine import load_external_audio_pcm
+                    ext_pcm = load_external_audio_pcm(audio_path, sample_rate=44100)
+                except Exception as e:
+                    print(f"[YouTube Preset] 外部音源読み込みエラー: {e}")
+
+            ext_audio_mode = getattr(self, "ext_audio_mode", "頭出し確認 (再生:両方 / 動画:外部のみ)")
+            if ("伴奏音源" in audio_choice or "マイク録音" in audio_choice) and ext_pcm is not None:
+                ext_audio_mode = "動画:外部のみ"
+
+            part_mode = self.part_combo.currentText() if hasattr(self, "part_combo") else "全パート再生"
 
             # 3. 音声トラック合成 (基準ボリューム100%かつリミッターなしで生特性を測定)
             from audio_engine import synthesize_midi_to_wav
@@ -3787,11 +3826,11 @@ class HarmonicaMainWindow(QMainWindow):
                 output_wav_path=temp_wav,
                 sample_rate=44100,
                 accompaniment_notes=self.timeline.accomp_notes if self.timeline else [],
-                part_play_mode=self.combo_part.currentText() if hasattr(self, "combo_part") else "全パート再生",
+                part_play_mode=part_mode,
                 ext_audio_pcm=ext_pcm,
-                ext_audio_mode=getattr(self, "ext_audio_mode", ""),
+                ext_audio_mode=ext_audio_mode,
                 ext_audio_offset_ms=self.spin_ext_offset.value() if hasattr(self, "spin_ext_offset") else 0,
-                ext_audio_vol_pct=self.slider_ext_vol.value() if hasattr(self, "slider_ext_vol") else 100.0,
+                ext_audio_vol_pct=float(self.slider_ext_vol.value()) if hasattr(self, "slider_ext_vol") else 100.0,
                 sec_a_in_song=start_sec,
                 yt_limiter=False
             )
@@ -3819,14 +3858,20 @@ class HarmonicaMainWindow(QMainWindow):
             input_tp = float(data.get("input_tp", -99.0))
 
             if input_i <= -70.0:
-                opt_vol_pct = 100
-                diff_db = 0.0
-            else:
-                gain_lufs_db = -14.0 - input_i
-                max_peak_gain_db = -1.0 - input_tp
-                diff_db = min(gain_lufs_db, max_peak_gain_db)
-                gain_linear = 10.0 ** (diff_db / 20.0)
-                opt_vol_pct = max(10, min(200, int(round(100.0 * gain_linear))))
+                QMessageBox.warning(
+                    self,
+                    "YouTube音量 自動解析",
+                    f"測定された音声が無音または極めて小さいレベルです ({input_i:.1f} LUFS)。\n"
+                    f"現在の音量設定を変更せずに維持しました。"
+                )
+                self.lbl_status_msg.setText("準備完了")
+                return
+
+            gain_lufs_db = -14.0 - input_i
+            max_peak_gain_db = -1.0 - input_tp
+            diff_db = min(gain_lufs_db, max_peak_gain_db)
+            gain_linear = 10.0 ** (diff_db / 20.0)
+            opt_vol_pct = max(10, min(200, int(round(100.0 * gain_linear))))
 
             # 5. UIへの反映
             if hasattr(self, "slider_exp_audio_vol"):
@@ -3852,11 +3897,7 @@ class HarmonicaMainWindow(QMainWindow):
         except Exception as e:
             print(f"[YouTube Audio Analyzer Error] {e}")
             self.lbl_status_msg.setText(f"YouTube音量解析エラー: {e}")
-            QMessageBox.warning(self, "音量解析エラー", f"音量解析中にエラーが発生しました:\n{e}\n\n動画音量を標準の100%に設定します。")
-            if hasattr(self, "slider_exp_audio_vol"):
-                self.slider_exp_audio_vol.setValue(100)
-            if hasattr(self, "chk_yt_limiter"):
-                self.chk_yt_limiter.setChecked(True)
+            QMessageBox.warning(self, "音量解析エラー", f"音量解析中にエラーが発生しました:\n{e}\n\n現在の音量設定を維持します。")
         finally:
             if os.path.exists(temp_wav):
                 try:
@@ -3868,25 +3909,42 @@ class HarmonicaMainWindow(QMainWindow):
         try:
             self.ext_offset_ms = int(val)
             self.user_settings["ext_audio_offset_ms"] = val
-            if self.clock.is_playing and getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path):
-                mode = getattr(self, "ext_audio_mode", "")
-                if "ガイド音のみ" not in mode and "伴奏ミュート" not in mode and "外部音源オフ" not in mode:
-                    cur_sec = self.clock.get_current_base_sec()
-                    ext_time = max(0.0, cur_sec + val / 1000.0)
-                    vol = (self.slider_ext_vol.value() / 100.0) * (self.vol_slider.value() / 100.0)
-                    try:
+
+            # 再生中の場合、前奏カウントイン中(cur_sec < 0)でなければデバウンス同期を起動
+            if self.clock.get_state() == SharedClockBridge.STATE_PLAYING:
+                cur_sec = self.clock.get_current_base_sec()
+                if cur_sec >= 0.0:
+                    self._ext_resync_timer.start()
+
+            # 設定・プロファイルの保存をデバウンス (連打時のディスクI/O競合を抑制)
+            self._ext_save_timer.start()
+        except Exception as e:
+            print(f"[ExtAudio Offset Error] {e}")
+
+    def _do_ext_audio_resync(self):
+        try:
+            if self.clock.get_state() == SharedClockBridge.STATE_PLAYING and getattr(self, "ext_audio_path", "") and os.path.isfile(self.ext_audio_path):
+                cur_sec = self.clock.get_current_base_sec()
+                if cur_sec >= 0.0:
+                    mode = getattr(self, "ext_audio_mode", "")
+                    if "ガイド音のみ" not in mode and "伴奏ミュート" not in mode and "外部音源オフ" not in mode:
+                        ext_time = max(0.0, cur_sec + self.ext_offset_ms / 1000.0)
+                        vol = (self.slider_ext_vol.value() / 100.0) * (self.vol_slider.value() / 100.0)
                         import pygame
                         if not pygame.mixer.get_init():
                             pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
                         if pygame.mixer.get_init():
                             pygame.mixer.music.set_volume(vol)
                             pygame.mixer.music.play(start=ext_time)
-                    except Exception as e:
-                        print(f"[ExtAudio Offset Resync Warning] {e}")
+        except Exception as e:
+            print(f"[ExtAudio Offset Resync Warning] {e}")
+
+    def _do_ext_offset_save(self):
+        try:
             self._save_current_song_profile()
             self._save_current_settings()
         except Exception as e:
-            print(f"[ExtAudio Offset Error] {e}")
+            print(f"[ExtAudio Offset Save Error] {e}")
 
     def _on_ext_offset_adjust(self, delta_ms: int):
         try:
