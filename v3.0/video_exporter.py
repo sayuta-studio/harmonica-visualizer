@@ -1060,7 +1060,8 @@ class VideoExportThread(QThread):
                     ext_audio_offset_ms=ext_offset_ms,
                     ext_audio_vol_pct=ext_vol_pct,
                     sec_a_in_song=start_sec,
-                    yt_limiter=yt_limiter
+                    yt_limiter=yt_limiter,
+                    mixer_settings=self.config.get("mixer_settings", None)
                 )
 
             # 3. FFmpeg コマンドライン構築

@@ -35,7 +35,7 @@ from ipc_state import SharedClockBridge
 from midi_timeline import MidiTimelineData
 from gl_visualizer import HarmonicaGLWidget
 from audio_engine import AudioEngine, AudioRecorder, AuditionPlayer, apply_harmonica_reverb_numpy
-from dialogs import PartSelectDialog
+from dialogs import PartSelectDialog, AudioTrackMixerDialog
 import settings_manager
 import harmonica_map
 from harmonica_map import CURRENT_SONG_PRESET, apply_fingering_preset
@@ -2074,7 +2074,7 @@ class HarmonicaMainWindow(QMainWindow):
         l_aud.addWidget(QLabel("🎵 <b>動画の音声トラック設定:</b>"))
 
         r_asrc = QHBoxLayout()
-        r_asrc.addWidget(QLabel("音声ソース:"))
+        r_asrc.addWidget(QLabel("クイック指定:"))
         self.combo_exp_audio = QComboBox(self)
         self.combo_exp_audio.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_exp_audio.addItems([
@@ -2083,10 +2083,26 @@ class HarmonicaMainWindow(QMainWindow):
             "MIDIガイド音 (内部音源)",
             "無音 (映像のみ)"
         ])
-        self.combo_exp_audio.setToolTip("動画に合成する音声ソースの優先順位")
+        self.combo_exp_audio.setToolTip("動画に合成する音声ソースのクイック設定")
         self._configure_sidebar_combo(self.combo_exp_audio, max_width=230)
+        self.combo_exp_audio.currentTextChanged.connect(self._on_quick_audio_source_changed)
         r_asrc.addWidget(self.combo_exp_audio, stretch=1)
         l_aud.addLayout(r_asrc)
+
+        # マルチトラック・ミキサー設定行
+        r_mix_btn = QHBoxLayout()
+        self.btn_open_mixer = QPushButton("🎚️ 音声トラック・ミキサー設定...", self)
+        self.btn_open_mixer.setFixedHeight(26)
+        self.btn_open_mixer.setStyleSheet("font-weight: bold; background-color: #1E293B; border: 1px solid #38BDF8; color: #38BDF8; border-radius: 3px;")
+        self.btn_open_mixer.setToolTip("外部伴奏・マイク録音・MIDI伴奏を複数同時に組み合わせて動画に合成・バランス調整")
+        self.btn_open_mixer.clicked.connect(self._on_open_audio_mixer_dialog)
+        r_mix_btn.addWidget(self.btn_open_mixer)
+        l_aud.addLayout(r_mix_btn)
+
+        self.lbl_mixer_summary = QLabel("構成: 伴奏音源(100%)", self)
+        self.lbl_mixer_summary.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        self.lbl_mixer_summary.setWordWrap(True)
+        l_aud.addWidget(self.lbl_mixer_summary)
 
         self.chk_exp_reverb = QCheckBox("音声にリバーブを適用", self)
         self.chk_exp_reverb.setChecked(bool(self.user_settings.get("reverb_enabled", False)))
@@ -3887,6 +3903,92 @@ class HarmonicaMainWindow(QMainWindow):
             pass
         self._save_current_settings()
 
+    def _get_current_mixer_settings(self) -> dict:
+        """現在のミキサー設定ディクショナリを取得 (常に最新のUI状態を同期反映)"""
+        ext_path = getattr(self, "ext_audio_path", "")
+        rec_path = getattr(self, "last_recorded_path", "")
+        has_ext = bool(ext_path and os.path.isfile(ext_path))
+        has_rec = bool(rec_path and os.path.isfile(rec_path))
+
+        if not hasattr(self, "_mixer_settings") or not isinstance(self._mixer_settings, dict):
+            self._mixer_settings = {
+                "track_ext_enabled": has_ext,
+                "track_ext_path": ext_path,
+                "track_ext_vol": int(self.slider_ext_vol.value()) if hasattr(self, "slider_ext_vol") else 100,
+                "track_ext_offset_ms": int(self.spin_ext_offset.value()) if hasattr(self, "spin_ext_offset") else 0,
+
+                "track_rec_enabled": has_rec,
+                "track_rec_path": rec_path,
+                "track_rec_vol": 100,
+                "track_rec_reverb": bool(self.chk_reverb.isChecked()) if hasattr(self, "chk_reverb") else False,
+                "track_rec_offset_ms": int(self.spin_rec_offset.value()) if hasattr(self, "spin_rec_offset") else 0,
+
+                "track_midi_enabled": not has_ext and not has_rec,
+                "track_midi_mode": "全パート再生",
+                "track_midi_vol": int(self.vol_slider.value()) if hasattr(self, "vol_slider") else 100,
+            }
+        else:
+            if ext_path:
+                self._mixer_settings["track_ext_path"] = ext_path
+            if rec_path:
+                self._mixer_settings["track_rec_path"] = rec_path
+            if hasattr(self, "spin_ext_offset"):
+                self._mixer_settings["track_ext_offset_ms"] = int(self.spin_ext_offset.value())
+            if hasattr(self, "spin_rec_offset"):
+                self._mixer_settings["track_rec_offset_ms"] = int(self.spin_rec_offset.value())
+            if hasattr(self, "chk_reverb"):
+                self._mixer_settings["track_rec_reverb"] = bool(self.chk_reverb.isChecked())
+
+        return self._mixer_settings
+
+    def _update_mixer_summary_label(self):
+        """動画出力タブのミキサー概要テキストを更新"""
+        if not hasattr(self, "lbl_mixer_summary"):
+            return
+        cfg = self._get_current_mixer_settings()
+        parts = []
+        if cfg.get("track_ext_enabled", False):
+            parts.append(f"伴奏({cfg.get('track_ext_vol', 100)}%)")
+        if cfg.get("track_rec_enabled", False):
+            rev_str = "・Rev" if cfg.get("track_rec_reverb", False) else ""
+            parts.append(f"録音({cfg.get('track_rec_vol', 100)}%{rev_str})")
+        if cfg.get("track_midi_enabled", False):
+            parts.append(f"MIDI({cfg.get('track_midi_vol', 100)}%)")
+        if not parts:
+            parts.append("無音")
+        self.lbl_mixer_summary.setText("構成: " + " + ".join(parts))
+
+    def _on_quick_audio_source_changed(self, choice: str):
+        """クイック指定コンボが切り替えられた際にミキサー設定を追従"""
+        cfg = self._get_current_mixer_settings()
+        if "無音" in choice:
+            cfg["track_ext_enabled"] = False
+            cfg["track_rec_enabled"] = False
+            cfg["track_midi_enabled"] = False
+        elif "マイク録音" in choice:
+            cfg["track_ext_enabled"] = False
+            cfg["track_rec_enabled"] = True
+            cfg["track_midi_enabled"] = False
+        elif "伴奏音源" in choice:
+            cfg["track_ext_enabled"] = True
+            cfg["track_rec_enabled"] = False
+            cfg["track_midi_enabled"] = False
+        elif "MIDI" in choice:
+            cfg["track_ext_enabled"] = False
+            cfg["track_rec_enabled"] = False
+            cfg["track_midi_enabled"] = True
+        self._update_mixer_summary_label()
+
+    def _on_open_audio_mixer_dialog(self):
+        """音声トラック・ミキサーダイアログを開く"""
+        cfg = self._get_current_mixer_settings()
+        dlg = AudioTrackMixerDialog(cfg, timeline=self.timeline, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._mixer_settings = dlg.get_settings()
+            self._update_mixer_summary_label()
+            self.lbl_status_msg.setText("🎚️ 音声トラック・ミキサー設定を更新しました")
+            self._save_current_settings()
+
     def _apply_youtube_volume_preset(self):
         """YouTube音声仕様（目標 -14.0 LUFS / True Peak -1.0 dBFS）に基づき、動画出力全体の音量を自動測定・最適化"""
         if (not hasattr(self, "timeline") or not self.timeline or self.timeline.total_duration_sec <= 0) and \
@@ -3958,7 +4060,8 @@ class HarmonicaMainWindow(QMainWindow):
                 ext_audio_offset_ms=self.spin_ext_offset.value() if hasattr(self, "spin_ext_offset") else 0,
                 ext_audio_vol_pct=float(self.slider_ext_vol.value()) if hasattr(self, "slider_ext_vol") else 100.0,
                 sec_a_in_song=start_sec,
-                yt_limiter=False
+                yt_limiter=False,
+                mixer_settings=self._get_current_mixer_settings()
             )
 
             # 4. FFmpeg loudnormフィルターによるITU-R BS.1770規格ラウドネス解析
@@ -4368,6 +4471,7 @@ class HarmonicaMainWindow(QMainWindow):
             "export_audio_vol_pct": float(self.slider_exp_audio_vol.value()) if hasattr(self, "slider_exp_audio_vol") else 100.0,
             "ext_audio_offset_ms": self.spin_ext_offset.value(),
             "ext_audio_vol_pct": float(self.slider_ext_vol.value()),
+            "mixer_settings": self._get_current_mixer_settings(),
             "ext_audio_mode": self.ext_audio_mode,
             "codec": codec,
             "audio_source": audio_choice,

@@ -1298,12 +1298,44 @@ def load_external_audio_pcm(filepath, sample_rate=44100):
         return np.ascontiguousarray(stereo, dtype=np.int16)
 
 
+def _add_audio_track_to_mix(out_stereo, pcm_data, vol_gain, offset_ms, video_song_start_sec, sec_a_in_song, max_duration, num_samples, sample_rate):
+    """任意のPCMステレオ配列をオフセット・ゲイン・端点フェード付きでマスター波形に加算合成"""
+    if pcm_data is None or len(pcm_data) == 0 or vol_gain <= 0.0:
+        return
+    offset_sec = float(offset_ms) / 1000.0
+    ext_zero_in_video_sec = video_song_start_sec - sec_a_in_song + offset_sec
+    video_song_end_sec = video_song_start_sec + max_duration
+
+    dst_min_sample = int(round(video_song_start_sec * sample_rate))
+    dst_max_sample = int(round(min(num_samples, video_song_end_sec * sample_rate)))
+    dst_start = max(dst_min_sample, int(round(ext_zero_in_video_sec * sample_rate)))
+    src_start = max(0, int(round((dst_start / float(sample_rate) - ext_zero_in_video_sec) * sample_rate)))
+
+    if dst_start >= dst_max_sample:
+        return
+    avail_src = max(0, len(pcm_data) - src_start)
+    avail_dst = max(0, dst_max_sample - dst_start)
+    copy_len = min(avail_src, avail_dst)
+    if copy_len <= 0:
+        return
+
+    ext_slice = (pcm_data[src_start:src_start + copy_len].astype(np.float32) / 32768.0) * vol_gain
+    fi = min(int(0.015 * sample_rate), copy_len)
+    fo = min(int(0.025 * sample_rate), copy_len)
+    if fi > 0:
+        ext_slice[:fi] *= np.linspace(0.0, 1.0, fi, dtype=np.float32)[:, np.newaxis]
+    if fo > 0:
+        ext_slice[-fo:] *= np.linspace(1.0, 0.0, fo, dtype=np.float32)[:, np.newaxis]
+    out_stereo[dst_start:dst_start + copy_len] += ext_slice
+
+
 def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, is_metro, output_wav_path,
                            time_sig_num=4, time_sig_den=4, count_in_measures=1, measures_timeline=None,
                            metronome_pattern="標準（頭拍強調）", ticks_per_beat=480, sample_rate=44100,
                            tick_to_sec_fn=None, accompaniment_notes=None, part_play_mode="全パート再生",
                            intro_sec=0.0, outro_sec=0.0, ext_audio_pcm=None, ext_audio_mode="頭出し確認 (再生:両方 / 動画:外部のみ)",
-                           ext_audio_offset_ms=0, ext_audio_vol_pct=100.0, sec_a_in_song=0.0, yt_limiter=True):
+                           ext_audio_offset_ms=0, ext_audio_vol_pct=100.0, sec_a_in_song=0.0, yt_limiter=True,
+                           mixer_settings: dict = None):
     """
     MIDI演奏情報および外部オーディオ（ミリ秒オフセット・音量%・YouTube上限リミッター対応）から
     高音質PCM WAVファイルを物理合成して出力。
@@ -1442,66 +1474,66 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
         if max_val > 0.0:
             samples = (samples / max_val) * 0.8
 
-    # D. 外部オーディオ合成（ステレオ出力）
-    if has_ext_audio:
-        out_stereo = np.zeros((num_samples, 2), dtype=np.float32)
+    # D. マルチトラック合成または単一トラック出力（ステレオ出力）
+    video_song_start_sec = intro_sec + count_in_duration
+    out_stereo = np.zeros((num_samples, 2), dtype=np.float32)
+
+    if mixer_settings is not None and isinstance(mixer_settings, dict):
+        # 1. Track 3: MIDI内部音源
+        if mixer_settings.get("track_midi_enabled", False):
+            midi_vol = max(0.0, min(2.5, float(mixer_settings.get("track_midi_vol", 100)) / 100.0))
+            out_stereo[:, 0] += samples * midi_vol
+            out_stereo[:, 1] += samples * midi_vol
+
+        # 2. Track 1: 外部伴奏音源
+        if mixer_settings.get("track_ext_enabled", False):
+            ext_path = mixer_settings.get("track_ext_path", "")
+            if ext_path and os.path.isfile(ext_path):
+                pcm_1 = load_external_audio_pcm(ext_path, sample_rate=sample_rate)
+                vol_1 = max(0.0, min(2.5, float(mixer_settings.get("track_ext_vol", 100)) / 100.0))
+                off_1 = int(mixer_settings.get("track_ext_offset_ms", 0))
+                _add_audio_track_to_mix(out_stereo, pcm_1, vol_1, off_1, video_song_start_sec, sec_a_in_song, max_duration, num_samples, sample_rate)
+
+        # 3. Track 2: マイク録音テイク
+        if mixer_settings.get("track_rec_enabled", False):
+            rec_path = mixer_settings.get("track_rec_path", "")
+            if rec_path and os.path.isfile(rec_path):
+                target_rec = rec_path
+                if mixer_settings.get("track_rec_reverb", False):
+                    rev_p = os.path.splitext(rec_path)[0] + "_reverb.wav"
+                    if not os.path.exists(rev_p):
+                        apply_harmonica_reverb_numpy(rec_path, rev_p, "ホール (豊かな広がり)", 35)
+                    if os.path.exists(rev_p):
+                        target_rec = rev_p
+                pcm_2 = load_external_audio_pcm(target_rec, sample_rate=sample_rate)
+                vol_2 = max(0.0, min(2.5, float(mixer_settings.get("track_rec_vol", 100)) / 100.0))
+                off_2 = int(mixer_settings.get("track_rec_offset_ms", 0))
+                _add_audio_track_to_mix(out_stereo, pcm_2, vol_2, off_2, video_song_start_sec, sec_a_in_song, max_duration, num_samples, sample_rate)
+    elif has_ext_audio:
         if include_guide_synth:
             out_stereo[:, 0] = samples * 0.85
             out_stereo[:, 1] = samples * 0.85
-
-        video_song_start_sec = intro_sec + count_in_duration
-        video_song_end_sec = video_song_start_sec + max_duration
-        offset_sec = float(ext_audio_offset_ms) / 1000.0
-        ext_zero_in_video_sec = video_song_start_sec - sec_a_in_song + offset_sec
-
-        dst_min_sample = int(round(video_song_start_sec * sample_rate))
-        dst_max_sample = int(round(min(num_samples, video_song_end_sec * sample_rate)))
-        dst_start = max(dst_min_sample, int(round(ext_zero_in_video_sec * sample_rate)))
-        src_start = max(0, int(round((dst_start / float(sample_rate) - ext_zero_in_video_sec) * sample_rate)))
-
-        if dst_start >= dst_max_sample:
-            copy_len = 0
-        else:
-            avail_src = max(0, len(ext_audio_pcm) - src_start)
-            avail_dst = max(0, dst_max_sample - dst_start)
-            copy_len = min(avail_src, avail_dst)
-
-        if copy_len > 0:
-            vol_gain = max(0.0, min(2.5, float(ext_audio_vol_pct) / 100.0))
-            ext_slice = (ext_audio_pcm[src_start:src_start + copy_len].astype(np.float32) / 32768.0) * vol_gain
-            fi = min(int(0.015 * sample_rate), copy_len)
-            fo = min(int(0.025 * sample_rate), copy_len)
-            if fi > 0:
-                ext_slice[:fi] *= np.linspace(0.0, 1.0, fi, dtype=np.float32)[:, np.newaxis]
-            if fo > 0:
-                ext_slice[-fo:] *= np.linspace(1.0, 0.0, fo, dtype=np.float32)[:, np.newaxis]
-            out_stereo[dst_start:dst_start + copy_len] += ext_slice
-
-        peak = float(np.max(np.abs(out_stereo)))
-        if yt_limiter:
-            yt_ceiling = 0.89125  # -1.0 dBFS
-            if peak > yt_ceiling:
-                out_stereo *= (yt_ceiling / peak)
-        else:
-            if peak > 1.0:
-                out_stereo = np.clip(out_stereo, -1.0, 1.0)
-
-        samples_16 = (out_stereo * 32767.0).astype(np.int16)
-        with wave.open(output_wav_path, 'wb') as wav_file:
-            wav_file.setnchannels(2)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(sample_rate)
-            wav_file.writeframes(samples_16.tobytes())
+        vol_legacy = max(0.0, min(2.5, float(ext_audio_vol_pct) / 100.0))
+        _add_audio_track_to_mix(out_stereo, ext_audio_pcm, vol_legacy, ext_audio_offset_ms, video_song_start_sec, sec_a_in_song, max_duration, num_samples, sample_rate)
     else:
-        if yt_limiter:
-            peak = float(np.max(np.abs(samples)))
-            if peak > 0.89125:
-                samples *= (0.89125 / peak)
-        samples_16 = (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
-        with wave.open(output_wav_path, 'wb') as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(sample_rate)
-            wav_file.writeframes(samples_16.tobytes())
+        out_stereo[:, 0] = samples
+        out_stereo[:, 1] = samples
+
+    # E. True Peak リミッター & WAV保存
+    peak = float(np.max(np.abs(out_stereo)))
+    if yt_limiter:
+        yt_ceiling = 0.89125  # -1.0 dBFS
+        if peak > yt_ceiling:
+            out_stereo *= (yt_ceiling / peak)
+    else:
+        if peak > 1.0:
+            out_stereo = np.clip(out_stereo, -1.0, 1.0)
+
+    samples_16 = (out_stereo * 32767.0).astype(np.int16)
+    with wave.open(output_wav_path, 'wb') as wav_file:
+        wav_file.setnchannels(2)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(samples_16.tobytes())
 
     return output_wav_path

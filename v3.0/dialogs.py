@@ -1761,3 +1761,288 @@ class SkinSelectDialog(QDialog):
             "lever_on_path": self.cur_lever_on_path,
             "skin_enabled": self.skin_enabled,
         }
+
+
+class AudioTrackMixerDialog(QDialog):
+    """動画音声トラック・ミキサー (3系統マルチトラック合成ダイアログ)"""
+
+    def __init__(self, mixer_settings: dict, timeline=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("🎚️ 動画音声トラック・ミキサー")
+        self.resize(520, 640)
+        self.setModal(True)
+        self.timeline = timeline
+        self.settings = dict(mixer_settings)
+        self._audition_player = None
+        self._temp_preview_wav = None
+
+        self._init_ui()
+
+    def _init_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(14, 14, 14, 14)
+        main_layout.setSpacing(10)
+
+        lbl_desc = QLabel("動画に合成する音声トラックを複数有効化し、各音量バランスやズレ補正を調整します。")
+        lbl_desc.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        lbl_desc.setWordWrap(True)
+        main_layout.addWidget(lbl_desc)
+
+        # === Track 1: 外部伴奏音源 ===
+        grp_ext = QFrame()
+        grp_ext.setObjectName("groupFrame")
+        grp_ext.setStyleSheet("QFrame#groupFrame { border: 1px solid #334155; border-radius: 6px; padding: 6px; background-color: #0F172A; }")
+        l_ext = QVBoxLayout(grp_ext)
+        l_ext.setSpacing(6)
+
+        self.chk_ext = QCheckBox("🎵 Track 1: 伴奏・外部音源 (Audio File)", self)
+        self.chk_ext.setChecked(bool(self.settings.get("track_ext_enabled", False)))
+        self.chk_ext.setStyleSheet("font-weight: bold; color: #38BDF8;")
+        l_ext.addWidget(self.chk_ext)
+
+        r_ext_f = QHBoxLayout()
+        ext_path = self.settings.get("track_ext_path", "")
+        self.lbl_ext_path = QLabel("ファイル: " + (os.path.basename(ext_path) if ext_path else "未選択"))
+        self.lbl_ext_path.setStyleSheet("color: #CBD5E1; font-size: 11px;")
+        r_ext_f.addWidget(self.lbl_ext_path, stretch=1)
+        btn_browse_ext = QPushButton("📂 変更...", self)
+        btn_browse_ext.setFixedWidth(70)
+        btn_browse_ext.clicked.connect(self._on_browse_ext)
+        r_ext_f.addWidget(btn_browse_ext)
+        l_ext.addLayout(r_ext_f)
+
+        r_ext_v = QHBoxLayout()
+        r_ext_v.addWidget(QLabel("トラック音量:"))
+        self.slider_ext_vol = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider_ext_vol.setRange(0, 200)
+        self.slider_ext_vol.setValue(int(self.settings.get("track_ext_vol", 100)))
+        r_ext_v.addWidget(self.slider_ext_vol)
+        self.lbl_ext_vol = QLabel(f"{self.slider_ext_vol.value()}%", self)
+        self.lbl_ext_vol.setFixedWidth(38)
+        self.slider_ext_vol.valueChanged.connect(lambda v: self.lbl_ext_vol.setText(f"{v}%"))
+        r_ext_v.addWidget(self.lbl_ext_vol)
+        l_ext.addLayout(r_ext_v)
+
+        r_ext_o = QHBoxLayout()
+        r_ext_o.addWidget(QLabel("ズレ補正:"))
+        self.spin_ext_off = QSpinBox(self)
+        self.spin_ext_off.setRange(-5000, 5000)
+        self.spin_ext_off.setSuffix(" ms")
+        self.spin_ext_off.setSingleStep(10)
+        self.spin_ext_off.setFixedWidth(90)
+        self.spin_ext_off.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_ext_off.setValue(int(self.settings.get("track_ext_offset_ms", 0)))
+        r_ext_o.addWidget(self.spin_ext_off)
+        r_ext_o.addStretch()
+        l_ext.addLayout(r_ext_o)
+
+        main_layout.addWidget(grp_ext)
+
+        # === Track 2: マイク録音テイク ===
+        grp_rec = QFrame()
+        grp_rec.setObjectName("groupFrame")
+        grp_rec.setStyleSheet("QFrame#groupFrame { border: 1px solid #7F1D1D; border-radius: 6px; padding: 6px; background-color: #1A0D0D; }")
+        l_rec = QVBoxLayout(grp_rec)
+        l_rec.setSpacing(6)
+
+        self.chk_rec = QCheckBox("🎙️ Track 2: マイク演奏録音 (Recording Take)", self)
+        self.chk_rec.setChecked(bool(self.settings.get("track_rec_enabled", False)))
+        self.chk_rec.setStyleSheet("font-weight: bold; color: #FCA5A5;")
+        l_rec.addWidget(self.chk_rec)
+
+        r_rec_f = QHBoxLayout()
+        rec_path = self.settings.get("track_rec_path", "")
+        self.lbl_rec_path = QLabel("テイク: " + (os.path.basename(rec_path) if rec_path else "未録音/未選択"))
+        self.lbl_rec_path.setStyleSheet("color: #CBD5E1; font-size: 11px;")
+        r_rec_f.addWidget(self.lbl_rec_path, stretch=1)
+        btn_browse_rec = QPushButton("📂 選択...", self)
+        btn_browse_rec.setFixedWidth(70)
+        btn_browse_rec.clicked.connect(self._on_browse_rec)
+        r_rec_f.addWidget(btn_browse_rec)
+        l_rec.addLayout(r_rec_f)
+
+        r_rec_v = QHBoxLayout()
+        r_rec_v.addWidget(QLabel("トラック音量:"))
+        self.slider_rec_vol = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider_rec_vol.setRange(0, 200)
+        self.slider_rec_vol.setValue(int(self.settings.get("track_rec_vol", 100)))
+        r_rec_v.addWidget(self.slider_rec_vol)
+        self.lbl_rec_vol = QLabel(f"{self.slider_rec_vol.value()}%", self)
+        self.lbl_rec_vol.setFixedWidth(38)
+        self.slider_rec_vol.valueChanged.connect(lambda v: self.lbl_rec_vol.setText(f"{v}%"))
+        r_rec_v.addWidget(self.lbl_rec_vol)
+        l_rec.addLayout(r_rec_v)
+
+        r_rec_opts = QHBoxLayout()
+        self.chk_rec_rev = QCheckBox("リバーブ適用", self)
+        self.chk_rec_rev.setChecked(bool(self.settings.get("track_rec_reverb", False)))
+        r_rec_opts.addWidget(self.chk_rec_rev)
+
+        r_rec_opts.addSpacing(15)
+        r_rec_opts.addWidget(QLabel("録音ズレ補正:"))
+        self.spin_rec_off = QSpinBox(self)
+        self.spin_rec_off.setRange(-2000, 2000)
+        self.spin_rec_off.setSuffix(" ms")
+        self.spin_rec_off.setSingleStep(10)
+        self.spin_rec_off.setFixedWidth(90)
+        self.spin_rec_off.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_rec_off.setValue(int(self.settings.get("track_rec_offset_ms", 0)))
+        r_rec_opts.addWidget(self.spin_rec_off)
+        r_rec_opts.addStretch()
+        l_rec.addLayout(r_rec_opts)
+
+        main_layout.addWidget(grp_rec)
+
+        # === Track 3: MIDI内部音源 ===
+        grp_midi = QFrame()
+        grp_midi.setObjectName("groupFrame")
+        grp_midi.setStyleSheet("QFrame#groupFrame { border: 1px solid #1E293B; border-radius: 6px; padding: 6px; background-color: #0F172A; }")
+        l_midi = QVBoxLayout(grp_midi)
+        l_midi.setSpacing(6)
+
+        self.chk_midi = QCheckBox("🎹 Track 3: MIDI内部音源 (Internal Synth)", self)
+        self.chk_midi.setChecked(bool(self.settings.get("track_midi_enabled", False)))
+        self.chk_midi.setStyleSheet("font-weight: bold; color: #A7F3D0;")
+        l_midi.addWidget(self.chk_midi)
+
+        r_midi_m = QHBoxLayout()
+        r_midi_m.addWidget(QLabel("再生パート:"))
+        self.combo_midi_mode = QComboBox(self)
+        self.combo_midi_mode.addItems([
+            "伴奏のみ (主旋律ミュート・カラオケ推奨)",
+            "全パート再生 (主旋律＋伴奏)",
+            "主旋律のみ (ガイドメロディ)"
+        ])
+        mode_str = str(self.settings.get("track_midi_mode", "伴奏のみ (主旋律ミュート・カラオケ推奨)"))
+        for idx in range(self.combo_midi_mode.count()):
+            if mode_str in self.combo_midi_mode.itemText(idx) or self.combo_midi_mode.itemText(idx).startswith(mode_str[:4]):
+                self.combo_midi_mode.setCurrentIndex(idx)
+                break
+        r_midi_m.addWidget(self.combo_midi_mode, stretch=1)
+        l_midi.addLayout(r_midi_m)
+
+        r_midi_v = QHBoxLayout()
+        r_midi_v.addWidget(QLabel("トラック音量:"))
+        self.slider_midi_vol = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider_midi_vol.setRange(0, 200)
+        self.slider_midi_vol.setValue(int(self.settings.get("track_midi_vol", 100)))
+        r_midi_v.addWidget(self.slider_midi_vol)
+        self.lbl_midi_vol = QLabel(f"{self.slider_midi_vol.value()}%", self)
+        self.lbl_midi_vol.setFixedWidth(38)
+        self.slider_midi_vol.valueChanged.connect(lambda v: self.lbl_midi_vol.setText(f"{v}%"))
+        r_midi_v.addWidget(self.lbl_midi_vol)
+        l_midi.addLayout(r_midi_v)
+
+        main_layout.addWidget(grp_midi)
+
+        # === プレビュー試聴 & ボタンバー ===
+        r_prev = QHBoxLayout()
+        self.btn_preview = QPushButton("▶ ミキサーバランスを5秒間試聴", self)
+        self.btn_preview.setStyleSheet("font-weight: bold; padding: 6px;")
+        self.btn_preview.clicked.connect(self._on_toggle_preview)
+        r_prev.addWidget(self.btn_preview)
+        main_layout.addLayout(r_prev)
+
+        r_btns = QHBoxLayout()
+        r_btns.addStretch()
+        btn_cancel = QPushButton("キャンセル", self)
+        btn_cancel.clicked.connect(self.reject)
+        r_btns.addWidget(btn_cancel)
+
+        btn_ok = QPushButton("OK (設定を適用)", self)
+        btn_ok.setStyleSheet("background-color: #2563EB; color: white; font-weight: bold; padding: 6px 14px;")
+        btn_ok.clicked.connect(self._on_apply_and_accept)
+        r_btns.addWidget(btn_ok)
+
+        main_layout.addLayout(r_btns)
+
+    def _on_browse_ext(self):
+        p, _ = QFileDialog.getOpenFileName(self, "伴奏音源を選択", "", "オーディオ (*.mp3 *.wav *.m4a *.flac);;全ファイル (*)")
+        if p:
+            self.settings["track_ext_path"] = p
+            self.lbl_ext_path.setText("ファイル: " + os.path.basename(p))
+            self.chk_ext.setChecked(True)
+
+    def _on_browse_rec(self):
+        p, _ = QFileDialog.getOpenFileName(self, "マイク録音テイクを選択", "recordings", "WAVファイル (*.wav);;全ファイル (*)")
+        if p:
+            self.settings["track_rec_path"] = p
+            self.lbl_rec_path.setText("テイク: " + os.path.basename(p))
+            self.chk_rec.setChecked(True)
+
+    def _on_toggle_preview(self):
+        import time
+        from audio_engine import AuditionPlayer, synthesize_midi_to_wav
+        from config import get_portable_path
+        if self._audition_player and self._audition_player.is_playing():
+            self._audition_player.stop()
+            self.btn_preview.setText("▶ ミキサーバランスを5秒間試聴")
+            return
+
+        cfg = self.get_settings()
+        if not cfg["track_ext_enabled"] and not cfg["track_rec_enabled"] and not cfg["track_midi_enabled"]:
+            QMessageBox.information(self, "試聴", "有効な音声トラックが1つも選択されていません。")
+            return
+
+        self.btn_preview.setText("⏳ 合成中...")
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
+
+        temp_dir = get_portable_path("temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        self._temp_preview_wav = os.path.join(temp_dir, f"mixer_preview_{int(time.time())}.wav")
+
+        try:
+            midi_notes = self.timeline.main_notes if self.timeline else []
+            acc_notes = self.timeline.accomp_notes if self.timeline else []
+            measures = self.timeline.measures_timeline if self.timeline else []
+
+            synthesize_midi_to_wav(
+                midi_notes=midi_notes,
+                current_bpm=120.0,
+                max_duration=5.0,
+                is_count_in=False,
+                is_metro=False,
+                output_wav_path=self._temp_preview_wav,
+                measures_timeline=measures,
+                sample_rate=44100,
+                accompaniment_notes=acc_notes,
+                mixer_settings=cfg,
+                yt_limiter=True
+            )
+
+            if not self._audition_player:
+                self._audition_player = AuditionPlayer()
+            self._audition_player.play(self._temp_preview_wav, volume=1.0)
+            self.btn_preview.setText("⏹ 試聴停止")
+        except Exception as e:
+            QMessageBox.warning(self, "試聴エラー", f"ミキサー試聴合成に失敗しました:\n{e}")
+            self.btn_preview.setText("▶ ミキサーバランスを5秒間試聴")
+
+    def _on_apply_and_accept(self):
+        if self._audition_player:
+            self._audition_player.stop()
+        self.accept()
+
+    def get_settings(self) -> dict:
+        return {
+            "track_ext_enabled": bool(self.chk_ext.isChecked()),
+            "track_ext_path": self.settings.get("track_ext_path", ""),
+            "track_ext_vol": int(self.slider_ext_vol.value()),
+            "track_ext_offset_ms": int(self.spin_ext_off.value()),
+
+            "track_rec_enabled": bool(self.chk_rec.isChecked()),
+            "track_rec_path": self.settings.get("track_rec_path", ""),
+            "track_rec_vol": int(self.slider_rec_vol.value()),
+            "track_rec_reverb": bool(self.chk_rec_rev.isChecked()),
+            "track_rec_offset_ms": int(self.spin_rec_off.value()),
+
+            "track_midi_enabled": bool(self.chk_midi.isChecked()),
+            "track_midi_mode": self.combo_midi_mode.currentText(),
+            "track_midi_vol": int(self.slider_midi_vol.value()),
+        }
+
+    def closeEvent(self, event):
+        if self._audition_player:
+            self._audition_player.stop()
+        super().closeEvent(event)
