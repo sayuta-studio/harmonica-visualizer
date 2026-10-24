@@ -1714,6 +1714,31 @@ class HarmonicaMainWindow(QMainWindow):
         btn_open_rec.clicked.connect(self._on_open_rec_folder)
         r_take.addWidget(btn_open_rec, stretch=1)
         l_rec.addLayout(r_take)
+
+        # 録音ズレ補正 (マイクインターフェース遅延微調整)
+        r_rec_off = QHBoxLayout()
+        r_rec_off.addWidget(QLabel("録音ズレ補正:"))
+        r_rec_off.addStretch()
+        self.spin_rec_offset = QSpinBox(self)
+        self.spin_rec_offset.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.spin_rec_offset.setRange(-2000, 2000)
+        self.spin_rec_offset.setValue(int(self.user_settings.get("rec_offset_ms", 0)))
+        self.spin_rec_offset.setSuffix(" ms")
+        self.spin_rec_offset.setSingleStep(10)
+        self.spin_rec_offset.setFixedWidth(90)
+        self.spin_rec_offset.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_rec_offset.setToolTip("マイクやオーディオインターフェースの録音遅延・タイミングを微調整 [直接入力 / マウスホイール]")
+        self.spin_rec_offset.valueChanged.connect(lambda v: (self.user_settings.update({"rec_offset_ms": int(v)}), self._save_current_settings()))
+        r_rec_off.addWidget(self.spin_rec_offset)
+
+        btn_rec_z = QPushButton("0ms", self)
+        btn_rec_z.setFixedWidth(42)
+        btn_rec_z.setStyleSheet("font-size: 11px; padding: 2px 4px;")
+        btn_rec_z.setToolTip("録音ズレ補正を0msにリセット")
+        btn_rec_z.clicked.connect(lambda: self.spin_rec_offset.setValue(0))
+        r_rec_off.addWidget(btn_rec_z)
+        l_rec.addLayout(r_rec_off)
+
         v_box.addWidget(f_rec)
 
         # 3. ✨ ハーモニカ用リバーブ (空間残響エフェクト)
@@ -3669,10 +3694,21 @@ class HarmonicaMainWindow(QMainWindow):
                 # MIDI再生が停止中なら同時に再生開始
                 if self.clock.get_state() != SharedClockBridge.STATE_PLAYING:
                     self._on_play_toggle()
+
+                # 録音開始時点のクロック秒数を記録 (前奏カウントイン自動カット用)
+                self._rec_start_sec = self.clock.get_current_base_sec()
             else:
                 QMessageBox.warning(self, "録音エラー", "マイク録音デバイスの初期化に失敗しました。\nマイクが接続されているか確認してください。")
         else:
-            saved_path, dur = self.audio_recorder.stop_recording(getattr(self, "_cur_rec_output_path", "recordings/take.wav"))
+            trim_sec = 0.0
+            start_sec = getattr(self, "_rec_start_sec", 0.0)
+            if start_sec < 0.0:
+                trim_sec = abs(start_sec)
+
+            saved_path, dur = self.audio_recorder.stop_recording(
+                getattr(self, "_cur_rec_output_path", "recordings/take.wav"),
+                trim_start_sec=trim_sec
+            )
             self.is_recording = False
             self.btn_rec.setText("🔴 録音")
             self.btn_rec.setStyleSheet("")
@@ -3681,6 +3717,7 @@ class HarmonicaMainWindow(QMainWindow):
 
             if saved_path and dur > 0:
                 self.last_recorded_path = saved_path
+                trim_info = f" (前奏{trim_sec:.1f}秒自動カット済)" if trim_sec > 0.0 else ""
                 self._set_elided_label_text(self.lbl_rec_take, f"録音テイク: {os.path.basename(saved_path)} ({dur:.1f}秒)", saved_path, max_width=300)
                 self.lbl_rec_take.setStyleSheet("color: #34D399; font-weight: bold; font-size: 11px;")
                 self.btn_rec_listen.setEnabled(True)
@@ -3690,9 +3727,9 @@ class HarmonicaMainWindow(QMainWindow):
                     wet = self.slider_reverb_wet.value()
                     rev_path = os.path.splitext(saved_path)[0] + "_reverb.wav"
                     apply_harmonica_reverb_numpy(saved_path, rev_path, rev_type, wet)
-                    self.lbl_status_msg.setText(f"💾 録音完了＆リバーブ生成: {os.path.basename(saved_path)} ({dur:.1f}秒)")
+                    self.lbl_status_msg.setText(f"💾 録音完了＆リバーブ生成: {os.path.basename(saved_path)} ({dur:.1f}秒{trim_info})")
                 else:
-                    self.lbl_status_msg.setText(f"💾 録音完了: {os.path.basename(saved_path)} ({dur:.1f}秒)")
+                    self.lbl_status_msg.setText(f"💾 録音完了: {os.path.basename(saved_path)} ({dur:.1f}秒{trim_info})")
             else:
                 self.lbl_status_msg.setText("⚠️ 録音データが空のため破棄されました")
 

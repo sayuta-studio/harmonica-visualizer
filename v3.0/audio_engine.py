@@ -943,8 +943,8 @@ class AudioRecorder:
             self.device = None
             return False
 
-    def stop_recording(self, output_wav_path):
-        """録音を停止し、WAVファイルとして保存"""
+    def stop_recording(self, output_wav_path, trim_start_sec: float = 0.0):
+        """録音を停止し、WAVファイルとして保存（trim_start_sec > 0 の場合は前奏カウントイン分を自動トリム）"""
         self.is_recording = False
         if self.device:
             try:
@@ -961,13 +961,29 @@ class AudioRecorder:
             import wave
             out_abs = os.path.abspath(output_wav_path)
             os.makedirs(os.path.dirname(out_abs), exist_ok=True)
+
+            bytes_per_sample = self.channels * 2
+            trim_bytes = int(round(max(0.0, float(trim_start_sec)) * self.sample_rate)) * bytes_per_sample
+            trim_bytes = (trim_bytes // bytes_per_sample) * bytes_per_sample
+
+            raw_bytes = bytes(self.buffer)
+            if 0 < trim_bytes < len(raw_bytes):
+                save_data = raw_bytes[trim_bytes:]
+            elif trim_bytes >= len(raw_bytes):
+                save_data = b""
+            else:
+                save_data = raw_bytes
+
+            if len(save_data) == 0:
+                return None, 0.0
+
             with wave.open(out_abs, 'wb') as wf:
                 wf.setnchannels(self.channels)
                 wf.setsampwidth(2)
                 wf.setframerate(self.sample_rate)
-                wf.writeframes(bytes(self.buffer))
+                wf.writeframes(save_data)
 
-            dur = len(self.buffer) / (self.sample_rate * self.channels * 2)
+            dur = len(save_data) / float(self.sample_rate * self.channels * 2)
             self.last_recorded_path = out_abs
             self.last_recorded_dur = dur
             return out_abs, dur
