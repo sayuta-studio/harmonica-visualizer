@@ -9,8 +9,8 @@ Chromatic Harmonica Visualizer v3.0 - モーダルダイアログ群
 import os
 import sys
 import copy
-from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QColor, QPixmap, QImage, QPainter, QPen, QBrush, QFont
+from PyQt6.QtCore import Qt, QRectF, QUrl
+from PyQt6.QtGui import QColor, QPixmap, QImage, QPainter, QPen, QBrush, QFont, QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget, QLabel,
     QPushButton, QComboBox, QSlider, QSpinBox, QAbstractSpinBox, QCheckBox, QColorDialog,
@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from settings_manager import THEME_PRESETS, DEFAULT_SETTINGS
+from config import get_portable_path
 from midi_timeline import get_gm_instrument_name
 
 
@@ -36,12 +37,12 @@ def confirm_dialog(parent, title: str, text: str, default_yes: bool = False) -> 
 
 
 class HarmonicaSettingsDialog(QDialog):
-    """総合詳細設定ダイアログ"""
+    """システム環境設定ダイアログ (Ver.4.0)"""
 
     def __init__(self, current_settings: dict, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("詳細環境設定 (Settings)")
-        self.resize(540, 480)
+        self.setWindowTitle("システム環境設定 (System Preferences)")
+        self.resize(580, 520)
         self.setModal(True)
 
         self.settings = dict(current_settings)
@@ -54,90 +55,90 @@ class HarmonicaSettingsDialog(QDialog):
         main_layout.setContentsMargins(14, 14, 14, 14)
         main_layout.setSpacing(12)
 
-        # タブウィジェット
         self.tabs = QTabWidget(self)
 
-        # --- タブ 1: 画面・テーマ設定 ---
-        tab_view = QWidget()
-        v_layout = QVBoxLayout(tab_view)
-        v_layout.setSpacing(10)
+        # -----------------------------------------------------------------
+        # タブ 1: 🔊 音響・録音デバイス
+        # -----------------------------------------------------------------
+        tab_audio = QWidget()
+        v_audio = QVBoxLayout(tab_audio)
+        v_audio.setSpacing(10)
 
-        # テーマ選択行
-        row_theme = QHBoxLayout()
-        row_theme.addWidget(QLabel("カラーテーマ:"))
-        self.combo_theme = QComboBox(self)
-        self.combo_theme.addItems(["ノーマル", "サクラ", "クールネオン", "モノクロ", "カスタム"])
-        self.combo_theme.currentTextChanged.connect(self._on_theme_changed)
-        row_theme.addWidget(self.combo_theme)
-        row_theme.addStretch()
-        v_layout.addLayout(row_theme)
+        v_audio.addWidget(QLabel("<b>【ガイドMIDI音源・同期】</b>"))
+        row_synth = QHBoxLayout()
+        row_synth.addWidget(QLabel("MIDI再生エンジン:"))
+        self.combo_synth = QComboBox(self)
+        self.combo_synth.addItems(["Windows標準MIDI (推奨)", "内蔵軽量シンセ (遅延0ms)"])
+        row_synth.addWidget(self.combo_synth)
+        row_synth.addStretch()
+        v_audio.addLayout(row_synth)
 
-        # 吹音・吸音カラーピッカー行
-        row_colors = QHBoxLayout()
-        row_colors.addWidget(QLabel("吹音色 (Blow):"))
-        self.btn_color_blow = QPushButton("", self)
-        self.btn_color_blow.setFixedSize(50, 24)
-        self.btn_color_blow.clicked.connect(self._choose_color_blow)
-        row_colors.addWidget(self.btn_color_blow)
+        self.chk_force_harmonica = QCheckBox("主旋律をクロマチックハーモニカ音色 (GM Program 22) に固定", self)
+        v_audio.addWidget(self.chk_force_harmonica)
 
-        row_colors.addSpacing(20)
-        row_colors.addWidget(QLabel("吸音色 (Draw):"))
-        self.btn_color_draw = QPushButton("", self)
-        self.btn_color_draw.setFixedSize(50, 24)
-        self.btn_color_draw.clicked.connect(self._choose_color_draw)
-        row_colors.addWidget(self.btn_color_draw)
-        row_colors.addStretch()
-        v_layout.addLayout(row_colors)
+        row_metro = QHBoxLayout()
+        row_metro.addWidget(QLabel("メトロノームクリック:"))
+        self.combo_metro = QComboBox(self)
+        self.combo_metro.addItems(["なし", "標準（頭拍強調）", "小節頭のみ", "全拍均一"])
+        row_metro.addWidget(self.combo_metro)
+        row_metro.addStretch()
+        v_audio.addLayout(row_metro)
 
-        # レバーON装飾行
-        row_lever = QHBoxLayout()
-        row_lever.addWidget(QLabel("レバーON装飾:"))
-        self.combo_lever = QComboBox(self)
-        self.combo_lever.addItems(["センターライン (芯線)", "センターライン2本 (ダブル芯線)", "センター半割 (スリット)", "サイドライン (明暗適応)", "装飾なし"])
-        row_lever.addWidget(self.combo_lever)
-        row_lever.addStretch()
-        v_layout.addLayout(row_lever)
+        v_audio.addSpacing(10)
+        v_audio.addWidget(QLabel("<b>【マイク録音・オーディオ設定】</b>"))
 
-        # ノーツ不透過度行
-        row_opacity = QHBoxLayout()
-        row_opacity.addWidget(QLabel("ノーツ不透過度:"))
-        self.slider_opacity = QSlider(Qt.Orientation.Horizontal, self)
-        self.slider_opacity.setRange(20, 100)
-        self.slider_opacity.setValue(100)
-        self.lbl_opacity_val = QLabel("100%", self)
-        self.lbl_opacity_val.setMinimumWidth(38)
-        self.slider_opacity.valueChanged.connect(lambda v: self.lbl_opacity_val.setText(f"{v}%"))
-        row_opacity.addWidget(self.slider_opacity)
-        row_opacity.addWidget(self.lbl_opacity_val)
-        v_layout.addLayout(row_opacity)
+        row_ch = QHBoxLayout()
+        row_ch.addWidget(QLabel("録音チャンネル数:"))
+        self.combo_rec_channels = QComboBox(self)
+        self.combo_rec_channels.addItems(["モノラル (1ch・DAW編集向き)", "ステレオ (2ch)"])
+        row_ch.addWidget(self.combo_rec_channels)
+        row_ch.addStretch()
+        v_audio.addLayout(row_ch)
 
-        # 描画オプションチェックボックス
-        self.chk_notes = QCheckBox("落下ノーツを表示", self)
-        self.chk_lookahead = QCheckBox("ノーツ直上に音名ラベルを表示", self)
-        self.chk_grid = QCheckBox("レーンガイド線（オクターブ変形線）を表示", self)
-        self.chk_bar_lines = QCheckBox("小節線を表示", self)
-        self.chk_hole_num = QCheckBox("ハーモニカ穴番号を表示", self)
-        self.chk_legend = QCheckBox("右下に吹吸凡例を表示", self)
+        row_offset = QHBoxLayout()
+        row_offset.addWidget(QLabel("録音ズレ補正初期値:"))
+        self.spin_rec_offset = QSpinBox(self)
+        self.spin_rec_offset.setRange(-500, 500)
+        self.spin_rec_offset.setSingleStep(10)
+        self.spin_rec_offset.setSuffix(" ms")
+        self.spin_rec_offset.setToolTip("録音開始時のレイテンシー補正デフォルト値 (通常0ms〜+80ms)")
+        row_offset.addWidget(self.spin_rec_offset)
+        row_offset.addStretch()
+        v_audio.addLayout(row_offset)
 
-        v_layout.addWidget(self.chk_notes)
-        v_layout.addWidget(self.chk_lookahead)
-        v_layout.addWidget(self.chk_grid)
-        v_layout.addWidget(self.chk_bar_lines)
-        v_layout.addWidget(self.chk_hole_num)
-        v_layout.addWidget(self.chk_legend)
-        v_layout.addStretch()
+        v_audio.addStretch()
+        self.tabs.addTab(tab_audio, "🔊 音響・録音デバイス")
 
-        self.tabs.addTab(tab_view, "🎨 画面・外観")
+        # -----------------------------------------------------------------
+        # タブ 2: 🎨 本体スキン・練習支援
+        # -----------------------------------------------------------------
+        tab_skin_practice = QWidget()
+        v_sp = QVBoxLayout(tab_skin_practice)
+        v_sp.setSpacing(10)
 
-        # --- タブ 2: 練習・音響設定 ---
-        tab_practice = QWidget()
-        p_layout = QVBoxLayout(tab_practice)
-        p_layout.setSpacing(10)
+        v_sp.addWidget(QLabel("<b>【ハーモニカ外観スキン】</b>"))
+        self.chk_skin_enabled = QCheckBox("ハーモニカ本体の外観スキン画像を有効化", self)
+        self.chk_skin_enabled.toggled.connect(self._on_skin_toggled)
+        v_sp.addWidget(self.chk_skin_enabled)
 
-        # ステップアップ練習グループ
-        p_layout.addWidget(QLabel("<b>【ステップアップ練習設定】</b>"))
+        row_skin_file = QHBoxLayout()
+        self.lbl_skin_path = QLabel("画像: 未設定", self)
+        self.lbl_skin_path.setStyleSheet("color: #888888; font-size: 11px;")
+        row_skin_file.addWidget(self.lbl_skin_path, stretch=1)
+
+        self.btn_select_skin = QPushButton("🖼️ スキン選択...", self)
+        self.btn_select_skin.clicked.connect(self._choose_skin_image)
+        row_skin_file.addWidget(self.btn_select_skin)
+
+        self.btn_clear_skin = QPushButton("✕ 解除", self)
+        self.btn_clear_skin.clicked.connect(self._clear_skin_image)
+        row_skin_file.addWidget(self.btn_clear_skin)
+        v_sp.addLayout(row_skin_file)
+
+        v_sp.addSpacing(10)
+        v_sp.addWidget(QLabel("<b>【ステップアップ練習設定】</b>"))
         self.chk_stepup = QCheckBox("A-Bループ折り返し時に再生速度を自動アップ", self)
-        p_layout.addWidget(self.chk_stepup)
+        v_sp.addWidget(self.chk_stepup)
 
         row_sp = QHBoxLayout()
         row_sp.addWidget(QLabel("開始速度:"))
@@ -145,8 +146,6 @@ class HarmonicaSettingsDialog(QDialog):
         self.spin_sp_start.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.spin_sp_start.setRange(30, 200)
         self.spin_sp_start.setSuffix("%")
-        self.spin_sp_start.setValue(70)
-        self.spin_sp_start.setToolTip("練習開始時の再生速度% [直接入力 / マウスホイールで変更]")
         row_sp.addWidget(self.spin_sp_start)
 
         row_sp.addWidget(QLabel("目標速度:"))
@@ -154,42 +153,77 @@ class HarmonicaSettingsDialog(QDialog):
         self.spin_sp_target.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.spin_sp_target.setRange(50, 250)
         self.spin_sp_target.setSuffix("%")
-        self.spin_sp_target.setValue(100)
-        self.spin_sp_target.setToolTip("到達目標の再生速度% [直接入力 / マウスホイールで変更]")
         row_sp.addWidget(self.spin_sp_target)
 
         row_sp.addWidget(QLabel("1周増分:"))
         self.combo_sp_step = QComboBox(self)
         self.combo_sp_step.addItems(["+1%", "+2%", "+5%", "+10%"])
-        self.combo_sp_step.setCurrentText("+5%")
         row_sp.addWidget(self.combo_sp_step)
         row_sp.addStretch()
-        p_layout.addLayout(row_sp)
+        v_sp.addLayout(row_sp)
 
-        p_layout.addSpacing(10)
+        v_sp.addSpacing(10)
+        v_sp.addWidget(QLabel("<b>【詳細描画・装飾】</b>"))
+        row_lever = QHBoxLayout()
+        row_lever.addWidget(QLabel("レバーON装飾:"))
+        self.combo_lever = QComboBox(self)
+        self.combo_lever.addItems(["センターライン (芯線)", "センターライン2本 (ダブル芯線)", "センター半割 (スリット)", "サイドライン (明暗適応)", "装飾なし"])
+        row_lever.addWidget(self.combo_lever)
+        row_lever.addStretch()
+        v_sp.addLayout(row_lever)
 
-        # メトロノーム設定
-        p_layout.addWidget(QLabel("<b>【メトロノーム設定】</b>"))
-        row_metro = QHBoxLayout()
-        row_metro.addWidget(QLabel("クリックパターン:"))
-        self.combo_metro = QComboBox(self)
-        self.combo_metro.addItems(["なし", "標準（頭拍強調）", "小節頭のみ", "全拍均一"])
-        row_metro.addWidget(self.combo_metro)
-        row_metro.addStretch()
-        p_layout.addLayout(row_metro)
+        row_opacity = QHBoxLayout()
+        row_opacity.addWidget(QLabel("ノーツ不透明度:"))
+        self.slider_opacity = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider_opacity.setRange(20, 100)
+        self.lbl_opacity_val = QLabel("100%", self)
+        self.lbl_opacity_val.setMinimumWidth(38)
+        self.slider_opacity.valueChanged.connect(lambda v: self.lbl_opacity_val.setText(f"{v}%"))
+        row_opacity.addWidget(self.slider_opacity)
+        row_opacity.addWidget(self.lbl_opacity_val)
+        v_sp.addLayout(row_opacity)
 
-        p_layout.addSpacing(10)
+        v_sp.addStretch()
+        self.tabs.addTab(tab_skin_practice, "🎨 本体スキン・練習支援")
 
-        # 音響オプション
-        p_layout.addWidget(QLabel("<b>【MIDI音響設定】</b>"))
-        self.chk_force_harmonica = QCheckBox("主旋律をクロマチックハーモニカ音色 (GM Program 22) に強制ルーティング", self)
-        p_layout.addWidget(self.chk_force_harmonica)
-        p_layout.addStretch()
+        # -----------------------------------------------------------------
+        # タブ 3: 📁 プロジェクト・保存先管理
+        # -----------------------------------------------------------------
+        tab_project = QWidget()
+        v_proj = QVBoxLayout(tab_project)
+        v_proj.setSpacing(10)
 
-        self.tabs.addTab(tab_practice, "🎵 練習・音響")
+        v_proj.addWidget(QLabel("<b>【ポータブルデータ管理】</b>"))
+        v_proj.addWidget(QLabel("Harmonica Visualizer のプロジェクト、録音テイク、動画出力先："))
+
+        self.edit_base_path = QLineEdit(self)
+        self.edit_base_path.setReadOnly(True)
+        self.edit_base_path.setText(os.path.abspath(get_portable_path(".")))
+        v_proj.addWidget(self.edit_base_path)
+
+        v_proj.addSpacing(10)
+        v_proj.addWidget(QLabel("<b>【フォルダを直接開く】</b>"))
+
+        btn_proj_dir = QPushButton("📂 projects フォルダを開く (楽曲プロジェクト)", self)
+        btn_proj_dir.clicked.connect(lambda: self._open_dir(get_portable_path("projects")))
+        v_proj.addWidget(btn_proj_dir)
+
+        btn_rec_dir = QPushButton("📂 recordings フォルダを開く (録音テイク)", self)
+        btn_rec_dir.clicked.connect(lambda: self._open_dir(get_portable_path("recordings")))
+        v_proj.addWidget(btn_rec_dir)
+
+        btn_export_dir = QPushButton("📂 exports フォルダを開く (完成動画)", self)
+        btn_export_dir.clicked.connect(lambda: self._open_dir(get_portable_path("exports")))
+        v_proj.addWidget(btn_export_dir)
+
+        v_proj.addStretch()
+        self.tabs.addTab(tab_project, "📁 プロジェクト・保存先管理")
+
         main_layout.addWidget(self.tabs)
 
-        # --- 最下部: ボタンバー ---
+        # -----------------------------------------------------------------
+        # 最下部: ボタンバー
+        # -----------------------------------------------------------------
         btn_layout = QHBoxLayout()
         self.btn_reset = QPushButton("初期設定に戻す", self)
         self.btn_reset.clicked.connect(self._on_reset_defaults)
@@ -208,23 +242,52 @@ class HarmonicaSettingsDialog(QDialog):
 
         main_layout.addLayout(btn_layout)
 
-    def _load_values(self):
-        """現在の設定値を各UI要素に反映"""
-        s = self.settings
-        self.combo_theme.setCurrentText(s.get("color_theme", "ノーマル"))
-        self._update_color_button(self.btn_color_blow, s.get("color_blow", "#FF5500"))
-        self._update_color_button(self.btn_color_draw, s.get("color_draw", "#00BFFF"))
-        self.combo_lever.setCurrentText(s.get("lever_deco_mode", "センターライン (芯線)"))
-        op = int(s.get("note_opacity", 100))
-        self.slider_opacity.setValue(op)
-        self.lbl_opacity_val.setText(f"{op}%")
+    def _open_dir(self, path: str):
+        os.makedirs(path, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(path)))
 
-        self.chk_notes.setChecked(bool(s.get("show_notes", True)))
-        self.chk_lookahead.setChecked(bool(s.get("show_lookahead", True)))
-        self.chk_grid.setChecked(bool(s.get("show_grid", True)))
-        self.chk_bar_lines.setChecked(bool(s.get("show_bar_lines", True)))
-        self.chk_hole_num.setChecked(bool(s.get("show_hole_num", True)))
-        self.chk_legend.setChecked(bool(s.get("show_legend", True)))
+    def _choose_skin_image(self):
+        fpath, _ = QFileDialog.getOpenFileName(
+            self, "ハーモニカ外観スキン画像の選択",
+            get_portable_path("skins") if os.path.isdir(get_portable_path("skins")) else get_portable_path("."),
+            "画像ファイル (*.png *.jpg *.jpeg *.bmp)"
+        )
+        if fpath:
+            self.settings["skin_image_path"] = fpath
+            self.lbl_skin_path.setText(f"画像: {os.path.basename(fpath)}")
+            self.lbl_skin_path.setToolTip(fpath)
+            self.chk_skin_enabled.setChecked(True)
+
+    def _clear_skin_image(self):
+        self.settings["skin_image_path"] = ""
+        self.lbl_skin_path.setText("画像: 未設定")
+        self.lbl_skin_path.setToolTip("")
+        self.chk_skin_enabled.setChecked(False)
+
+    def _on_skin_toggled(self, checked: bool):
+        self.btn_select_skin.setEnabled(checked)
+        self.btn_clear_skin.setEnabled(checked)
+
+    def _load_values(self):
+        s = self.settings
+        self.combo_synth.setCurrentText(s.get("synth_mode", "Windows標準MIDI (推奨)"))
+        self.chk_force_harmonica.setChecked(bool(s.get("force_harmonica", True)))
+        self.combo_metro.setCurrentText(s.get("metronome_mode", "標準（頭拍強調）"))
+
+        ch = int(s.get("rec_channels", 1))
+        self.combo_rec_channels.setCurrentIndex(0 if ch == 1 else 1)
+        self.spin_rec_offset.setValue(int(s.get("rec_offset_ms", 0)))
+
+        skin_en = bool(s.get("skin_enabled", False))
+        self.chk_skin_enabled.setChecked(skin_en)
+        skin_path = s.get("skin_image_path", "")
+        if skin_path and os.path.exists(skin_path):
+            self.lbl_skin_path.setText(f"画像: {os.path.basename(skin_path)}")
+            self.lbl_skin_path.setToolTip(skin_path)
+        else:
+            self.lbl_skin_path.setText("画像: 未設定")
+            self.lbl_skin_path.setToolTip("")
+        self._on_skin_toggled(skin_en)
 
         self.chk_stepup.setChecked(bool(s.get("stepup_enabled", False)))
         self.spin_sp_start.setValue(int(s.get("stepup_start_pct", 70)))
@@ -232,38 +295,10 @@ class HarmonicaSettingsDialog(QDialog):
         inc = s.get("stepup_step_pct", 5)
         self.combo_sp_step.setCurrentText(f"+{inc}%")
 
-        self.combo_metro.setCurrentText(s.get("metronome_mode", "標準（頭拍強調）"))
-        self.chk_force_harmonica.setChecked(bool(s.get("force_harmonica", True)))
-
-    def _update_color_button(self, btn: QPushButton, hex_code: str):
-        btn.setStyleSheet(f"background-color: {hex_code}; border: 1px solid #FFFFFF; border-radius: 4px;")
-        btn.setToolTip(hex_code)
-
-    def _choose_color_blow(self):
-        cur = QColor(self.settings.get("color_blow", "#FF5500"))
-        col = QColorDialog.getColor(cur, self, "吹音色 (Blow) の選択")
-        if col.isValid():
-            hex_str = col.name().upper()
-            self.settings["color_blow"] = hex_str
-            self._update_color_button(self.btn_color_blow, hex_str)
-            self.combo_theme.setCurrentText("カスタム")
-
-    def _choose_color_draw(self):
-        cur = QColor(self.settings.get("color_draw", "#00BFFF"))
-        col = QColorDialog.getColor(cur, self, "吸音色 (Draw) の選択")
-        if col.isValid():
-            hex_str = col.name().upper()
-            self.settings["color_draw"] = hex_str
-            self._update_color_button(self.btn_color_draw, hex_str)
-            self.combo_theme.setCurrentText("カスタム")
-
-    def _on_theme_changed(self, theme_name: str):
-        if theme_name in THEME_PRESETS:
-            blow, draw = THEME_PRESETS[theme_name]
-            self.settings["color_blow"] = blow
-            self.settings["color_draw"] = draw
-            self._update_color_button(self.btn_color_blow, blow)
-            self._update_color_button(self.btn_color_draw, draw)
+        self.combo_lever.setCurrentText(s.get("lever_deco_mode", "センターライン (芯線)"))
+        op = int(s.get("note_opacity", 100))
+        self.slider_opacity.setValue(op)
+        self.lbl_opacity_val.setText(f"{op}%")
 
     def _on_reset_defaults(self):
         if confirm_dialog(self, "確認", "全設定を初期状態にリセットしますか？", default_yes=False):
@@ -271,18 +306,15 @@ class HarmonicaSettingsDialog(QDialog):
             self._load_values()
 
     def _on_save_clicked(self):
-        """全入力を辞書に反映してダイアログ受諾"""
         s = self.settings
-        s["color_theme"] = self.combo_theme.currentText()
-        s["lever_deco_mode"] = self.combo_lever.currentText()
-        s["note_opacity"] = self.slider_opacity.value()
+        s["synth_mode"] = self.combo_synth.currentText()
+        s["force_harmonica"] = self.chk_force_harmonica.isChecked()
+        s["metronome_mode"] = self.combo_metro.currentText()
 
-        s["show_notes"] = self.chk_notes.isChecked()
-        s["show_lookahead"] = self.chk_lookahead.isChecked()
-        s["show_grid"] = self.chk_grid.isChecked()
-        s["show_bar_lines"] = self.chk_bar_lines.isChecked()
-        s["show_hole_num"] = self.chk_hole_num.isChecked()
-        s["show_legend"] = self.chk_legend.isChecked()
+        s["rec_channels"] = 1 if self.combo_rec_channels.currentIndex() == 0 else 2
+        s["rec_offset_ms"] = self.spin_rec_offset.value()
+
+        s["skin_enabled"] = self.chk_skin_enabled.isChecked()
 
         s["stepup_enabled"] = self.chk_stepup.isChecked()
         s["stepup_start_pct"] = self.spin_sp_start.value()
@@ -292,8 +324,8 @@ class HarmonicaSettingsDialog(QDialog):
         except ValueError:
             s["stepup_step_pct"] = 5
 
-        s["metronome_mode"] = self.combo_metro.currentText()
-        s["force_harmonica"] = self.chk_force_harmonica.isChecked()
+        s["lever_deco_mode"] = self.combo_lever.currentText()
+        s["note_opacity"] = self.slider_opacity.value()
 
         self.accept()
 

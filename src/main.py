@@ -36,7 +36,7 @@ from ipc_state import SharedClockBridge
 from midi_timeline import MidiTimelineData
 from gl_visualizer import HarmonicaGLWidget
 from audio_engine import AudioEngine, AudioRecorder, AuditionPlayer, apply_harmonica_reverb_numpy
-from dialogs import PartSelectDialog, AudioTrackMixerDialog
+from dialogs import PartSelectDialog, AudioTrackMixerDialog, HarmonicaSettingsDialog
 import settings_manager
 import harmonica_map
 from harmonica_map import CURRENT_SONG_PRESET, apply_fingering_preset
@@ -771,6 +771,13 @@ class HarmonicaMainWindow(QMainWindow):
         self.btn_spd_100.setToolTip("再生テンポを原曲速度 (100%) に戻す")
         self.btn_spd_100.clicked.connect(lambda: self.speed_slider.setValue(100))
         row1.addWidget(self.btn_spd_100)
+
+        row1.addWidget(QLabel("|", self))
+        self.btn_open_settings = QPushButton("⚙ 設定", self)
+        self.btn_open_settings.setFixedWidth(64)
+        self.btn_open_settings.setToolTip("システム環境設定ウィンドウを開く")
+        self.btn_open_settings.clicked.connect(self._on_open_env_settings_dialog)
+        row1.addWidget(self.btn_open_settings)
 
         top_layout.addLayout(row1)
 
@@ -2910,6 +2917,16 @@ class HarmonicaMainWindow(QMainWindow):
     # =========================================================================
     # 設定の反映と永続化
     # =========================================================================
+    def _on_open_env_settings_dialog(self):
+        """システム環境設定ダイアログを開き、保存された変更をアプリ全体に即時反映"""
+        dlg = HarmonicaSettingsDialog(self.user_settings, parent=self)
+        if dlg.exec():
+            new_settings = dlg.get_settings()
+            self.user_settings.update(new_settings)
+            settings_manager.save_user_settings(self.user_settings)
+            self._apply_user_settings()
+            self._sync_practice_style_ui_values()
+
     def _apply_user_settings(self):
         s = self.user_settings
         self.gl_widget.set_theme_colors(s.get("color_blow", "#FF5500"), s.get("color_draw", "#00BFFF"))
