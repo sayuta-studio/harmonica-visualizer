@@ -11,7 +11,7 @@
 
 ---
 
-#### - [ ] **Micro-Step 1: `src/harmonica_map.py` へのカスタム運指判定ヘルパー追加**
+#### - [x] **Micro-Step 1: `src/harmonica_map.py` へのカスタム運指判定ヘルパー追加**
 - **対象ファイル**: `src/harmonica_map.py`
 - **実装内容**:
   - ファイル末尾（`get_note_fingering_for_song` 関数の直後、488行目以降）に以下の関数を追加する：
