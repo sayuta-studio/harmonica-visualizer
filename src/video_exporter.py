@@ -389,7 +389,7 @@ class OffscreenVisualizerRenderer:
                         x_bot = x_start + k * w_pitch_s
                         lane_idx = (abs_idx // 4) * 12
                         x_top = x_offset + (72.0 + lane_idx * 16.0) * scale - (x_shift_notes * scale)
-                        p.drawLine(QPointF(x_top, y_offset), QPointF(x_top, y_col_s))
+                        p.drawLine(QPointF(x_top, eff_y_offset), QPointF(x_top, y_col_s))
                         if y_str_s > y_col_s:
                             p.drawLine(QPointF(x_top, y_col_s), QPointF(x_bot, y_str_s))
                         p.drawLine(QPointF(x_bot, y_str_s), QPointF(x_bot, y_hole_s))
@@ -548,6 +548,10 @@ class OffscreenVisualizerRenderer:
 
         px_per_sec = 2.0 * self.default_bpm * self.note_speed_ratio * scale
         max_vis_sec = cur_sec + ((y_hole_s - eff_y_offset) / px_per_sec) if px_per_sec > 0 else cur_sec + 5.0
+
+        if clip_rect:
+            p.save()
+            p.setClipRect(clip_rect)
 
         # 1. 小節線描画
         measures = self.timeline.measures_timeline if self.timeline else []
@@ -888,6 +892,9 @@ class OffscreenVisualizerRenderer:
                     note_text = get_note_name(cur_note, is_japanese=is_jp)
                     rect_note = QRectF(cx - w_pitch_s * 0.5, y_center_s + 50.0 * scale, w_pitch_s, 20.0 * scale)
                     _draw_bordered_text_qt(p, rect_note, note_text, self.font_note, self.color_white, self.color_black, border_w=2.0 * scale)
+
+        if clip_rect:
+            p.restore()
 
         # 5. タイトル配置テンプレート描画 & フェード処理
         fade_alpha = 0

@@ -189,7 +189,7 @@ def test_5_to_8_gui_integration():
         main_lines = len(f.readlines())
     print(f"  Current main.py line count: {main_lines} (reduced from 5,727)")
     assert main_lines < 5300, f"Expected main.py < 5300 lines, got {main_lines}"
-    assert "Harmonica Visualizer v4.0.0 [Harmonica Studio Edition]" in win.windowTitle()
+    assert "Harmonica Visualizer" in win.windowTitle() and "[Harmonica Studio Edition]" in win.windowTitle()
     print("  -> PASS: StudioExportMixin cleanly extracted and main.py significantly slimmed.")
 
 

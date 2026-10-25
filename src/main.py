@@ -709,6 +709,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.combo_fing_preset.blockSignals(False)
         self._refresh_main_fg_pattern_combo()
         self._sync_practice_style_ui_values()
+        self._on_tab_changed(0)
 
     # =========================================================================
     # UI構築: クラシックL型レイアウト
@@ -1506,8 +1507,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
 
-        # 0. 🎬 動画プリセットの画面デザイン編集バー (v4.0.0 動画専用化)
-        f_target = QFrame()
+        # 0. 🎬 動画プリセットの画面デザイン編集バー (v4.1.0 上部ヘッダー統合により非表示保持)
+        f_target = QFrame(self)
         f_target.setObjectName("groupFrame")
         f_target.setMaximumWidth(328)
         f_target.setStyleSheet("QFrame#groupFrame { border: 1px solid #38BDF8; background-color: #0F172A; }")
@@ -2313,52 +2314,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
 
-        # 0. 🗂️ 動画出力プリセット管理
-        f_preset = QFrame()
-        f_preset.setObjectName("groupFrame")
-        f_preset.setMaximumWidth(328)
-        l_preset = QVBoxLayout(f_preset)
-        l_preset.setContentsMargins(6, 6, 6, 6)
-        l_preset.setSpacing(6)
-        l_preset.addWidget(QLabel("🗂️ <b>動画出力プリセット:</b>"))
-
-        r_pre_top = QHBoxLayout()
-        r_pre_top.addWidget(QLabel("プリセット:"))
-        # v4.1.0: プリセット操作は上部ヘッダーの combo_video_preset に一本化
-        l_preset.addLayout(r_pre_top)
-
-        r_pre_ops = QHBoxLayout()
-        self.btn_preset_save = QPushButton("💾 保存", self)
-        self.btn_preset_save.setToolTip("現在の動画設定および動画用デザインを選択中のプリセットに上書き保存")
-        self.btn_preset_save.clicked.connect(self._on_save_video_preset)
-        r_pre_ops.addWidget(self.btn_preset_save)
-
-        self.btn_preset_save_as = QPushButton("➕ 別名保存...", self)
-        self.btn_preset_save_as.setToolTip("現在の設定で新しい動画プリセットを作成")
-        self.btn_preset_save_as.clicked.connect(self._on_save_as_video_preset)
-        r_pre_ops.addWidget(self.btn_preset_save_as)
-
-        self.btn_preset_reset = QPushButton("↺ 初期化", self)
-        self.btn_preset_reset.setToolTip("公式プリセットは初期値へ復元、自作プリセットは削除します")
-        self.btn_preset_reset.clicked.connect(self._on_reset_or_delete_video_preset)
-        r_pre_ops.addWidget(self.btn_preset_reset)
-        l_preset.addLayout(r_pre_ops)
-
-        self.btn_copy_practice_visual = QPushButton("📋 現在の「練習画面」の見た目を反映", self)
-        self.btn_copy_practice_visual.setFixedHeight(26)
-        self.btn_copy_practice_visual.setStyleSheet("background-color: #1E293B; border: 1px solid #10B981; color: #6EE7B7; font-weight: bold; font-size: 11px; border-radius: 3px;")
-        self.btn_copy_practice_visual.setToolTip("練習画面で設定されている配色・スキン・音名・装飾の見た目を、現在選択中の動画プリセットにコピーしてプレビューに反映します")
-        self.btn_copy_practice_visual.clicked.connect(self._on_copy_practice_visual_to_preset)
-        l_preset.addWidget(self.btn_copy_practice_visual)
-
-        self.btn_jump_design_for_video = QPushButton("🎨 このプリセットの画面デザインを編集...", self)
-        self.btn_jump_design_for_video.setFixedHeight(24)
-        self.btn_jump_design_for_video.setStyleSheet("background-color: #18181B; border: 1px solid #6366F1; color: #A5B4FC; font-size: 11px; border-radius: 3px;")
-        self.btn_jump_design_for_video.setToolTip("画面作りタブへ移動し、この動画プリセットのデザイン（比率・色・スキン等）を編集します")
-        self.btn_jump_design_for_video.clicked.connect(self._on_jump_design_for_video)
-        l_preset.addWidget(self.btn_jump_design_for_video)
-
-        f_preset.setVisible(False)
+        # 0. 🗂️ 動画出力プリセット管理 (v4.1.0: 上部共通ヘッダー f_video_preset_master に完全一元化済み)
 
         # 1. 動画レンダリング品質＆解像度
         f_exp = QFrame()
@@ -3030,16 +2986,17 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         if hasattr(self, "btn_col_draw"):
             self._update_color_btn(self.btn_col_draw, vis.get("color_draw", "#00BFFF"))
 
-        # ★ プリセット切り替え時に比率コンボボックスを確実に同期
+        # ★ プリセット切り替え時に比率コンボボックスと縦型配置コンボを確実に同期
         if hasattr(self, "ratio_combo"):
+            target_key = "9:16" if "9:16" in str(aspect_ratio) else ("4:3" if "4:3" in str(aspect_ratio) else "16:9")
             self.ratio_combo.blockSignals(True)
-            if "9:16" in str(aspect_ratio):
-                self.ratio_combo.setCurrentText("9:16 (縦長 ショート/TikTok)")
-            elif "4:3" in str(aspect_ratio):
-                self.ratio_combo.setCurrentText("4:3 (スタンダード)")
-            else:
-                self.ratio_combo.setCurrentText("16:9 (横長 YouTube標準)")
+            for idx in range(self.ratio_combo.count()):
+                if target_key in self.ratio_combo.itemText(idx):
+                    self.ratio_combo.setCurrentIndex(idx)
+                    break
             self.ratio_combo.blockSignals(False)
+        if hasattr(self, "combo_vertical_layout"):
+            self.combo_vertical_layout.setEnabled("9:16" in str(aspect_ratio))
 
         self.gl_widget.update()
 
@@ -3268,7 +3225,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         else:
             if "practice_visual" not in self.user_settings:
                 self.user_settings["practice_visual"] = copy.deepcopy(settings_manager.DEFAULT_PRACTICE_VISUAL)
-            self.user_settings["practice_visual"].update(vis_cur)
             if hasattr(self, "combo_prac_traj"):
                 self.user_settings["practice_visual"].update({
                     "trajectory_mode": self.combo_prac_traj.currentText(),
@@ -3449,19 +3405,24 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.chk_exp_title.blockSignals(False)
 
         if hasattr(self, "combo_title_template"):
+            tpl_val = str(p.get("export_title_template", "イントロ中央＋右上常時"))
             self.combo_title_template.blockSignals(True)
-            self.combo_title_template.setCurrentText(str(p.get("export_title_template", "イントロ中央＋右上常時")))
+            self.combo_title_template.setCurrentText(tpl_val)
             self.combo_title_template.blockSignals(False)
+            is_tit_on = (tpl_val != "なし")
+            for w_t in ("txt_exp_title", "txt_exp_credit", "spin_title_dur", "combo_title_exit", "combo_fade_title"):
+                if hasattr(self, w_t):
+                    getattr(self, w_t).setEnabled(is_tit_on)
 
         if hasattr(self, "combo_exp_audio"):
             self.combo_exp_audio.blockSignals(True)
             self.combo_exp_audio.setCurrentText(str(p.get("audio_quick_mode", "伴奏音源 (外部音源優先)")))
             self.combo_exp_audio.blockSignals(False)
 
-        if hasattr(self, "chk_exp_reverb"):
-            self.chk_exp_reverb.blockSignals(True)
-            self.chk_exp_reverb.setChecked(bool(p.get("reverb_enabled", False)))
-            self.chk_exp_reverb.blockSignals(False)
+        if hasattr(self, "chk_reverb") and "reverb_enabled" in p:
+            self.chk_reverb.blockSignals(True)
+            self.chk_reverb.setChecked(bool(p.get("reverb_enabled", False)))
+            self.chk_reverb.blockSignals(False)
 
         if hasattr(self, "chk_yt_limiter"):
             self.chk_yt_limiter.blockSignals(True)
@@ -3498,10 +3459,9 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         if getattr(self, "_visual_edit_target", "practice") == "video":
             cur_vis = self._get_current_visual_dict_from_ui()
             target.update(cur_vis)
-
-        ratio_raw = self.ratio_combo.currentText() if hasattr(self, "ratio_combo") else "16:9"
-        clean_ratio = "9:16" if "9:16" in ratio_raw else ("4:3" if "4:3" in ratio_raw else "16:9")
-        target["aspect_ratio"] = clean_ratio
+            ratio_raw = self.ratio_combo.currentText() if hasattr(self, "ratio_combo") else "16:9"
+            clean_ratio = "9:16" if "9:16" in ratio_raw else ("4:3" if "4:3" in ratio_raw else "16:9")
+            target["aspect_ratio"] = clean_ratio
         if hasattr(self, "combo_exp_style"):
             target["export_style"] = self.combo_exp_style.currentText()
         if hasattr(self, "combo_exp_bg"):
@@ -3534,8 +3494,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             target["export_title_template"] = self.combo_title_template.currentText()
         if hasattr(self, "combo_exp_audio"):
             target["audio_quick_mode"] = self.combo_exp_audio.currentText()
-        if hasattr(self, "chk_exp_reverb"):
-            target["reverb_enabled"] = self.chk_exp_reverb.isChecked()
+        if hasattr(self, "chk_reverb"):
+            target["reverb_enabled"] = self.chk_reverb.isChecked()
         if hasattr(self, "chk_yt_limiter"):
             target["yt_limiter"] = self.chk_yt_limiter.isChecked()
         if hasattr(self, "slider_exp_audio_vol"):
@@ -3571,6 +3531,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
         if getattr(self, "_visual_edit_target", "practice") == "video":
             base_dict.update(self._get_current_visual_dict_from_ui())
+            ratio_raw = self.ratio_combo.currentText() if hasattr(self, "ratio_combo") else "16:9"
+            base_dict["aspect_ratio"] = "9:16" if "9:16" in ratio_raw else ("4:3" if "4:3" in ratio_raw else "16:9")
         if hasattr(self, "combo_exp_style"):
             base_dict["export_style"] = self.combo_exp_style.currentText()
         if hasattr(self, "combo_exp_bg"):
@@ -3593,14 +3555,18 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             base_dict["export_fade_out_sec"] = self.spin_fade_out.value()
         if hasattr(self, "combo_fade_title"):
             base_dict["export_fade_title_mode"] = self.combo_fade_title.currentText()
+        if hasattr(self, "spin_title_dur"):
+            base_dict["export_title_duration"] = self.spin_title_dur.value()
+        if hasattr(self, "combo_title_exit"):
+            base_dict["export_title_exit_mode"] = self.combo_title_exit.currentText()
         if hasattr(self, "chk_exp_title"):
             base_dict["export_title_enabled"] = self.chk_exp_title.isChecked()
         if hasattr(self, "combo_title_template"):
             base_dict["export_title_template"] = self.combo_title_template.currentText()
         if hasattr(self, "combo_exp_audio"):
             base_dict["audio_quick_mode"] = self.combo_exp_audio.currentText()
-        if hasattr(self, "chk_exp_reverb"):
-            base_dict["reverb_enabled"] = self.chk_exp_reverb.isChecked()
+        if hasattr(self, "chk_reverb"):
+            base_dict["reverb_enabled"] = self.chk_reverb.isChecked()
         if hasattr(self, "chk_yt_limiter"):
             base_dict["yt_limiter"] = self.chk_yt_limiter.isChecked()
         if hasattr(self, "slider_exp_audio_vol"):

@@ -818,7 +818,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
                         lane_idx = (abs_idx // 4) * 12
                         x_top = x_offset + (72.0 + lane_idx * 16.0) * scale - (x_shift_notes * scale)
                         # 上部
-                        p.drawLine(QPointF(x_top, y_offset), QPointF(x_top, y_col_s))
+                        p.drawLine(QPointF(x_top, eff_y_offset), QPointF(x_top, y_col_s))
                         # 中間変形区間
                         if y_str_s > y_col_s:
                             p.drawLine(QPointF(x_top, y_col_s), QPointF(x_bot, y_str_s))
@@ -997,6 +997,10 @@ class HarmonicaGLWidget(QOpenGLWidget):
         px_per_sec = 2.0 * getattr(self, "default_bpm", 120.0) * self.note_speed_ratio * scale
         max_vis_sec = cur_sec + ((y_hole_s - eff_y_offset) / px_per_sec) if px_per_sec > 0 else cur_sec + 5.0
         is_straight_mode = ("垂直落下" in str(self.trajectory_mode))
+
+        if clip_rect:
+            painter.save()
+            painter.setClipRect(clip_rect)
 
         # 3. 小節線の描画
         if self.show_bar_lines and self.measures and px_per_sec > 0:
@@ -1318,6 +1322,9 @@ class HarmonicaGLWidget(QOpenGLWidget):
                     text_rect = QRectF(label_x - 30.0 * scale, label_y - 10.0 * scale, 60.0 * scale, 20.0 * scale)
                     text_color = QColor("#FDA4AF") if is_muted else self.color_white
                     _draw_bordered_text_qt(painter, text_rect, lbl_text, self.font_note, text_color, self.color_black, border_w=1.2 * scale)
+
+        if clip_rect:
+            painter.restore()
 
         # 5. スライドレバー (スキンまたはプロシージャル3Dメタル)
         lever_x = x_start + total_w

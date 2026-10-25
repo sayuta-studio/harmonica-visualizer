@@ -876,7 +876,7 @@ class StudioExportMixin:
             "audio_source": audio_choice,
             "audio_path": audio_path,
             "part_mode": self.part_combo.currentText(),
-            "reverb_enabled": self.chk_exp_reverb.isChecked(),
+            "reverb_enabled": self.chk_reverb.isChecked() if hasattr(self, "chk_reverb") else False,
             "reverb_type": self.user_settings.get("reverb_type", "ルーム (自然な部屋鳴り)"),
             "reverb_wet_pct": int(self.user_settings.get("reverb_wet_pct", 35)),
             "title_overlay": title_overlay,
