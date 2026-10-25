@@ -86,9 +86,9 @@ harmonica-visualizer/
 
 | パッケージ | ステップ | 対象ファイル | 主な実装内容 | 状態 |
 | :--- | :--- | :--- | :--- | :---: |
-| **Package 1** | **Step 1** | `settings_manager.py`<br>`main.py`<br>`project_manager.py` | プリセット切替時 `ratio_combo` 自動同期＆Shorts比率自己修復、カスタムスキンの練習画面即時反映、フォールバック保存先の `projects/_demo_chromatic` 集約 | **次回最初に着手** |
-| | **Step 2** | `gl_visualizer.py`<br>`harmonica_map.py`<br>`main.py` | モノクロ時の変え指マーク二重コントラスト枠線、`Key +12` パターン名＆ステータスバー移調表記の重複解消 | 未着手 |
-| **Package 2** | **Step 3** | `dialogs.py`<br>`main.py` | `[⚙ 設定]` の重複項目（メトロノーム・ステップアップ）撤去、プロジェクト親子階層ツリー図解表示、`[🎼 パート]` への主旋律音色固定移設 | 未着手 |
+| **Package 1** | **Step 1** | `settings_manager.py`<br>`main.py`<br>`project_manager.py` | プリセット切替時 `ratio_combo` 自動同期＆Shorts比率自己修復、カスタムスキンの練習画面即時反映、フォールバック保存先の `projects/_demo_chromatic` 集約 | **完了 (e413ed4)** |
+| | **Step 2** | `gl_visualizer.py`<br>`harmonica_map.py`<br>`main.py` | モノクロ時の変え指マーク二重コントラスト枠線、`Key +12` パターン名＆ステータスバー移調表記の重複解消 | **完了 (cdda8ef)** |
+| **Package 2** | **Step 3** | `dialogs.py`<br>`main.py` | `[⚙ 設定]` の重複項目（メトロノーム・ステップアップ）撤去、プロジェクト親子階層ツリー図解表示、`[🎼 パート]` への主旋律音色固定移設 | **次回最初に着手** |
 | | **Step 4** | `settings_manager.py`<br>`dialogs.py` | 公式5大プリセット再設計（王道16:9背景MV追加・解説垂直落下）＆ `[⚙ 設定]` への「🎬 初期プリセット比較一覧表」タブ追加 | 未着手 |
 | **Package 3** | **Step 5** | `main.py` | サイドバーの「🎹 練習 vs 🎬 動画制作」2階層タブ化、プリセットヘッダー一元化、「📥 練習からコピー」ボタン、自作プリセット「🗑️ 削除」動的切替、右下保存ボタン撤去 | 未着手 |
 | | **Step 6** | `main.py` | 全セクションを1行最小化できる `CollapsibleSection` 導入、画面デザインタブの順序改善（比率を最上部に配置） | 未着手 |
