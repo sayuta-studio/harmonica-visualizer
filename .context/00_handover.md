@@ -41,6 +41,14 @@ harmonica-visualizer/
 
 ---
 
+
+### 🛠️ 直近の修正（Ver.4.0.0 安定化パッチ）
+1. **[⚙ 設定] ダイアログ保存時の強制終了（クラッシュ）の解消**:
+   - src/main.py の _on_open_env_settings_dialog において、存在しない関数 settings_manager.save_user_settings を呼び出していたため AttributeError でアプリが落ちていた問題を特定し、正しく settings_manager.save_settings を呼ぶように修正。
+2. **カスタムスキン設定の完全直交化（動画版 SkinSelectDialog との統合）**:
+   - HarmonicaSettingsDialog の外観スキン設定ボタンから、動画画面タブと同じ **SkinSelectDialog**（マウスピース、レバーOFF、レバーON、リアルタイム合成プレビュー）を開けるように接続。
+   - 設定保存時にメイン画面の _apply_user_settings で gl_widget.set_custom_skins(...) を実行し、練習画面のハーモニカにも即時反映されるように改修。
+
 ## 2. Ver.4.0.0 全マイルストーン完了実績一覧
 
 | パッケージ | ステップ | コミット | 主な成果 |

@@ -122,15 +122,16 @@ class HarmonicaSettingsDialog(QDialog):
         v_sp.addWidget(self.chk_skin_enabled)
 
         row_skin_file = QHBoxLayout()
-        self.lbl_skin_path = QLabel("画像: 未設定", self)
+        self.lbl_skin_path = QLabel("スキン: 標準メタル / シルバー", self)
         self.lbl_skin_path.setStyleSheet("color: #888888; font-size: 11px;")
         row_skin_file.addWidget(self.lbl_skin_path, stretch=1)
 
-        self.btn_select_skin = QPushButton("🖼️ スキン選択...", self)
+        self.btn_select_skin = QPushButton("🎨 スキン詳細設定...", self)
         self.btn_select_skin.clicked.connect(self._choose_skin_image)
         row_skin_file.addWidget(self.btn_select_skin)
 
-        self.btn_clear_skin = QPushButton("✕ 解除", self)
+        self.btn_clear_skin = QPushButton("↺ 初期化", self)
+        self.btn_clear_skin.setToolTip("標準のメタルカバー・シルバーレバーに戻す")
         self.btn_clear_skin.clicked.connect(self._clear_skin_image)
         row_skin_file.addWidget(self.btn_clear_skin)
         v_sp.addLayout(row_skin_file)
@@ -246,23 +247,37 @@ class HarmonicaSettingsDialog(QDialog):
         os.makedirs(path, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(path)))
 
+    def _update_skin_summary_label(self):
+        mp = self.settings.get("skin_mouthpiece_path", "")
+        lo = self.settings.get("skin_lever_off_path", "")
+        if mp and os.path.exists(mp):
+            mp_name = os.path.basename(mp).replace("マウスピース_", "").replace(".png", "")
+            lo_name = os.path.basename(lo).replace("レバーオフ_", "").replace(".png", "") if lo else "標準"
+            self.lbl_skin_path.setText(f"本体: {mp_name} / レバー: {lo_name}")
+            self.lbl_skin_path.setToolTip(f"本体: {mp}\nレバー: {lo}")
+        else:
+            self.lbl_skin_path.setText("スキン: 標準メタル / シルバー")
+            self.lbl_skin_path.setToolTip("内蔵標準スキン")
+
     def _choose_skin_image(self):
-        fpath, _ = QFileDialog.getOpenFileName(
-            self, "ハーモニカ外観スキン画像の選択",
-            get_portable_path("skins") if os.path.isdir(get_portable_path("skins")) else get_portable_path("."),
-            "画像ファイル (*.png *.jpg *.jpeg *.bmp)"
-        )
-        if fpath:
-            self.settings["skin_image_path"] = fpath
-            self.lbl_skin_path.setText(f"画像: {os.path.basename(fpath)}")
-            self.lbl_skin_path.setToolTip(fpath)
-            self.chk_skin_enabled.setChecked(True)
+        dlg = SkinSelectDialog(self.settings, parent=self)
+        if dlg.exec():
+            res = dlg.get_selected_skins()
+            self.settings["skin_mouthpiece_path"] = res["mouthpiece_path"]
+            self.settings["skin_lever_off_path"] = res["lever_off_path"]
+            self.settings["skin_lever_on_path"] = res["lever_on_path"]
+            self.settings["skin_enabled"] = res["skin_enabled"]
+            self.chk_skin_enabled.setChecked(res["skin_enabled"])
+            self._update_skin_summary_label()
 
     def _clear_skin_image(self):
-        self.settings["skin_image_path"] = ""
-        self.lbl_skin_path.setText("画像: 未設定")
-        self.lbl_skin_path.setToolTip("")
-        self.chk_skin_enabled.setChecked(False)
+        skins_dir = get_portable_path("skins")
+        self.settings["skin_mouthpiece_path"] = os.path.join(skins_dir, "マウスピース_メタル.png")
+        self.settings["skin_lever_off_path"] = os.path.join(skins_dir, "レバーオフ_シルバー.png")
+        self.settings["skin_lever_on_path"] = os.path.join(skins_dir, "レバーオン_シルバー.png")
+        self.settings["skin_enabled"] = True
+        self.chk_skin_enabled.setChecked(True)
+        self._update_skin_summary_label()
 
     def _on_skin_toggled(self, checked: bool):
         self.btn_select_skin.setEnabled(checked)
@@ -278,15 +293,9 @@ class HarmonicaSettingsDialog(QDialog):
         self.combo_rec_channels.setCurrentIndex(0 if ch == 1 else 1)
         self.spin_rec_offset.setValue(int(s.get("rec_offset_ms", 0)))
 
-        skin_en = bool(s.get("skin_enabled", False))
+        skin_en = bool(s.get("skin_enabled", True))
         self.chk_skin_enabled.setChecked(skin_en)
-        skin_path = s.get("skin_image_path", "")
-        if skin_path and os.path.exists(skin_path):
-            self.lbl_skin_path.setText(f"画像: {os.path.basename(skin_path)}")
-            self.lbl_skin_path.setToolTip(skin_path)
-        else:
-            self.lbl_skin_path.setText("画像: 未設定")
-            self.lbl_skin_path.setToolTip("")
+        self._update_skin_summary_label()
         self._on_skin_toggled(skin_en)
 
         self.chk_stepup.setChecked(bool(s.get("stepup_enabled", False)))
@@ -315,6 +324,9 @@ class HarmonicaSettingsDialog(QDialog):
         s["rec_offset_ms"] = self.spin_rec_offset.value()
 
         s["skin_enabled"] = self.chk_skin_enabled.isChecked()
+        s["skin_mouthpiece_path"] = self.settings.get("skin_mouthpiece_path", "")
+        s["skin_lever_off_path"] = self.settings.get("skin_lever_off_path", "")
+        s["skin_lever_on_path"] = self.settings.get("skin_lever_on_path", "")
 
         s["stepup_enabled"] = self.chk_stepup.isChecked()
         s["stepup_start_pct"] = self.spin_sp_start.value()

@@ -2881,9 +2881,13 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         if dlg.exec():
             new_settings = dlg.get_settings()
             self.user_settings.update(new_settings)
-            settings_manager.save_user_settings(self.user_settings)
+            settings_manager.save_settings(self.user_settings)
             self._apply_user_settings()
             self._sync_practice_style_ui_values()
+            # 練習・録音タブ表示中であれば、スキンを含む練習表示をGLウィジェットに再描画
+            if self.tab_widget.currentIndex() in (0, 2):
+                pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
+                self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
 
     def _apply_user_settings(self):
         s = self.user_settings

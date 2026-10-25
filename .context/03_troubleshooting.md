@@ -41,3 +41,15 @@
 - **対処・回避策**:
   - 合成後に ITU-R BS.1770 準拠のラウドネス解析（目標 `-14.0 LUFS`）を実施。
   - True Peak を `-1.0 dBFS`（振幅上限 `0.891`）にクランプするソフトニーリミッターを最終段に適用。
+
+## 5. [⚙ 設定] ダイアログ保存時の AttributeError クラッシュとカスタムスキン選択の非直交性
+- **発生事象**:
+  1. メイン画面ヘッダー右上の [⚙ 設定] ボタンから環境設定を開き、「保存して閉じる」を押すとアプリが強制終了（クラッシュ）する。
+  2. [⚙ 設定] 内のカスタムスキン選択が単一画像ファイルの選択のみで、動画画面タブと同じスライドレバー（ボタン）や口金などのセット選択・リアルタイムプレビューができない。
+- **原因**:
+  1. src/main.py の _on_open_env_settings_dialog で存在しない関数 settings_manager.save_user_settings() を呼び出していた（正しくは settings_manager.save_settings()）。
+  2. HarmonicaSettingsDialog のスキン設定が QFileDialog.getOpenFileName 単体となっており、既存の SkinSelectDialog（マウスピース・レバーOFF/ON・リアルタイム合成プレビュー）と連携していなかった。
+- **対処・回避策**:
+  1. src/main.py の保存呼出を settings_manager.save_settings(self.user_settings) に修正。
+  2. HarmonicaSettingsDialog のスキン選択ボタンから動画版と同じ SkinSelectDialog を呼び出すように統一し、マウスピース・レバーOFF・レバーONの3点設定を完全連動。
+  3. _apply_user_settings で gl_widget.set_custom_skins(...) を実行し、練習画面（OpenGL）にも即時反映されるように改修。
