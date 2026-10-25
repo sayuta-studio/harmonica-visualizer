@@ -119,7 +119,7 @@
 
 ---
 
-#### - [ ] **Micro-Step 7: v3.2.0 全体結合テスト・引き継ぎドキュメント更新・Gitタグ `v3.2.0` 付与**
+#### - [x] **Micro-Step 7: v3.2.0 全体結合テスト・引き継ぎドキュメント更新・Gitタグ `v3.2.0` 付与**
 - **対象ファイル**: `src/main.py`, `.context/00_handover.md`, `.context/02_tasks.md`
 - **実装内容**:
   1. `src/main.py` のウィンドウタイトルを `Harmonica Visualizer v3.2.0 [PyQt6 64-bit OpenGL Edition]` に更新。
