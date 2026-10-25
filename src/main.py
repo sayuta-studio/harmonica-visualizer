@@ -1811,18 +1811,24 @@ class HarmonicaMainWindow(QMainWindow):
         l_rec.addWidget(self.lbl_rec_take)
 
         r_take = QHBoxLayout()
-        r_take.setSpacing(6)
+        r_take.setSpacing(4)
         self.btn_rec_listen = QPushButton("▶ 試聴", self)
-        self.btn_rec_listen.setFixedWidth(70)
+        self.btn_rec_listen.setFixedWidth(64)
         self.btn_rec_listen.setEnabled(False)
-        self.btn_rec_listen.setToolTip("直前に録音したテイクを試聴再生")
+        self.btn_rec_listen.setToolTip("選択中・直前に録音したテイクを単体試聴再生")
         self.btn_rec_listen.clicked.connect(self._on_rec_listen_toggle)
         r_take.addWidget(self.btn_rec_listen)
 
-        btn_open_rec = QPushButton("📂 保存先フォルダ", self)
+        self.btn_select_rec_take = QPushButton("📂 テイク選択...", self)
+        self.btn_select_rec_take.setToolTip("過去に録音したテイクや外部WAVファイルを選択して採用")
+        self.btn_select_rec_take.clicked.connect(self._on_select_rec_take)
+        r_take.addWidget(self.btn_select_rec_take, stretch=1)
+
+        btn_open_rec = QPushButton("📁 保存先", self)
+        btn_open_rec.setFixedWidth(68)
         btn_open_rec.setToolTip("録音されたWAVファイルが保存されるフォルダを開く")
         btn_open_rec.clicked.connect(self._on_open_rec_folder)
-        r_take.addWidget(btn_open_rec, stretch=1)
+        r_take.addWidget(btn_open_rec)
         l_rec.addLayout(r_take)
 
         # 録音ズレ補正 (マイクインターフェース遅延微調整)
@@ -4516,6 +4522,29 @@ class HarmonicaMainWindow(QMainWindow):
         if hasattr(self, "audition_player") and self.audition_player.is_playing():
             self.audition_player.stop()
             self.btn_rec_listen.setText("▶ 試聴")
+
+    def _on_select_rec_take(self):
+        """過去に録音したテイクや任意の録音WAVファイルを選択して採用"""
+        rec_dir = get_portable_path("recordings")
+        os.makedirs(rec_dir, exist_ok=True)
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "採用する録音テイク (WAV) を選択",
+            rec_dir,
+            "WAV Audio (*.wav);;Audio Files (*.wav *.mp3 *.flac *.m4a)"
+        )
+        if not file_path:
+            return
+
+        file_path = os.path.normpath(file_path).replace("\\", "/")
+        self.last_recorded_path = file_path
+        take_name = os.path.basename(file_path)
+        self._set_elided_label_text(self.lbl_rec_take, f"採用テイク: {take_name}", file_path, max_width=310)
+        self.lbl_rec_take.setStyleSheet("color: #34D399; font-weight: bold; font-size: 11px;")
+        self.btn_rec_listen.setEnabled(True)
+        if hasattr(self, "_update_mixer_summary_label"):
+            self._update_mixer_summary_label()
+        self.lbl_status_msg.setText(f"📂 録音テイクを採用しました: {take_name}")
 
     def _on_open_rec_folder(self):
         """録音フォルダを開く"""
