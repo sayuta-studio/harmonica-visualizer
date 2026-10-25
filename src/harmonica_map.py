@@ -4,6 +4,8 @@
 
 import os
 import json
+from config import get_portable_path
+import project_manager
 
 # デフォルトのメーカー標準運指マッピング (C3〜D7)
 DEFAULT_HARMONICA_MAP = {
@@ -190,21 +192,13 @@ CURRENT_SONG_PROFILE_EXTRA = {}
 def get_song_profile_path(midi_path):
     if not midi_path:
         return None
-    filename = os.path.basename(midi_path)
-    name_only, _ = os.path.splitext(filename)
-    from config import get_portable_path
-    fingering_dir = get_portable_path("fingering")
-    return os.path.join(fingering_dir, f"{name_only}_profile.json")
+    return project_manager.get_project_profile_path(midi_path)
 
 
 def get_song_fingering_path(midi_path):
     if not midi_path:
         return None
-    filename = os.path.basename(midi_path)
-    name_only, _ = os.path.splitext(filename)
-    from config import get_portable_path
-    fingering_dir = get_portable_path("fingering")
-    return os.path.join(fingering_dir, f"{name_only}_fingering.txt")
+    return project_manager.get_project_fingering_txt_path(midi_path)
 
 
 def load_song_profile(midi_path) -> dict:
@@ -220,6 +214,17 @@ def load_song_profile(midi_path) -> dict:
     CURRENT_SONG_PROFILE_EXTRA.clear()
 
     json_path = get_song_profile_path(midi_path)
+    # プロジェクト内に無ければ旧 fingering/ の候補も探す
+    if not json_path or not os.path.isfile(json_path):
+        if midi_path:
+            filename = os.path.basename(midi_path)
+            name_only, _ = os.path.splitext(filename)
+            for old_dir in (get_portable_path("fingering"), os.path.join(os.path.dirname(os.path.abspath(__file__)), "fingering")):
+                candidate = os.path.join(old_dir, f"{name_only}_profile.json")
+                if os.path.isfile(candidate):
+                    json_path = candidate
+                    break
+
     if json_path and os.path.isfile(json_path):
         try:
             with open(json_path, "r", encoding="utf-8") as f:
@@ -244,9 +249,13 @@ def load_song_profile(midi_path) -> dict:
             # 付帯設定の保持
             for key in ("main_track_indices", "accomp_track_indices", "transpose",
                         "transpose_accomp", "inst_type", "ext_audio_path",
-                        "ext_offset_ms", "loop_a", "loop_b"):
+                        "ext_offset_ms", "loop_a", "loop_b", "active_take_path",
+                        "active_pattern_name", "patterns"):
                 if key in data:
-                    CURRENT_SONG_PROFILE_EXTRA[key] = data[key]
+                    val = data[key]
+                    if key in ("ext_audio_path", "active_take_path") and isinstance(val, str) and val:
+                        val = project_manager.from_project_rel_path(val)
+                    CURRENT_SONG_PROFILE_EXTRA[key] = val
 
             print(f"[システム] 曲別プロファイル(JSON)を解決しました: {os.path.basename(json_path)} (Preset: {CURRENT_SONG_PRESET})")
             return data
@@ -294,7 +303,11 @@ def save_song_profile(midi_path, extra_data: dict = None):
                 "custom_fingering": custom_fg_dict,
                 "muted_notes": dict(SONG_MUTED_NOTES),
             }
-            payload.update(CURRENT_SONG_PROFILE_EXTRA)
+            extra_copy = dict(CURRENT_SONG_PROFILE_EXTRA)
+            for k in ("ext_audio_path", "active_take_path"):
+                if k in extra_copy and isinstance(extra_copy[k], str) and extra_copy[k]:
+                    extra_copy[k] = project_manager.to_project_rel_path(extra_copy[k])
+            payload.update(extra_copy)
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
             print(f"[システム] 曲別プロファイル(JSON)を自動保存しました: {os.path.basename(json_path)}")

@@ -66,7 +66,7 @@
 
 ---
 
-#### - [ ] **Micro-Step 2: 楽曲プロジェクト自己完結管理モジュール `src/project_manager.py` の新設と `src/harmonica_map.py` 連携**
+#### - [x] **Micro-Step 2: 楽曲プロジェクト自己完結管理モジュール `src/project_manager.py` の新設と `src/harmonica_map.py` 連携**
 - **対象ファイル**: `src/project_manager.py` (新規作成), `src/harmonica_map.py`
 - **背景・目的**: 1曲＝1フォルダ（`projects/<曲名>/`）に MIDI原本、プロファイル（`project.json`）、録音テイク（`takes/`）、伴奏音源（`audio/`）、完成動画（`exports/`）を自己完結集約し、SHA-256ハッシュによる同名別MIDI衝突検知・リネーム追従・旧 `fingering/<曲名>_profile.json` からの自動マイグレーションを実現する。
 - **実装内容**:
