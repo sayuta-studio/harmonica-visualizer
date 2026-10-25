@@ -2,10 +2,22 @@
 bbbbb/
 test.py
 
-# Python キャッシュ
+# Python キャッシュ・仮想環境
 __pycache__/
 *.py[cod]
 *$py.class
+.venv/
+venv/
+env/
+node_modules/
+*.egg-info/
+.pytest_cache/
+
+# 環境変数・機密情報
+.env
+*.env
+*.pem
+*.key
 
 # PyInstaller ビルド生成物
 build/
@@ -30,3 +42,11 @@ dist/
 # temp フォルダ（組み込みデモMIDIは保護）
 **/temp/*
 !**/temp/demo_chromatic.mid
+
+# OS固有・エディタ設定
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
