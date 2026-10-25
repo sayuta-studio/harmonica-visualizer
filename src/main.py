@@ -1628,6 +1628,22 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         r_ratio.addWidget(self.ratio_combo, stretch=1)
         l_ratio.addLayout(r_ratio)
 
+        r_vlay = QHBoxLayout()
+        r_vlay.addWidget(QLabel("縦型配置:"))
+        self.combo_vertical_layout = QComboBox(self)
+        self.combo_vertical_layout.addItems([
+            "全画面フル展開 (標準Shorts)",
+            "上半分 16:9 ハーモニカ (下半分フリー)",
+            "下半分 16:9 ハーモニカ (上半分フリー)",
+            "中央 16:9 ハーモニカ"
+        ])
+        self.combo_vertical_layout.setCurrentText(str(self.user_settings.get("vertical_layout_mode", "全画面フル展開 (標準Shorts)")))
+        self._configure_sidebar_combo(self.combo_vertical_layout, max_width=220)
+        self.combo_vertical_layout.setToolTip("9:16 縦型動画において、16:9比率のハーモニカ画面を上半分または下半分に配置し、残りの領域に別の動画やPVを合成しやすくします")
+        self.combo_vertical_layout.currentTextChanged.connect(self._on_vertical_layout_changed)
+        r_vlay.addWidget(self.combo_vertical_layout, stretch=1)
+        l_ratio.addLayout(r_vlay)
+
         lbl_ratio_note = QLabel("※動画プリセットの書き出し構図（YouTube Shorts 縦型・横型MV等）に合わせてキャンバスを自動プレビューします。")
         lbl_ratio_note.setStyleSheet("color: #94A3B8; font-size: 11px; line-height: 1.3;")
         lbl_ratio_note.setWordWrap(True)
@@ -2935,6 +2951,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             "skin_mouthpiece_path": getattr(self.gl_widget, "skin_mouthpiece_path", ""),
             "skin_lever_off_path": getattr(self.gl_widget, "skin_lever_off_path", ""),
             "skin_lever_on_path": getattr(self.gl_widget, "skin_lever_on_path", ""),
+            "vertical_layout_mode": self.combo_vertical_layout.currentText() if hasattr(self, "combo_vertical_layout") else "全画面フル展開 (標準Shorts)",
         }
 
     def _apply_visual_dict_to_ui_and_gl(self, vis: dict, aspect_ratio: str = "16:9", is_chromakey: bool = False, chroma_color: str = "ノーマル（黒）"):
@@ -2975,6 +2992,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             lever_off_path=vis.get("skin_lever_off_path", ""),
             lever_on_path=vis.get("skin_lever_on_path", "")
         )
+        vert_lay = vis.get("vertical_layout_mode", "全画面フル展開 (標準Shorts)")
+        self.gl_widget.set_vertical_layout_mode(vert_lay)
 
         # UIコントロールへの同期 (blockSignals 徹底)
         for w_name, val, is_combo, is_slider, is_check in (
@@ -2997,6 +3016,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             ("combo_bg_fit", vis.get("bg_fit_mode", "中央トリミング (画面いっぱい)"), True, False, False),
             ("slider_bg_dim", int(vis.get("bg_dim_ratio", 60)), False, True, False),
             ("chk_skin", bool(vis.get("skin_enabled", True)), False, False, True),
+            ("combo_vertical_layout", vert_lay, True, False, False),
         ):
             w = getattr(self, w_name, None)
             if w is not None:
@@ -4866,6 +4886,13 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
     def _on_ratio_changed(self, ratio: str):
         self.gl_widget.set_aspect_ratio(ratio)
+        if hasattr(self, "combo_vertical_layout"):
+            self.combo_vertical_layout.setEnabled("9:16" in str(ratio))
+        self._save_current_settings()
+
+    def _on_vertical_layout_changed(self, text: str):
+        self.user_settings["vertical_layout_mode"] = str(text)
+        self.gl_widget.set_vertical_layout_mode(str(text))
         self._save_current_settings()
 
     def _on_hole_num_style_changed(self, style: str):

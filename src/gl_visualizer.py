@@ -77,6 +77,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
         # 描画設定パラメータ
         self.inst_type = "16穴 (64音・C調)"
         self.aspect_ratio = "16:9"
+        self.vertical_layout_mode = "全画面フル展開 (標準Shorts)"
         self.trajectory_mode = "3段階 (練習標準)"
         self.lever_deco_mode = "センターライン (芯線)"
         self.lang_mode = "ドレミ"
@@ -181,6 +182,11 @@ class HarmonicaGLWidget(QOpenGLWidget):
     def set_aspect_ratio(self, ratio: str):
         self.aspect_ratio = str(ratio)
         self.invalidate_static_cache()
+
+    def set_vertical_layout_mode(self, mode: str):
+        self.vertical_layout_mode = str(mode)
+        self.invalidate_static_cache()
+        self.update()
 
     def set_trajectory_mode(self, mode: str):
         self.trajectory_mode = str(mode)
@@ -323,11 +329,26 @@ class HarmonicaGLWidget(QOpenGLWidget):
         if px_per_sec <= 0:
             return None
 
-        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(base_h, self.trajectory_mode)
+        disp_w = CANVAS_WIDTH * scale
+        disp_h = base_h * scale
+        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
+            target_h = 540.0
+            band_h = target_h * scale
+            if "上半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + int(disp_h * 0.04)
+            elif "下半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+            else: # 中央
+                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+        else:
+            target_h = base_h
+            eff_y_offset = y_offset
+
+        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(target_h, self.trajectory_mode)
         visible_indices, x_start_base, x_shift, x_shift_notes = get_layout_params(self.inst_type, 1.0)
-        y_col_s = y_offset + y_col * scale
-        y_str_s = y_offset + y_str * scale
-        y_hole_s = y_offset + y_hole * scale
+        y_col_s = eff_y_offset + y_col * scale
+        y_str_s = eff_y_offset + y_str * scale
+        y_hole_s = eff_y_offset + y_hole * scale
         h_diag_s = h_diag * scale
         is_straight_mode = ("垂直落下" in str(self.trajectory_mode))
 
@@ -347,7 +368,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
             if is_straight_mode and not note_in_range:
                 continue
             y_limit_bot = y_hole_s if note_in_range else y_col_s
-            y_vis_top = max(y_offset, y_top)
+            y_vis_top = max(eff_y_offset, y_top)
             y_vis_bot = min(y_limit_bot, y_bot)
 
             if y_vis_bot <= y_vis_top:
@@ -715,16 +736,29 @@ class HarmonicaGLWidget(QOpenGLWidget):
             except Exception as ex:
                 print(f"[Warning] Background image draw error: {ex}")
 
-        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(base_h, self.trajectory_mode)
+        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
+            target_h = 540.0
+            band_h = target_h * scale
+            if "上半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + int(disp_h * 0.04)
+            elif "下半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+            else: # 中央
+                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+        else:
+            target_h = base_h
+            eff_y_offset = y_offset
+
+        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(target_h, self.trajectory_mode)
         visible_indices, x_start_base, x_shift, x_shift_notes = get_layout_params(self.inst_type, 1.0)
         total_w_base = len(visible_indices) * W_PITCH
 
         x_start = x_offset + x_start_base * scale
         total_w = total_w_base * scale
-        y_center_s = y_offset + y_center * scale
-        y_hole_s = y_offset + y_hole * scale
-        y_col_s = y_offset + y_col * scale
-        y_str_s = y_offset + y_str * scale
+        y_center_s = eff_y_offset + y_center * scale
+        y_hole_s = eff_y_offset + y_hole * scale
+        y_col_s = eff_y_offset + y_col * scale
+        y_str_s = eff_y_offset + y_str * scale
         w_pitch_s = W_PITCH * scale
         d_hole_s = D_HOLE * scale
         is_straight_mode = ("垂直落下" in str(self.trajectory_mode))
@@ -743,22 +777,22 @@ class HarmonicaGLWidget(QOpenGLWidget):
                     for sub in (1, 2, 3):
                         sx = hx + sub * 12.0 * scale
                         p.setPen(QPen(grid_sub_col, max(1.0, 1.0 * scale)))
-                        p.drawLine(QPointF(sx, y_offset), QPointF(sx, y_hole_s))
+                        p.drawLine(QPointF(sx, eff_y_offset), QPointF(sx, y_hole_s))
                     abs_idx = visible_indices[k]
                     is_oct = (abs_idx % 4 == 0)
                     p.setPen(QPen(grid_oct_col if is_oct else grid_bnd_col, max(1.0, (1.5 if is_oct else 1.0) * scale), Qt.PenStyle.DashLine if is_oct else Qt.PenStyle.SolidLine))
-                    p.drawLine(QPointF(hx, y_offset), QPointF(hx, y_hole_s))
+                    p.drawLine(QPointF(hx, eff_y_offset), QPointF(hx, y_hole_s))
                 p.setPen(QPen(grid_oct_col, max(1.0, 1.5 * scale), Qt.PenStyle.DashLine))
-                p.drawLine(QPointF(x_start + total_w, y_offset), QPointF(x_start + total_w, y_hole_s))
+                p.drawLine(QPointF(x_start + total_w, eff_y_offset), QPointF(x_start + total_w, y_hole_s))
             else:
-                # 上部60音レーン (y_offset 〜 y_col_s)
+                # 上部60音レーン (eff_y_offset 〜 y_col_s)
                 for idx in range(58):
                     gx = x_offset + (24.0 + idx * 16.0) * scale
                     p.setPen(QPen(grid_sub_col, max(1.0, 1.0 * scale)))
-                    p.drawLine(QPointF(gx, y_offset), QPointF(gx, y_col_s))
+                    p.drawLine(QPointF(gx, eff_y_offset), QPointF(gx, y_col_s))
                 p.setPen(QPen(grid_bnd_col, max(1.0, 1.0 * scale)))
-                p.drawLine(QPointF(x_offset + 24.0 * scale, y_offset), QPointF(x_offset + 24.0 * scale, y_col_s))
-                p.drawLine(QPointF(x_offset + 936.0 * scale, y_offset), QPointF(x_offset + 936.0 * scale, y_col_s))
+                p.drawLine(QPointF(x_offset + 24.0 * scale, eff_y_offset), QPointF(x_offset + 24.0 * scale, y_col_s))
+                p.drawLine(QPointF(x_offset + 936.0 * scale, eff_y_offset), QPointF(x_offset + 936.0 * scale, y_col_s))
 
                 # 下部直下区間 (y_str_s 〜 y_hole_s)
                 if y_str_s < y_hole_s:
@@ -896,7 +930,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
         p.end()
         self._static_pixmap = pix
         self._static_dirty = False
-        self._cached_wh_scale = (w, h, scale, x_offset, y_offset)
+        self._cached_wh_scale = (w, h, scale, x_offset, y_offset, self.vertical_layout_mode)
 
     def paintGL(self):
         """毎フレームのGPU描画ループ（ガベージコレクションゼロ・O(log N)抽出）"""
@@ -917,7 +951,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
         x_offset = (w - disp_w) * 0.5
         y_offset = (h - disp_h) * 0.5
 
-        if self._static_dirty or self._static_pixmap is None or self._cached_wh_scale != (w, h, scale, x_offset, y_offset):
+        if self._static_dirty or self._static_pixmap is None or self._cached_wh_scale != (w, h, scale, x_offset, y_offset, self.vertical_layout_mode):
             self._rebuild_static_pixmap(w, h, scale, x_offset, y_offset)
 
         painter = QPainter(self)
@@ -931,14 +965,29 @@ class HarmonicaGLWidget(QOpenGLWidget):
         cur_sec = self.clock.get_current_base_sec(lookahead_sec=0.008)
 
         # レイアウトパラメータ取得
-        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(base_h, self.trajectory_mode)
+        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
+            target_h = 540.0
+            band_h = target_h * scale
+            if "上半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + int(disp_h * 0.04)
+            elif "下半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+            else: # 中央
+                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+            clip_rect = QRectF(x_offset, eff_y_offset, disp_w, band_h)
+        else:
+            target_h = base_h
+            eff_y_offset = y_offset
+            clip_rect = None
+
+        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(target_h, self.trajectory_mode)
         visible_indices, x_start_base, x_shift, x_shift_notes = get_layout_params(self.inst_type, 1.0)
         total_w_base = len(visible_indices) * W_PITCH
 
-        y_center_s = y_offset + y_center * scale
-        y_col_s = y_offset + y_col * scale
-        y_str_s = y_offset + y_str * scale
-        y_hole_s = y_offset + y_hole * scale
+        y_center_s = eff_y_offset + y_center * scale
+        y_col_s = eff_y_offset + y_col * scale
+        y_str_s = eff_y_offset + y_str * scale
+        y_hole_s = eff_y_offset + y_hole * scale
         h_diag_s = h_diag * scale
         x_start = x_offset + x_start_base * scale
         total_w = total_w_base * scale
@@ -946,7 +995,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
         d_hole_s = D_HOLE * scale
 
         px_per_sec = 2.0 * getattr(self, "default_bpm", 120.0) * self.note_speed_ratio * scale
-        max_vis_sec = cur_sec + ((y_hole_s - y_offset) / px_per_sec) if px_per_sec > 0 else cur_sec + 5.0
+        max_vis_sec = cur_sec + ((y_hole_s - eff_y_offset) / px_per_sec) if px_per_sec > 0 else cur_sec + 5.0
         is_straight_mode = ("垂直落下" in str(self.trajectory_mode))
 
         # 3. 小節線の描画
@@ -961,7 +1010,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
                 if m_sec > max_vis_sec:
                     break
                 ym = y_hole_s - (m_sec - cur_sec) * px_per_sec
-                if y_offset <= ym <= y_plate_top:
+                if eff_y_offset <= ym <= y_plate_top:
                     mx_start = x_start if is_straight_mode else (x_offset + 24.0 * scale)
                     mx_end = (x_start + total_w) if is_straight_mode else (x_offset + 936.0 * scale)
                     painter.drawLine(QPointF(mx_start, ym), QPointF(mx_end, ym))
@@ -1022,7 +1071,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
                 if is_straight_mode and not note_in_range:
                     continue
                 y_limit_bot = y_hole_s if note_in_range else y_col_s
-                y_vis_top = max(y_offset, y_top)
+                y_vis_top = max(eff_y_offset, y_top)
                 y_vis_bot = min(y_limit_bot, y_bot)
                 if y_vis_bot <= y_vis_top:
                     continue

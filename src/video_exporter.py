@@ -231,8 +231,14 @@ class OffscreenVisualizerRenderer:
         lon_path = _resolve_skin_file(self.settings.get("skin_lever_on_path", ""), "レバーオン.png")
         self._img_lever_on = QImage(lon_path) if lon_path and os.path.isfile(lon_path) else None
 
+        self.vertical_layout_mode = str(self.settings.get("vertical_layout_mode", "全画面フル展開 (標準Shorts)"))
+
         # 静的背景事前ベイク
         self.base_image = None
+        self._build_static_base_image()
+
+    def set_vertical_layout_mode(self, mode: str):
+        self.vertical_layout_mode = str(mode)
         self._build_static_base_image()
 
     def _build_static_base_image(self):
@@ -304,16 +310,29 @@ class OffscreenVisualizerRenderer:
             except Exception as e:
                 print(f"[VideoExporter] 背景描画例外: {e}")
 
-        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(int(base_h), self.trajectory_mode)
+        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
+            target_h = 540.0
+            band_h = target_h * scale
+            if "上半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + int(disp_h * 0.04)
+            elif "下半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+            else: # 中央
+                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+        else:
+            target_h = base_h
+            eff_y_offset = y_offset
+
+        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(int(target_h), self.trajectory_mode)
         visible_indices, x_start_base, x_shift, x_shift_notes = get_layout_params(self.inst_type, 1.0)
         total_w_base = len(visible_indices) * W_PITCH
 
         x_start = x_offset + x_start_base * scale
         total_w = total_w_base * scale
-        y_center_s = y_offset + y_center * scale
-        y_hole_s = y_offset + y_hole * scale
-        y_col_s = y_offset + y_col * scale
-        y_str_s = y_offset + y_str * scale
+        y_center_s = eff_y_offset + y_center * scale
+        y_hole_s = eff_y_offset + y_hole * scale
+        y_col_s = eff_y_offset + y_col * scale
+        y_str_s = eff_y_offset + y_str * scale
         w_pitch_s = W_PITCH * scale
         d_hole_s = D_HOLE * scale
         is_straight_mode = ("垂直落下" in str(self.trajectory_mode))
@@ -332,21 +351,21 @@ class OffscreenVisualizerRenderer:
                     for sub in (1, 2, 3):
                         sx = hx + sub * 12.0 * scale
                         p.setPen(QPen(grid_sub_col, max(1.0, 1.0 * scale)))
-                        p.drawLine(QPointF(sx, y_offset), QPointF(sx, y_hole_s))
+                        p.drawLine(QPointF(sx, eff_y_offset), QPointF(sx, y_hole_s))
                     abs_idx = visible_indices[k]
                     is_oct = (abs_idx % 4 == 0)
                     p.setPen(QPen(grid_oct_col if is_oct else grid_bnd_col, max(1.0, (1.5 if is_oct else 1.0) * scale), Qt.PenStyle.DashLine if is_oct else Qt.PenStyle.SolidLine))
-                    p.drawLine(QPointF(hx, y_offset), QPointF(hx, y_hole_s))
+                    p.drawLine(QPointF(hx, eff_y_offset), QPointF(hx, y_hole_s))
                 p.setPen(QPen(grid_oct_col, max(1.0, 1.5 * scale), Qt.PenStyle.DashLine))
-                p.drawLine(QPointF(x_start + total_w, y_offset), QPointF(x_start + total_w, y_hole_s))
+                p.drawLine(QPointF(x_start + total_w, eff_y_offset), QPointF(x_start + total_w, y_hole_s))
             else:
                 for idx in range(58):
                     gx = x_offset + (24.0 + idx * 16.0) * scale
                     p.setPen(QPen(grid_sub_col, max(1.0, 1.0 * scale)))
-                    p.drawLine(QPointF(gx, y_offset), QPointF(gx, y_col_s))
+                    p.drawLine(QPointF(gx, eff_y_offset), QPointF(gx, y_col_s))
                 p.setPen(QPen(grid_bnd_col, max(1.0, 1.0 * scale)))
-                p.drawLine(QPointF(x_offset + 24.0 * scale, y_offset), QPointF(x_offset + 24.0 * scale, y_col_s))
-                p.drawLine(QPointF(x_offset + 936.0 * scale, y_offset), QPointF(x_offset + 936.0 * scale, y_col_s))
+                p.drawLine(QPointF(x_offset + 24.0 * scale, eff_y_offset), QPointF(x_offset + 24.0 * scale, y_col_s))
+                p.drawLine(QPointF(x_offset + 936.0 * scale, eff_y_offset), QPointF(x_offset + 936.0 * scale, y_col_s))
 
                 if y_str_s < y_hole_s:
                     p.setPen(QPen(grid_sub_col, max(1.0, 1.0 * scale)))
@@ -494,24 +513,41 @@ class OffscreenVisualizerRenderer:
         scale = min(w / float(CANVAS_WIDTH), h / base_h)
         x_offset = (w - CANVAS_WIDTH * scale) * 0.5
         y_offset = (h - base_h * scale) * 0.5
+        disp_w = CANVAS_WIDTH * scale
+        disp_h = base_h * scale
 
-        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(int(base_h), self.trajectory_mode)
+        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
+            target_h = 540.0
+            band_h = target_h * scale
+            if "上半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + int(disp_h * 0.04)
+            elif "下半分" in str(self.vertical_layout_mode):
+                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+            else: # 中央
+                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+            clip_rect = QRectF(x_offset, eff_y_offset, disp_w, band_h)
+        else:
+            target_h = base_h
+            eff_y_offset = y_offset
+            clip_rect = None
+
+        y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(int(target_h), self.trajectory_mode)
         visible_indices, x_start_base, x_shift, x_shift_notes = get_layout_params(self.inst_type, 1.0)
         total_w_base = len(visible_indices) * W_PITCH
 
         x_start = x_offset + x_start_base * scale
         total_w = total_w_base * scale
-        y_center_s = y_offset + y_center * scale
-        y_hole_s = y_offset + y_hole * scale
-        y_col_s = y_offset + y_col * scale
-        y_str_s = y_offset + y_str * scale
+        y_center_s = eff_y_offset + y_center * scale
+        y_hole_s = eff_y_offset + y_hole * scale
+        y_col_s = eff_y_offset + y_col * scale
+        y_str_s = eff_y_offset + y_str * scale
         h_diag_s = h_diag * scale
         d_hole_s = D_HOLE * scale
         w_pitch_s = W_PITCH * scale
         is_straight_mode = ("垂直落下" in str(self.trajectory_mode))
 
         px_per_sec = 2.0 * self.default_bpm * self.note_speed_ratio * scale
-        max_vis_sec = cur_sec + ((y_hole_s - y_offset) / px_per_sec) if px_per_sec > 0 else cur_sec + 5.0
+        max_vis_sec = cur_sec + ((y_hole_s - eff_y_offset) / px_per_sec) if px_per_sec > 0 else cur_sec + 5.0
 
         # 1. 小節線描画
         measures = self.timeline.measures_timeline if self.timeline else []
@@ -526,7 +562,7 @@ class OffscreenVisualizerRenderer:
                 if m_sec > max_vis_sec:
                     break
                 ym = y_hole_s - (m_sec - cur_sec) * px_per_sec
-                if y_offset <= ym <= y_plate_top:
+                if eff_y_offset <= ym <= y_plate_top:
                     mx_start = x_start if is_straight_mode else (x_offset + 24.0 * scale)
                     mx_end = (x_start + total_w) if is_straight_mode else (x_offset + 936.0 * scale)
                     p.drawLine(QPointF(mx_start, ym), QPointF(mx_end, ym))
@@ -572,7 +608,7 @@ class OffscreenVisualizerRenderer:
                 if is_straight_mode and not note_in_range:
                     continue
                 y_limit_bot = y_hole_s if note_in_range else y_col_s
-                y_vis_top = max(y_offset, y_top)
+                y_vis_top = max(eff_y_offset, y_top)
                 y_vis_bot = min(y_limit_bot, y_bot)
                 if y_vis_bot <= y_vis_top:
                     continue

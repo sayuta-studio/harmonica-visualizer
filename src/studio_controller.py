@@ -84,6 +84,7 @@ class StudioExportMixin:
             "bg_dim_ratio": preset.get("bg_dim_ratio", 60),
             "bg_image_enabled": preset.get("bg_image_enabled", True),
             "reverb_enabled": reverb_on,
+            "vertical_layout_mode": preset.get("vertical_layout_mode", self.combo_vertical_layout.currentText() if hasattr(self, "combo_vertical_layout") else "全画面フル展開 (標準Shorts)"),
         }
 
     # =========================================================================
