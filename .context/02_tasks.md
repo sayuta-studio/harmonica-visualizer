@@ -1,145 +1,141 @@
 # タスク管理・実装指示書 (02_tasks.md)
 
-## 進行中 (In Progress) / 次期マイルストーン: Ver.3.1.0
-### 🎯 【v3.1.0】練習環境と動画出力プリセットの分離・UI/UX抜本改修（Gemini 3.8 実装指示書）
+## 進行中 (In Progress) / 次期マイルストーン: Ver.3.2.0
+### 🎯 【v3.2.0】UI/UX摩擦ゼロ化（音名直交化・上部タイトル伸縮復元・プリセット直結・練習音源切替・録音テイク選択＆同期試聴）
 
-> **【実装担当（Gemini 3.8）への絶対遵守ルール】**
-> 1. 以下の **Micro-Step 1 〜 7** を **必ず1ステップずつ順番に** 実行すること（複数ステップのまとめ実装は厳禁）。
-> 2. 各 Micro-Step が完了するごとに、構文エラーがないことを確認し、指定されたコミットメッセージで **Git コミット（Micro Commit）** を打つこと。
-> 3. 関数内でのインライン `import` は絶対に行わないこと（必要なモジュールはファイル先頭で import すること）。
-> 4. UIウィジェットの値をプログラムから変更する際は、必ず `blockSignals(True)` / `blockSignals(False)` および `_is_loading` ガードを使用すること。
-
----
-
-#### - [x] **Micro-Step 1: `src/harmonica_map.py` へのカスタム運指判定ヘルパー追加**
-- **対象ファイル**: `src/harmonica_map.py`
-- **実装内容**:
-  - ファイル末尾（`get_note_fingering_for_song` 関数の直後、488行目以降）に以下の関数を追加する：
-    ```python
-    def has_custom_fingering() -> bool:
-        """現在の曲に個別カスタム運指（変え指オーバーライド）が1件以上設定されているか判定"""
-        return len(SONG_FINGERING_OVERRIDES) > 0
-    ```
-- **コミットメッセージ**: `feat(fingering): add has_custom_fingering helper in harmonica_map`
+> **【実装担当（Gemini 3.8）への絶対遵守ルール（Gotcha #7 & #8）】**
+> 1. **Git層（Micro Commit）**: 以下の **Micro-Step 1 〜 7** を **必ず1ステップずつ順番に** 実行し、各ステップ完了ごとに構文チェック（`python -m py_compile`）と指定の **Gitコミット** を必ず打つこと（複数ステップの1コミットまとめは厳禁）。
+> 2. **人間対話層（Batch Package）**: 人間の確認負荷軽減のため、**Package 1（Step 1〜2）**、**Package 2（Step 3〜4）**、**Package 3（Step 5〜7）** の単位で連続実行し、パッケージ完了ごとに報告すること。
+> 3. **スコープ＆シグナル衛生**: 関数内でのインライン `import` は厳禁（ファイル先頭に集約）。UI値のプログラム変更時は必ず `blockSignals(True)` / `blockSignals(False)` で囲むこと。
 
 ---
 
-#### - [x] **Micro-Step 2: `src/main.py` の移調ロック制御 ＆ 残存インラインimport除去**
-- **対象ファイル**: `src/main.py`
+### 📦 Batch Package 1: 表示系の直交化 ＆ 上部ヘッダー伸縮復元（Micro-Step 1 〜 2）
+
+#### - [ ] **Micro-Step 1: 音名表記（`lang_mode` 2択化）と穴下ノート表示（`grid4_mode` 3択化）の完全直交化**
+- **対象ファイル**: `src/settings_manager.py`, `src/gl_visualizer.py`, `src/video_exporter.py`, `src/main.py`
+- **背景・目的**: `lang_mode` に `"なし"` があるため、ノーツ音名チェック（`show_lookahead`）や穴下グリッド（`grid4_mode`）と干渉し、「枠だけ残って文字が消える」「チェックを入れても文字が出ない」矛盾が発生していた。表記言語（`"ドレミ"` / `"CDE"`）と表示可否トグルを完全直交化する。
 - **実装内容**:
-  1. **残存インライン `import` の除去（Gotcha #1 防衛）**:
-     - `_on_open_fingering_dialog` 内の `import harmonica_map`（2858行付近）、`_on_reset_song_fingering` 内の `from harmonica_map import reset_song_fingering`（2878行付近 ➔ `harmonica_map.reset_song_fingering` に変更）、`_save_current_song_profile` 内の `from harmonica_map import save_song_profile`（3107行付近 ➔ `harmonica_map.save_song_profile` に変更）、`_load_midi_file` 内の `import harmonica_map`（3243行・3283行付近）を削除し、ファイル先頭（40行目）の `import harmonica_map` を使う形に統一する。
-  2. **移調ロック制御メソッド `_update_transpose_lock_state` の新設**:
-     - `_on_transpose_changed`（2978行付近）の直前に以下のメソッドを追加する：
+  1. **`src/settings_manager.py`**:
+     - `DEFAULT_VIDEO_PRESETS["✨ シネマティックMV (横型・演出重視)"]`（166行付近）の `"lang_mode": "なし"` を `"lang_mode": "ドレミ"` に、`"grid4_mode": "4音グリッド表示"` を `"grid4_mode": "非表示"` に変更する。
+     - `load_settings()` 内のマイグレーション処理（395行付近）で、トップレベル、`practice_visual`、および各 `video_presets` 内の辞書について、もし `d.get("lang_mode") == "なし"` であれば `d["lang_mode"] = "ドレミ"`, `d["show_lookahead"] = False`, `d["grid4_mode"] = "非表示"` に自動変換するロジックを追加する。
+  2. **`src/gl_visualizer.py`**:
+     - 818〜864行付近（`# 3. 穴下の音名表示`）を以下のように修正し、`"非表示"` 選択時は枠ごと非表示、それ以外は常に `lang_mode`（ドレミ/CDE）で文字を描画する：
        ```python
-       def _update_transpose_lock_state(self):
-           """カスタム運指が1件以上存在する場合、音名ズレ防止のため移調コントロールをロック"""
-           locked = harmonica_map.has_custom_fingering()
-           for w_name in ("btn_trans_down_oct", "btn_trans_minus_1", "spin_transpose", "btn_trans_plus_1", "btn_trans_up_oct", "chk_transpose_accomp"):
-               w = getattr(self, w_name, None)
-               if w is not None:
-                   w.setEnabled(not locked)
-           if hasattr(self, "spin_transpose"):
-               if locked:
-                   self.spin_transpose.setStyleSheet("background-color: #2D1A10; border: 1px solid #D97706; color: #FBBF24; font-weight: bold;")
-                   self.spin_transpose.setToolTip(
-                       "🔒 カスタム運指（変え指）が設定されているため、音名ズレ防止のため移調をロックしています。\n"
-                       "移調を変更したい場合は、練習タブの「🔄 初期化」から個別運指をリセットしてください。"
-                   )
-               else:
-                   self.spin_transpose.setStyleSheet("")
-                   self.spin_transpose.setToolTip("半音単位の移調 (-24〜+24半音 / ±2オクターブ) [直接入力 / マウスホイールで変更]")
+       grid_str = str(self.show_grid4)
+       hide_hole_notes = (self.show_grid4 is False or "非表示" in grid_str or "なし" in grid_str)
+       show_4grid = (not hide_hole_notes) and (self.show_grid4 is True or "4音" in grid_str)
+       is_jp = (self.lang_mode != "CDE" and "英" not in str(self.lang_mode))
        ```
-  3. **呼び出し箇所の接続（4箇所）**:
-     - `_on_canvas_fingering_changed`（2846行付近）の末尾に `self._update_transpose_lock_state()` を追加。
-     - `_on_open_fingering_dialog`（2868行付近）の `if dlg.exec():` ブロック末尾に `self._update_transpose_lock_state()` を追加。
-     - `_on_reset_song_fingering`（2887行付近）のリセット完了直後に `self._update_transpose_lock_state()` を追加。
-     - `_load_midi_file`（3351行付近）の `self._check_out_of_range_and_notify()` の直前に `self._update_transpose_lock_state()` を追加。
-     - `__init__` の初期化完了付近（`_apply_user_settings()` 呼び出し直後）にも `self._update_transpose_lock_state()` を追加。
-- **コミットメッセージ**: `feat(ui): lock transpose controls when custom fingering is active and remove inline imports`
+       - `if show_4grid:` 内の `if self.lang_mode != "なし":` ガードを外し、常に `cell_txt` を描画する。
+       - `elif self.lang_mode != "なし":` を `elif not hide_hole_notes:` に変更する。
+     - 1250行付近（ノーツ直上の音名描画）の `if should_draw_label and self.show_lookahead and self.lang_mode != "なし" ...` から `and self.lang_mode != "なし"` を除去する。
+     - 1275〜1340行付近（`# 6. ... 穴下音名ハイライト`）も同様に `hide_hole_notes` を判定し、`if show_4grid:` 内の `if self.lang_mode != "なし":` を外し、`elif self.lang_mode != "なし" and hole_num in active_hole_notes:` を `elif (not hide_hole_notes) and hole_num in active_hole_notes:` に変更する。
+  3. **`src/video_exporter.py`**:
+     - `gl_visualizer.py` と全く同じ修正を 401〜447行付近、767行付近、789〜854行付近に適用する。
+  4. **`src/main.py`**:
+     - 1302行付近: `self.lang_combo.addItems(["ドレミ", "CDE"])` に変更（`"なし"` を撤去）。
+     - 1487行付近: `self.combo_grid4.addItems(["4音グリッド表示", "1音表示 (従来)", "非表示"])` に変更。
+     - `self.gl_widget.set_show_grid4(...)` を呼んでいる3箇所（2549行、2676行、2878行付近）で、`g4_mode == "4音グリッド表示"` という bool 変換をやめ、文字列 `str(g4_mode)`（または `str(mode)`）をそのまま渡すように修正する。
+- **コミットメッセージ**: `fix(visual): orthogonalize lang_mode and grid4_mode visibility controls`
 
 ---
 
-#### - [x] **Micro-Step 3: `src/settings_manager.py` のデータ層拡張（`practice_visual` ＆ `video_presets`）**
-- **対象ファイル**: `src/settings_manager.py`
+#### - [ ] **Micro-Step 2: 上部パネル（Row 1）の曲名ボックス伸縮（`stretch=1`）復元と右詰め整列**
+- **対象ファイル**: `src/main.py`
+- **背景・目的**: `_load_midi_file`（4293行付近）で `self._set_elided_label_text(self.lbl_song_title, ..., max_width=240)` を呼んでいたため、曲名ラベルに `setMaximumWidth(240)` が掛かり、上部パネルのレイアウトが崩れていた問題を解消する。
 - **実装内容**:
-  1. `VISUAL_KEYS` タプルおよび `DEFAULT_PRACTICE_VISUAL` 辞書を定義する：
+  1. `_init_ui` 内の `self.lbl_song_title` 生成部（687〜690行付近）に `self.lbl_song_title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)` を追加する。
+  2. `_load_midi_file` 内（4293行付近）の `self._set_elided_label_text(self.lbl_song_title, self.timeline.filename, filepath, max_width=240)` を以下に置き換える：
      ```python
-     VISUAL_KEYS = (
-         "trajectory_mode", "lang_mode", "color_theme", "color_blow", "color_draw",
-         "lever_deco_mode", "note_opacity", "show_notes", "show_lookahead",
-         "show_grid", "show_bar_lines", "show_hole_num", "hole_num_style",
-         "grid4_mode", "show_ring", "show_glow", "show_legend",
-         "bg_image_enabled", "bg_image_path", "bg_dim_ratio", "bg_fit_mode", "bg_rotation",
-         "skin_enabled", "skin_mouthpiece_path", "skin_lever_off_path", "skin_lever_on_path",
-     )
+     self.lbl_song_title.setMinimumWidth(140)
+     self.lbl_song_title.setMaximumWidth(16777215)  # QWIDGETSIZE_MAX (幅制限なし・最大伸縮)
+     self.lbl_song_title.setText(self.timeline.filename)
+     self.lbl_song_title.setToolTip(filepath)
      ```
-  2. 公式4種の `DEFAULT_VIDEO_PRESETS` を定義する：
-     - `"📱 YouTube Shorts (縦型・解説)"`: `aspect_ratio="9:16"`, `export_resolution="Full HD (1920x1080・推奨)"`, `export_fps="60 FPS (滑らか・推奨)"`, `export_style="完成動画 (背景・タイトル合成)"`, `show_legend=False`, `show_lookahead=True`, `show_grid=True`, `show_hole_num=True`, `export_title_template="イントロ中央＋左上常時"`, `export_intro_sec="1秒"`, `export_outro_sec="2秒"`, `export_fade_in=True`, `export_fade_in_sec=1.0`, `export_fade_out=True`, `export_fade_out_sec=1.5` 等
-     - `"🎥 演奏解説・練習用 (横型・標準)"`: `aspect_ratio="16:9"`, 全ガイド・音名・凡例 `True`, `export_title_template="イントロ中央＋右上常時"` 等
-     - `"✨ シネマティックMV (横型・演出重視)"`: `aspect_ratio="16:9"`, `trajectory_mode="2段階 (ビジュアル)"`, `lang_mode="なし"`, `show_lookahead=False`, `show_grid=False`, `show_bar_lines=False`, `show_hole_num=False`, `show_legend=False`, `show_glow=True`, `show_ring=True`, `export_title_template="イントロ中央のみ"`, `export_intro_sec="3秒"`, `export_outro_sec="3秒"`, `export_fade_in_sec=2.0`, `export_fade_out_sec=2.0` 等
-     - `"🟩 クロマキー合成素材 (透過用)"`: `aspect_ratio="16:9"`, `export_style="クロマキー素材 (背景・タイトルなし)"`, `export_bg_color="グリーンバック"`, `show_grid=False`, `show_bar_lines=False`, `show_legend=False`, `export_fade_in=False`, `export_fade_out=False` 等
-  3. `DEFAULT_SETTINGS` に `"practice_visual"`, `"active_video_preset"`, `"video_presets"` を追加する。
-  4. `load_settings()` 内で、旧フラット設定が存在し `"practice_visual"` が未作成の場合は、フラットキーから `practice_visual` を自動生成する透過マイグレーションを行い、また `video_presets` に公式プリセットが不足していれば補完する。
-  5. ヘルパー関数 `extract_visual_from_settings(s: dict) -> dict` および `get_active_preset_dict(s: dict) -> dict` を追加する。
-- **コミットメッセージ**: `feat(settings): add practice_visual and video_presets schema with auto-migration`
+- **コミットメッセージ**: `fix(ui-header): restore expanding song title label and right-aligned controls in top row1`
 
 ---
 
-#### - [x] **Micro-Step 4: `src/main.py` へのビジュアル状態抽出・適用ヘルパー導入**
+### 📦 Batch Package 2: 画面作りタブのプリセット直結 ＆ 練習時の再生音源ワンタッチ切替（Micro-Step 3 〜 4）
+
+#### - [ ] **Micro-Step 3: `🎨 画面作り` タブへの「動画プリセット選択・保存バー」直結配置**
 - **対象ファイル**: `src/main.py`
+- **背景・目的**: `🎨 画面作り` タブで「🎬 動画プリセットの画面スタイル」を編集した際、わざわざ `🎬 動画出力` タブへ移動しなくてもその場で対象プリセットの切り替え・上書き保存・別名保存・初期化を行えるようにする。
 - **実装内容**:
-  1. `self._visual_edit_target = "practice"`（`"practice"` または `"video"`）属性を `__init__` に追加する。
-  2. `_apply_user_settings` の直前に以下の3つのヘルパーメソッドを追加する：
-     - `_get_current_visual_dict_from_ui(self) -> dict`: 現在の `🎨 画面作り` タブの各ウィジェットから `VISUAL_KEYS` 辞書を生成して返す。
-     - `_apply_visual_dict_to_ui_and_gl(self, vis: dict, aspect_ratio: str = "16:9", is_chromakey: bool = False, chroma_color: str = "ノーマル（黒）")`: `blockSignals(True)` で `🎨 画面作り` タブのウィジェットと `self.gl_widget` に `vis` の内容を反映する。
-     - `_build_export_render_settings(self, preset: dict = None) -> dict`: 動画出力・1フレームプレビュー用の `render_settings` 辞書を、選択中の動画プリセット（`preset`）から生成して返す（これまで4258行と4395行に重複していた35行の辞書生成をこの関数1つに統合する）。
-  3. `_on_preview_frame` と `_on_start_video_export` の `render_settings = { ... }` を `render_settings = self._build_export_render_settings()` に置き換える。
-- **コミットメッセージ**: `refactor(visual): unify render_settings builder and visual state helpers in main.py`
+  1. `_build_tab_design` の `f_target` フレーム内（1273行 `l_target.addWidget(self.lbl_visual_target_hint)` の直後）に、動画プリセット編集時のみ表示されるコンテナ `self.w_design_preset_bar = QWidget(self)` を追加する：
+     - 1段目: `プリセット:` ラベル ＋ `self.combo_design_preset = QComboBox(self)`（`self._configure_sidebar_combo(self.combo_design_preset, max_width=230)` 適用、`currentTextChanged` を `self._on_video_preset_changed` に接続）
+     - 2段目: `[💾 保存]`（`self._on_save_video_preset` に接続） ＋ `[➕ 別名保存...]`（`self._on_save_as_video_preset` に接続） ＋ `self.btn_design_preset_reset = QPushButton("↺ 初期化", self)`（`self._on_reset_or_delete_video_preset` に接続）
+     - 初期状態は `self.w_design_preset_bar.setVisible(False)` とする。
+  2. `_on_visual_target_changed`（2432行付近）で、`self._visual_edit_target == "video"` のときは `self.w_design_preset_bar.setVisible(True)`、`"practice"` のときは `self.w_design_preset_bar.setVisible(False)` に切り替える。
+  3. `_refresh_video_preset_combo` および `_update_preset_button_states`（2881行付近）で、`self.combo_video_preset` だけでなく `self.combo_design_preset` と `self.btn_design_preset_reset` も同時に `blockSignals(True)` で完全同期するように更新する。
+- **コミットメッセージ**: `feat(design-tab): embed synchronized video preset selector and save buttons in design tab`
 
 ---
 
-#### - [x] **Micro-Step 5: `🎨 画面作り` タブの「編集対象ターゲット切替」とタブ連動の分離**
+#### - [ ] **Micro-Step 4: 練習タブへの「🔊 練習時の再生音源切替」設置と外部伴奏モードの双方向連動**
 - **対象ファイル**: `src/main.py`
+- **背景・目的**: 動画作成用に外部伴奏を読み込んだ状態でも、練習タブで「普段のMIDIガイド音だけで練習する」か「外部伴奏と合わせて練習する」かを迷わずワンタッチで切り替えられるようにする。
 - **実装内容**:
-  1. `_build_tab_design`（1232行付近）の最上部（`v_box` の先頭）に **「🎯 編集対象の切り替え」フレーム（`f_target`、最大幅328px）** を追加する：
-     - コンボボックスまたはセグメントボタンで `["🎯 練習用の画面スタイル (標準)", "🎬 動画プリセットの画面スタイル"]` を切り替え可能にする。
-     - 画面比率（`f_ratio`）フレームは `"🎬 動画プリセットの画面スタイル"` 編集時のみ有効化（練習用スタイル編集時は `16:9 (練習標準)` 固定としてグレーアウトまたは注記表示）する。
-  2. `_save_current_settings` 内で、`self._visual_edit_target == "practice"` のときは `self.user_settings["practice_visual"]` を更新し、`"video"` のときは現在選択中の `self.user_settings["video_presets"][active_name]` を更新するように分岐させる。
-  3. `_on_tab_changed(self, index: int)` を更新する：
-     - `index in (0, 2)`（練習タブ・録音タブ）のときは、常に `self.user_settings["practice_visual"]` と `"16:9"` を `self.gl_widget` に反映する。
-     - `index == 3`（動画出力タブ）のときは、現在選択中の動画プリセットの設定とアスペクト比を `self.gl_widget` に反映する。
-     - `index == 1`（画面作りタブ）のときは、`self._visual_edit_target` に応じて練習用または動画プリセット用の設定を反映する。
-- **コミットメッセージ**: `feat(design-tab): separate practice visual editing from video preset visual editing`
+  1. `_build_tab_practice` の末尾（1223行 `v_box.addWidget(f_stepup)` の直後）に **「🔊 練習時の再生音源」フレーム（`f_prac_audio`、最大幅328px）** を追加する：
+     - タイトル: `🔊 <b>練習時の再生音源 (伴奏切替):</b>`
+     - コンボボックス `self.combo_prac_audio_mode = QComboBox(self)`:
+       選択肢は `self.combo_ext_mode` と同一の3項目：
+       `["ガイド音のみ (伴奏ミュート)", "伴奏 ＋ ガイド音 (両方再生)", "伴奏のみ (ガイド音オフ)"]`
+       （※ `self._configure_sidebar_combo(self.combo_prac_audio_mode, max_width=310)` 適用）
+     - 現在の外部伴奏ファイル状態を示す小型ラベル `self.lbl_prac_ext_status = QLabel("伴奏音源: 未設定 (MIDIガイド再生)", self)` を配置。
+     - `self.combo_prac_audio_mode.currentTextChanged.connect(self._on_ext_mode_changed)` で接続する。
+  2. `_on_ext_mode_changed(self, mode: str)`（4860行付近）で、`self.combo_ext_mode` と `self.combo_prac_audio_mode` の両方を `blockSignals(True)` で相互同期させる。また再生中にモードが切り替わった場合、`cur_sec = self.clock.get_current_base_sec()` で `self._sync_ext_audio_playback(self.clock.get_state() == SharedClockBridge.STATE_PLAYING, cur_sec)` を即時呼び出して音のON/OFFを即座に反映する。
+  3. `_set_ext_audio` と `_on_clear_ext_audio` で `self.lbl_prac_ext_status` の表示テキストも連動更新する。
+- **コミットメッセージ**: `feat(practice-tab): add quick practice audio source switcher synced with external backing track`
 
 ---
 
-#### - [x] **Micro-Step 6: `🎬 動画出力` タブへの「🗂️ 動画出力プリセット」管理UI＆練習コピーブリッジ追加**
+### 📦 Batch Package 3: 録音テイク選択 ＆ 録音ズレ同時試聴 ＆ v3.2.0 リリース（Micro-Step 5 〜 7）
+
+#### - [ ] **Micro-Step 5: `🎙️ 録音・音響` タブへの「📂 過去テイク・録音WAV選択」機能追加**
 - **対象ファイル**: `src/main.py`
+- **背景・目的**: 直前に録音した1ファイルだけでなく、複数回録音した過去テイクや任意の録音WAVファイルを選択して試聴・動画合成に採用できるようにする。
 - **実装内容**:
-  1. `from PyQt6.QtWidgets import ...`（26行付近）に `QInputDialog` を追加する（ファイル先頭でimport）。
-  2. `_build_tab_export`（1928行付近）の最上部（`f_exp` の直前）に **「🗂️ 動画出力プリセット」フレーム（`f_preset`、最大幅328px）** を追加する：
-     - 1段目: `プリセット:` ラベル ＋ `self.combo_video_preset`（`self._configure_sidebar_combo` 適用）
-     - 2段目: `[💾 保存]` (`btn_preset_save`) ＋ `[➕ 別名保存...]` (`btn_preset_save_as`) ＋ `[↺ 初期化/削除]` (`btn_preset_reset`)
-     - 3段目: `[📋 現在の「練習画面」の見た目を反映]` (`btn_copy_practice_visual`)
-     - 4段目: `[🎨 このプリセットの画面デザインを編集...]` (`btn_jump_design_for_video`：`🎨 画面作り` タブへ移動し、編集対象を「🎬 動画プリセット」に自動切替するショートカットボタン)
-  3. イベントハンドラ群を実装する：
-     - `_on_video_preset_changed(preset_name: str)`: 選択されたプリセットの解像度・FPS・出力スタイル・余白・フェード・タイトル・ビジュアル設定を動画出力タブUIおよび `self.gl_widget` に一括反映（`blockSignals(True)` 徹底）。
-     - `_on_save_video_preset()`: 現在の動画タブ設定＋動画ビジュアル設定を選択中プリセットに上書き保存。
-     - `_on_save_as_video_preset()`: `QInputDialog.getText` で新規プリセット名を入力し、`video_presets` に追加してコンボボックスを選択。
-     - `_on_reset_or_delete_video_preset()`: 公式4プリセットならデフォルト値へ初期化、ユーザー作成プリセットなら確認ダイアログ後に削除。
-     - `_on_copy_practice_visual_to_preset()`: `self.user_settings["practice_visual"]` の見た目設定（色、スキン、背景、グリッド・音名ON/OFF等）を選択中プリセットへコピーし、キャンバスを即時更新。
-- **コミットメッセージ**: `feat(export-tab): add video preset manager UI and practice-to-video copy bridge`
+  1. `_build_tab_audio` の録音テイクボタン行 `r_take`（1734〜1747行付近）に **`[📂 テイク選択...]` ボタン (`self.btn_select_rec_take`)** を追加する：
+     - 配置: `[▶ 試聴]` (`btn_rec_listen`, 幅64px) ＋ `[📂 テイク選択...]` (`btn_select_rec_take`, stretch=1) ＋ `[📁 保存先]` (`btn_open_rec`, 幅68px)
+     - クリック時に `self._on_select_rec_take()` を呼び出す。
+  2. `_on_select_rec_take(self)` メソッド（4755行 `_on_open_rec_folder` の直前）を新設する：
+     - 初期フォルダを `get_portable_path("recordings")` として `QFileDialog.getOpenFileName(self, "採用する録音テイク (WAV) を選択", rec_dir, "WAV Audio (*.wav);;Audio Files (*.wav *.mp3 *.flac *.m4a)")` を開く。
+     - 選択されたファイルを `self.last_recorded_path = path` に設定し、`self._set_elided_label_text(self.lbl_rec_take, f"採用テイク: {os.path.basename(path)}", path, max_width=300)` でラベルを更新（エメラルド色 `#34D399`）、`self.btn_rec_listen.setEnabled(True)` にし、ミキサー設定（`_update_mixer_summary_label()`）も即時更新する。
+- **コミットメッセージ**: `feat(audio-tab): allow selecting existing recorded WAV takes for audition and video export`
 
 ---
 
-#### - [x] **Micro-Step 7: 全体結合検証・引き継ぎドキュメント更新・Gitタグ `v3.1.0` 付与**
-- **対象ファイル**: `.context/00_handover.md`, `.context/02_tasks.md`
+#### - [ ] **Micro-Step 6: 録音ズレ補正の「▶ 伴奏と同期試聴」および微調整ボタン実装**
+- **対象ファイル**: `src/main.py`
+- **背景・目的**: 録音ズレ補正（`spin_rec_offset`）を調整する際、単体試聴では伴奏や画面ノーツと合っているか確認できないため、タイムライン再生（伴奏/MIDI＋ノーツ落下）と録音テイクを同時に鳴らしてズレを確認・微調整できる機構を追加する。
 - **実装内容**:
-  1. 全ファイルの構文チェックとプリセット切替・マイグレーション動作の検証スクリプトを実行。
-  2. `.context/02_tasks.md` の Micro-Step 1〜7 を完了（`[x]`）に更新し、`.context/00_handover.md` を `v3.1.0` 完了状態に更新してコミット。
-  3. Gitタグ `v3.1.0`（Annotated Tag）を付与する。
-- **コミットメッセージ**: `docs(release): complete v3.1.0 preset architecture milestone and update handover`
+  1. `_build_tab_audio` の録音ズレ補正行（1750〜1771行付近）の下に、微調整＆同期試聴行 `r_rec_sync` を追加する：
+     - `[-10ms]`, `[+10ms]` 微調整ボタン ＋ **`[▶ 伴奏と同期試聴]` (`self.btn_rec_sync_audition`)** ボタンを配置する。
+  2. 録音テイク用のメモリPCMキャッシュ `self._rec_pcm = None` と再生チャンネル `pygame.mixer.Channel(2)`（外部伴奏は Channel 1 を使用中）を導入し、`_sync_rec_take_playback(self, is_playing: bool, target_sec: float = None)` を実装する：
+     - `self._rec_sync_monitoring = True`（同期試聴ON中）のとき、メイン再生・シーク・停止（`_on_play_toggle`, `_on_stop`, `_on_seek_released`）および `spin_rec_offset` 変更時に、`src_sec = cur_sec - (self.spin_rec_offset.value() / 1000.0)` の位置から録音テイクPCMを Channel 2 で完全同期スライス再生する！
+- **コミットメッセージ**: `feat(audio-tab): add synchronized timeline audition for recorded take offset adjustment`
+
+---
+
+#### - [ ] **Micro-Step 7: v3.2.0 全体結合テスト・引き継ぎドキュメント更新・Gitタグ `v3.2.0` 付与**
+- **対象ファイル**: `src/main.py`, `.context/00_handover.md`, `.context/02_tasks.md`
+- **実装内容**:
+  1. `src/main.py` のウィンドウタイトルを `Harmonica Visualizer v3.2.0 [PyQt6 64-bit OpenGL Edition]` に更新。
+  2. オフスクリーン自動検証スクリプトを実行し、Micro-Step 1〜6 の全機能（音名直交化、タイトル伸縮、デザインタブプリセット同期、練習音源切替、テイク選択、録音同期試聴）がエラーなく動作することを確認。
+  3. `.context/02_tasks.md` と `.context/00_handover.md` を更新してコミットし、Gitタグ `v3.2.0` を付与する。
+- **コミットメッセージ**: `docs(release): complete v3.2.0 frictionless UI milestone and update handover`
+
+---
+
+## 次期大型マイルストーン (Backlog): Ver.4.0.0「Harmonica Studio（楽曲プロジェクト自己完結化）」
+（※ 詳細設計は `.context/01_architecture.md` 第5章に定義済み）
+- [ ] **Phase 4-1: `src/project_manager.py` の新設（`projects/<曲名>/` コンテナ生成・SHA-256 同名MIDI衝突検知・相対パス管理）**
+- [ ] **Phase 4-2: キー（移調）別・用途別の運指パターン保存システム（`project.json` 内の `fingering_patterns` 辞書管理）**
+- [ ] **Phase 4-3: 環境設定ウィンドウ（`[⚙ 環境設定]` / `src/ui_settings_dialog.py`）の分離と練習画面スタイルの練習タブ統合**
+- [ ] **Phase 4-4: `src/main.py` のモジュール分割と旧 `src/fingering/*.json` からの自動マイグレーション**
+- [ ] **Ver.3.20 / Ver.4.00 配布用パッケージ（PyInstaller EXE）のクリーンビルドとZIP化**
 
 ---
 
@@ -151,15 +147,8 @@
   - Micro-Step 4: `src/main.py` へのビジュアル状態抽出・適用ヘルパー導入 ＆ render_settings ビルダー統合 (`886fe2d`)
   - Micro-Step 5: `🎨 画面作り` タブの編集対象ターゲット切替（練習用 vs 動画プリセット）とタブ連動分離 (`4584b3b`)
   - Micro-Step 6: `🎬 動画出力` タブへの動画プリセット管理UI ＆ 練習コピーブリッジ追加 (`c5ed34c`)
-  - Micro-Step 7: 全体結合検証（オフスクリーンQt自動テスト通過）、ドキュメント更新、Gitタグ `v3.1.0` 付与
+  - Micro-Step 7: 全体結合検証（オフスクリーンQt自動テスト通過）、ドキュメント更新、Gitタグ `v3.1.0` 付与 (`9832fb3`)
 - [x] **タスク粒度の2層構造化知見（Gotcha #8: Micro Commit × Batch Package）の記録** (2026-10-25) (`22d031b`)
-
----
-
-## 未着手 (Backlog)
-- [ ] **Ver.3.10 配布用パッケージ（PyInstaller EXE）のクリーンビルドとZIP化**
-- [ ] **運指マッピング・変え指プリセットの追加検証**
-- [ ] **多言語対応（i18n）の将来検討**
 
 ---
 

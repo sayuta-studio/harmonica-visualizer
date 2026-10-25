@@ -91,3 +91,105 @@ harmonica-visualizer/
    - `🎬 動画出力` タブからワンクリックで「現在の練習画面の見た目を動画プリセットに反映」できるブリッジ機能を備える。
 6. **移調（Transpose）× カスタム運指（`SONG_FINGERING_OVERRIDES`）の排他保護**:
    - カスタム運指の内部辞書キー `(start_tick, lookup_note)` が移調後のMIDIノート番号に依存するため、1件以上のカスタム運指が存在する間は移調コントロール群をロック（`🔒 原曲キー固定`）し、意図せぬ運指破綻を防止する。
+7. **表記形式（`lang_mode`）と表示可否トグル（`show_lookahead` / `grid4_mode`）の完全直交化（v3.2.0〜）**:
+   - `lang_mode` は純粋な音名表記フォーマット（`["ドレミ", "CDE"]` の2択）のみを担い、`"なし"` を持たない。
+   - ノーツ直上の音名表示可否は `show_lookahead`（bool）、穴下の音名・グリッド表示可否は `grid4_mode`（`["4音グリッド表示", "1音表示 (従来)", "非表示"]` の3択）が独立して担う。
+
+---
+
+## 5. 次世代メジャーアーキテクチャ青写真: Ver.4.0.0「Harmonica Studio（楽曲プロジェクト自己完結型）」
+
+### 5.1 楽曲プロジェクトフォルダ（Song Project Container）のディレクトリ構造
+従来の散在型（`src/fingering/`, `recordings/`, `output/` に全曲のファイルが混在する構造）を廃止し、DAW（Cubase / Logic / Studio One）と同様の **「1楽曲 ＝ 1自己完結フォルダ」** 構造へ移行する。
+
+```text
+projects/
+└── Autumn_Leaves/                      # プロジェクトフォルダ（フォルダ名リネームに自動追従）
+    ├── project.json                    # 🌟 プロジェクト統合マニフェスト（全設定・ハッシュ・テイク管理）
+    ├── source/
+    │   └── Autumn_Leaves.mid           # MIDI原本バックアップ（インポート時に自動コピー、SHA-256検証用）
+    ├── audio/
+    │   └── backing_track.mp3           # 外部伴奏音源（プロジェクト内コピーまたは相対/絶対パス参照）
+    ├── takes/
+    │   ├── take_001_20261025_1400.wav  # マイク録音テイク1（ドライ原本）
+    │   ├── take_001_reverb.wav         # リバーブ適用キャッシュ
+    │   └── take_002_20261025_1415.wav  # マイク録音テイク2（採用テイク）
+    └── exports/
+        ├── Autumn_Leaves_Shorts.mp4    # 書き出し完成動画（9:16）
+        └── Autumn_Leaves_MV.mp4        # 書き出し完成動画（16:9）
+```
+
+### 5.2 同名MIDI衝突検知（SHA-256 ハッシュ比較）とリネーム追従仕様
+1. **MIDI読み込み時のプロジェクト解決フロー**:
+   - ユーザーが `foo.mid` を開いた際、まずファイルの **SHA-256 ハッシュ** を算出する。
+   - `projects/foo/project.json` が既に存在する場合：
+     - **ハッシュが一致**: 同一楽曲と判定し、既存の `projects/foo/` プロジェクトをそのままロードする。
+     - **ハッシュが不一致（同名・別内容MIDI）**: 警告ダイアログ *「同名ですが内容が異なるMIDIファイルです。新しいプロジェクトフォルダ（例: `foo_2`）を作成しますか？ それとも既存プロジェクトのMIDIを差し替えますか？」* を表示し、運指や録音テイクの誤上書き事故を100%防止する。
+2. **フォルダ名リネーム追従**:
+   - `project.json` 内のパス参照はすべて **プロジェクトルートからの相対パス**（`source/...`, `takes/...`, `audio/...`）で保持する。
+   - これにより、ユーザーがエクスプローラー上でフォルダ名を `Autumn_Leaves` から `枯葉_本番用` に変更しても、リンク切れを起こさず完全に追従する。
+
+### 5.3 `project.json` データモデル（キー別運指パターン対応）
+1曲の中で「原曲キー用」「移調+2（ボーカル合わせ）用」など、**移調値（`transpose`）と個別変え指（`overrides`）をセットにした複数の運指パターン** を保持できるスキーマとする。
+
+```json
+{
+  "schema_version": "4.0.0",
+  "project_name": "Autumn_Leaves",
+  "midi_source": {
+    "relative_path": "source/Autumn_Leaves.mid",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "instrument_type": "16穴 (64音・C調)",
+  "tracks": {
+    "main_track_indices": [1],
+    "accomp_track_indices": [2, 3],
+    "monophonic_mode": "すべて有効"
+  },
+  "active_fingering_pattern": "Key +2 (D調) - ボーカル伴奏用",
+  "fingering_patterns": {
+    "原曲キー (±0) - 標準": {
+      "transpose": 0,
+      "transpose_accomp": true,
+      "base_rule": "スライド最小化 (標準)",
+      "hide_muted_notes": false,
+      "overrides": { "480:60": [5, "吹", "OFF", false] },
+      "muted_notes": []
+    },
+    "Key +2 (D調) - ボーカル伴奏用": {
+      "transpose": 2,
+      "transpose_accomp": true,
+      "base_rule": "スライド優先 (異名同音)",
+      "hide_muted_notes": true,
+      "overrides": { "480:62": [5, "吸", "OFF", false] },
+      "muted_notes": ["960:64"]
+    }
+  },
+  "audio_assets": {
+    "ext_audio_rel_path": "audio/backing_track.mp3",
+    "ext_offset_ms": -120,
+    "ext_volume": 80,
+    "active_take_rel_path": "takes/take_002_20261025_1415.wav",
+    "rec_offset_ms": 0,
+    "takes_history": [
+      { "file": "takes/take_001_20261025_1400.wav", "duration_sec": 185.2, "memo": "ウォームアップ" },
+      { "file": "takes/take_002_20261025_1415.wav", "duration_sec": 185.4, "memo": "本番採用テイク" }
+    ]
+  },
+  "practice_state": {
+    "loop_enabled": false,
+    "loop_a": 1,
+    "loop_b": 32,
+    "practice_audio_source": "midi_only",
+    "active_video_preset": "📱 YouTube Shorts (縦型・解説)"
+  }
+}
+```
+
+### 5.4 `src/main.py`（約5,000行）の段階的モジュール分割計画（Ver.4.0.0）
+肥大化した `src/main.py` を以下の5モジュールへ安全に責務分離する：
+1. `src/project_manager.py`: プロジェクトフォルダ作成、SHA-256ハッシュ照合、`project.json` 読み書き、旧 `src/fingering/*.json` からの自動インポート。
+2. `src/ui_settings_dialog.py`: 使用頻度の低いシステム環境設定（オーディオデバイス、MIDI音源エンジン、カスタムスキン画像パス、FFmpegエンコーダ詳細等）を集約した `[⚙ 環境設定]` モーダル/モードレスウィンドウ。
+3. `src/ui_tab_practice.py`: 練習タブUI（楽器・キー別運指パターン切替・練習画面スタイル簡易設定・練習音源切替）。
+4. `src/ui_tab_studio.py`: 録音・伴奏同期・動画プリセット・書き出しタブUI。
+5. `src/main.py`: メインウィンドウ骨格、上部トランスポート、OpenGLキャンバス配置、クロック・イベント統括（約1,500行以下にスリム化）。
