@@ -76,3 +76,25 @@
   - **内部実行層（Git/AI）**: 変更の独立性・安全なロールバック性を担保するため、コード修正は必ず「1ステップ＝1コミット（Micro Commit）」の原則を厳守する。
   - **対話インターフェース層（人間/AI）**: 密接に関連する 2〜3 個の Micro-Step を **「1つの実行パッケージ（Batch Package）」** として上位設計（Architectフェーズ）段階でグルーピングする。
   - 高速モデル（3.8等）には「パッケージ内のステップを1つずつ順番にコミットしながら自動連続実行し、パッケージ単位で人間に短報する」運用を指示することで、**コードの堅牢性（Micro Commit）と開発者の快適性・高テンポを両立**させる。
+
+### 9. コードソース汚染防止とポータブル基底パス解決規約（開発環境 vs 配布EXE）
+- **落とし穴 (Gotcha)**:
+  - Python GUI / デスクトップアプリで、ユーザーデータ（録音WAV、出力動画、プロジェクト設定等）を保存・生成する際、安易に `BASE_DIR = os.path.dirname(os.path.abspath(__file__))` を基底パスとして使用すると、開発中のテスト実行（`python src/main.py`）時に `src/` 配下に動的フォルダ（`projects/`, `recordings/` 等）が勝手に作られ、ソースコード領域が汚染されてしまう。
+  - さらに、これを防止しようと安易に相対パス `projects/...` を直書きすると、PyInstaller 等で EXE 化（配布パッケージ化）した際に実行パスが狂い、保存先が行方不明になる不具合が発生する。
+- **回避策・ベストプラクティス**:
+  1. **2層ベースディレクトリ解決関数（`get_base_dir`）の唯一化**:
+     - `config.py` 等で一元管理し、実行環境に応じて「真のルート」を自動解決する：
+       ```python
+       def get_base_dir() -> str:
+           if getattr(sys, "frozen", False):
+               # 配布EXE実行時 ➔ exeと同じ階層（ポータブル展開）
+               return os.path.dirname(os.path.abspath(sys.executable))
+           else:
+               # 開発時 (.py直接実行) ➔ srcの親（プロジェクトルート）
+               src_dir = os.path.dirname(os.path.abspath(__file__))
+               return os.path.dirname(src_dir)
+       ```
+  2. **ソースコード領域（`src/`）の不可侵維持**:
+     - 開発時、生成データは必ず `src/` の外（プロジェクトルート直下の `projects/`, `recordings/`, `output/` 等）に生成させ、`src/` 配下を100%「純粋なプログラムと付属固定リソースのみ」に保つ。
+  3. **`.gitignore` によるルート遮断**:
+     - プロジェクトルートに生成される動的データフォルダは `.gitignore` に `/projects/`, `/recordings/`, `/output/`, `/temp/` を明記し、Gitリポジトリを永続的にクリーンに保つ。
