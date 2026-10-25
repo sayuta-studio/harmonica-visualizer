@@ -296,3 +296,4 @@ def resolve_song_project(midi_path: str, interactive_parent=None) -> dict:
         "midi_dest": dest_midi,
         "data": project_data
     }
+

@@ -657,6 +657,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_fing_preset.blockSignals(True)
         self.combo_fing_preset.setCurrentText(harmonica_map.CURRENT_SONG_PRESET)
         self.combo_fing_preset.blockSignals(False)
+        self._refresh_main_fg_pattern_combo()
 
     # =========================================================================
     # UI構築: クラシックL型レイアウト
@@ -975,6 +976,15 @@ class HarmonicaMainWindow(QMainWindow):
         self.chk_transpose_accomp.toggled.connect(self._on_transpose_changed)
         row3.addWidget(self.chk_transpose_accomp)
 
+        self.btn_unlock_for_new_key = QPushButton("🔓 別キー新規作成", self)
+        self.btn_unlock_for_new_key.setStyleSheet(
+            "background-color: #2D1A10; border: 1px solid #D97706; color: #FBBF24; font-size: 11px; padding: 2px 6px; font-weight: bold;"
+        )
+        self.btn_unlock_for_new_key.setToolTip("現在の変え指をパターンに自動保存して保護した上で、ロックを解除して別のキー（移調）の運指を作成します")
+        self.btn_unlock_for_new_key.setVisible(False)
+        self.btn_unlock_for_new_key.clicked.connect(self._on_unlock_for_new_key)
+        row3.addWidget(self.btn_unlock_for_new_key)
+
         # ステータス即時メッセージ (大幅拡張 stretch=1 / 電光掲示板マーキー対応)
         self.lbl_status_msg = MarqueeLabel("準備完了", self)
         self.lbl_status_msg.setObjectName("statusMsg")
@@ -1091,6 +1101,23 @@ class HarmonicaMainWindow(QMainWindow):
         self.btn_range_check.clicked.connect(self._on_check_pitch_range)
         r_model.addWidget(self.btn_range_check)
         l_inst.addLayout(r_model)
+
+        r_fpat = QHBoxLayout()
+        r_fpat.addWidget(QLabel("運指パターン:"))
+        self.combo_main_fg_pattern = QComboBox(self)
+        self.combo_main_fg_pattern.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.combo_main_fg_pattern.setToolTip("この曲に保存されている運指パターン（キー・移調連動）を切り替え")
+        self._configure_sidebar_combo(self.combo_main_fg_pattern, max_width=185)
+        self.combo_main_fg_pattern.activated.connect(self._on_main_fg_pattern_activated)
+        r_fpat.addWidget(self.combo_main_fg_pattern, stretch=1)
+
+        self.btn_main_save_fg_pattern = QPushButton("➕ 保存", self)
+        self.btn_main_save_fg_pattern.setFixedWidth(54)
+        self.btn_main_save_fg_pattern.setStyleSheet("font-size: 11px; padding: 2px 4px; font-weight: bold;")
+        self.btn_main_save_fg_pattern.setToolTip("現在の移調キー・変え指・除外設定を名前付き運指パターンとして保存")
+        self.btn_main_save_fg_pattern.clicked.connect(self._on_main_save_fg_pattern)
+        r_fpat.addWidget(self.btn_main_save_fg_pattern)
+        l_inst.addLayout(r_fpat)
 
         r_fing = QHBoxLayout()
         r_fing.addWidget(QLabel("運指規則:"))
@@ -3631,6 +3658,7 @@ class HarmonicaMainWindow(QMainWindow):
                 self.combo_monophonic_mode.blockSignals(False)
             self._update_song_info_labels()
             self._update_transpose_lock_state()
+            self._refresh_main_fg_pattern_combo()
             self.lbl_status_msg.setText("💾 変え指設定を保存・適用しました")
 
     def _on_reset_song_fingering(self):
@@ -3647,6 +3675,9 @@ class HarmonicaMainWindow(QMainWindow):
                 self.audio_engine.load_timeline(self.timeline)
                 self.audio_engine.seek(self.clock.get_current_base_sec())
             self.gl_widget.invalidate_static_cache()
+            self._update_transpose_lock_state()
+            self._refresh_main_fg_pattern_combo()
+            self.lbl_status_msg.setText("🔄 運指データを初期化しました")
             self.gl_widget.update()
             self._check_out_of_range_and_notify()
             self._update_transpose_lock_state()
@@ -3749,16 +3780,179 @@ class HarmonicaMainWindow(QMainWindow):
             w = getattr(self, w_name, None)
             if w is not None:
                 w.setEnabled(not locked)
+        if hasattr(self, "btn_unlock_for_new_key"):
+            self.btn_unlock_for_new_key.setVisible(locked)
         if hasattr(self, "spin_transpose"):
             if locked:
                 self.spin_transpose.setStyleSheet("background-color: #2D1A10; border: 1px solid #D97706; color: #FBBF24; font-weight: bold;")
                 self.spin_transpose.setToolTip(
                     "🔒 カスタム運指（変え指）が設定されているため、音名ズレ防止のため移調をロックしています。\n"
-                    "移調を変更したい場合は、練習タブの「🔄 初期化」から個別運指をリセットしてください。"
+                    "別のキー用に運指を作成したい場合は、右隣の [🔓 別キー新規作成] または練習タブの「🔄 初期化」を使用してください。"
                 )
             else:
                 self.spin_transpose.setStyleSheet("")
                 self.spin_transpose.setToolTip("半音単位の移調 (-24〜+24半音 / ±2オクターブ) [直接入力 / マウスホイールで変更]")
+
+    def _refresh_main_fg_pattern_combo(self):
+        """運指パターンコンボボックスをプロファイルの最新パターン一覧と同期"""
+        if not hasattr(self, "combo_main_fg_pattern"):
+            return
+        patterns = {}
+        if self.timeline and self.timeline.filepath:
+            prof = harmonica_map.load_song_profile(self.timeline.filepath)
+            patterns = dict(prof.get("patterns", {}))
+        
+        cur_active = getattr(harmonica_map, "CURRENT_ACTIVE_PATTERN_NAME", "標準パターン (基本)")
+        pattern_list = ["標準パターン (基本)"] + [k for k in patterns.keys() if k != "標準パターン (基本)"]
+
+        self.combo_main_fg_pattern.blockSignals(True)
+        self.combo_main_fg_pattern.clear()
+        self.combo_main_fg_pattern.addItems(pattern_list)
+        if cur_active in pattern_list:
+            self.combo_main_fg_pattern.setCurrentText(cur_active)
+        else:
+            self.combo_main_fg_pattern.setCurrentIndex(0)
+        self.combo_main_fg_pattern.blockSignals(False)
+
+    def _on_main_fg_pattern_activated(self, idx: int):
+        """メイン練習タブからの運指パターン切替ハンドラ"""
+        p_name = self.combo_main_fg_pattern.currentText()
+        harmonica_map.CURRENT_ACTIVE_PATTERN_NAME = p_name
+
+        patterns = {}
+        if self.timeline and self.timeline.filepath:
+            prof = harmonica_map.load_song_profile(self.timeline.filepath)
+            patterns = dict(prof.get("patterns", {}))
+
+        if p_name in patterns:
+            pat_data = patterns[p_name]
+            pat_trans, pat_trans_acc = harmonica_map.apply_pattern_snapshot(pat_data)
+        else:
+            pat_trans = getattr(self.timeline, "transpose", 0)
+            pat_trans_acc = getattr(self.timeline, "transpose_accomp", True)
+
+        self.spin_transpose.blockSignals(True)
+        self.spin_transpose.setValue(pat_trans)
+        self.spin_transpose.blockSignals(False)
+
+        self.chk_transpose_accomp.blockSignals(True)
+        self.chk_transpose_accomp.setChecked(pat_trans_acc)
+        self.chk_transpose_accomp.blockSignals(False)
+
+        if self.timeline:
+            self.timeline.set_transpose(pat_trans, pat_trans_acc)
+            self.timeline.monophonic_mode = harmonica_map.CURRENT_MONOPHONIC_MODE
+            self.timeline.rebind_fingerings(self.timeline.inst_type)
+
+        self.combo_fing_preset.blockSignals(True)
+        self.combo_fing_preset.setCurrentText(harmonica_map.normalize_fingering_preset(harmonica_map.CURRENT_SONG_PRESET))
+        self.combo_fing_preset.blockSignals(False)
+
+        self.combo_monophonic_mode.blockSignals(True)
+        self.combo_monophonic_mode.setCurrentText(harmonica_map.CURRENT_MONOPHONIC_MODE)
+        self.combo_monophonic_mode.blockSignals(False)
+
+        if self.audio_engine and self.timeline:
+            self.audio_engine.set_transpose(pat_trans, pat_trans_acc)
+            self.audio_engine.load_timeline(self.timeline)
+            self.audio_engine.seek(self.clock.get_current_base_sec())
+        if self.gl_widget:
+            self.gl_widget.invalidate_static_cache()
+            self.gl_widget.update()
+
+        self._update_transpose_lock_state()
+        self._save_current_song_profile()
+        self.lbl_status_msg.setText(f"🎼 運指パターンを適用しました: {p_name}")
+
+    def _on_main_save_fg_pattern(self):
+        """メイン画面からの運指パターン別名保存"""
+        if not self.timeline or not self.timeline.filepath:
+            QMessageBox.information(self, "パターン保存", "楽曲（MIDI）が読み込まれていません。")
+            return
+
+        prof = harmonica_map.load_song_profile(self.timeline.filepath)
+        patterns = dict(prof.get("patterns", {}))
+
+        cur_trans = self.spin_transpose.value()
+        cur_trans_acc = self.chk_transpose_accomp.isChecked()
+        key_lbl = harmonica_map.format_transpose_key_label(cur_trans)
+        default_name = f"{key_lbl} - パターン {len(patterns) + 1}"
+
+        text, ok = QInputDialog.getText(
+            self, "運指パターン保存",
+            "現在の移調キー・変え指・除外設定を名前付きパターンとして保存します:\n(例: Key+2 - ボーカル伴奏用 / スライド強化 / 簡易版)",
+            text=default_name
+        )
+        if not ok or not text.strip():
+            return
+        p_name = text.strip()
+        if p_name == "標準パターン (基本)":
+            QMessageBox.warning(self, "保存不可", "「標準パターン (基本)」と同名では別名保存できません。別の名前を指定してください。")
+            return
+
+        snapshot = harmonica_map.build_current_pattern_snapshot(transpose=cur_trans, transpose_accomp=cur_trans_acc)
+        patterns[p_name] = snapshot
+        harmonica_map.CURRENT_ACTIVE_PATTERN_NAME = p_name
+
+        harmonica_map.save_song_profile(self.timeline.filepath, {
+            "patterns": patterns,
+            "active_pattern_name": p_name,
+            "transpose": cur_trans,
+            "transpose_accomp": cur_trans_acc
+        })
+        harmonica_map.save_song_fingering(self.timeline.filepath)
+
+        self._refresh_main_fg_pattern_combo()
+        self.combo_main_fg_pattern.setCurrentText(p_name)
+        self.lbl_status_msg.setText(f"💾 運指パターンを保存しました: {p_name}")
+
+    def _on_unlock_for_new_key(self):
+        """現在の運指を保護バックアップ保存した上で、別キー用の運指作成のため移調ロックを解除"""
+        if not self.timeline or not self.timeline.filepath:
+            return
+
+        cur_trans = self.spin_transpose.value()
+        key_lbl = harmonica_map.format_transpose_key_label(cur_trans)
+        
+        from dialogs import confirm_dialog
+        if not confirm_dialog(
+            self,
+            "別キー用の運指作成（移調ロック解除）",
+            f"現在の運指（変え指）を現在のキー用パターン（例: {key_lbl}）として自動バックアップ保存した上で、\n"
+            "個別変え指をクリアして移調ロックを解除しますか？\n\n"
+            "（解除後は移調スピンボックスを自由に変更できるようになります）",
+            default_yes=True
+        ):
+            return
+
+        prof = harmonica_map.load_song_profile(self.timeline.filepath)
+        patterns = dict(prof.get("patterns", {}))
+        backup_name = f"{key_lbl} (保存済み)"
+        snapshot = harmonica_map.build_current_pattern_snapshot(
+            transpose=cur_trans,
+            transpose_accomp=self.chk_transpose_accomp.isChecked()
+        )
+        patterns[backup_name] = snapshot
+
+        harmonica_map.SONG_FINGERING_OVERRIDES.clear()
+        harmonica_map.save_song_profile(self.timeline.filepath, {
+            "patterns": patterns,
+            "active_pattern_name": "標準パターン (基本)"
+        })
+        harmonica_map.save_song_fingering(self.timeline.filepath)
+
+        if self.timeline:
+            self.timeline.rebind_fingerings(self.timeline.inst_type)
+        if self.audio_engine and self.timeline:
+            self.audio_engine.load_timeline(self.timeline)
+            self.audio_engine.seek(self.clock.get_current_base_sec())
+        if self.gl_widget:
+            self.gl_widget.invalidate_static_cache()
+            self.gl_widget.update()
+
+        self._update_transpose_lock_state()
+        self._refresh_main_fg_pattern_combo()
+        self.lbl_status_msg.setText(f"🔓 移調ロックを解除しました（直前の設定は「{backup_name}」にバックアップ保存済）")
 
     def _on_transpose_changed(self, *args):
         val = self.spin_transpose.value()
@@ -4136,6 +4330,7 @@ class HarmonicaMainWindow(QMainWindow):
             self._sync_ext_audio_playback(False, 0.0)
             self._sync_rec_take_playback(False, 0.0)
             self._update_transpose_lock_state()
+            self._refresh_main_fg_pattern_combo()
             self.lbl_status_msg.setText(f"📂 読込完了: {self.timeline.filename}")
             self._check_out_of_range_and_notify()
         except Exception as e:
