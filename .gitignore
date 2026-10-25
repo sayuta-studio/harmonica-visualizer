@@ -50,3 +50,11 @@ Thumbs.db
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
+
+# ポータブル基底ディレクトリ（リポジトリルート）直下のユーザー生成データ・動的フォルダ
+/projects/
+/recordings/
+/output/
+/temp/
+/fingering/
+/settings.json

@@ -10,6 +10,7 @@
 
 import os
 import sys
+import shutil
 
 def resource_path(relative_path):
     """
@@ -22,16 +23,40 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-def get_portable_path(relative_path):
+def get_portable_base_dir() -> str:
     """
-    UAC保護領域への書き込みクラッシュを完全に先回り防衛するため、
-    ユーザーが実際に実行ファイルを配置・実行している物理フォルダ直下の絶対パスを返します。
+    EXE化時(frozen)は実行ファイルのある物理フォルダ、
+    開発時(.py直接実行)は src/ の1階層上（リポジトリルート）を返します。
     """
-    if getattr(sys, 'frozen', False):
-        base_dir = os.path.dirname(sys.executable)
-    else:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_dir, relative_path)
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def get_portable_path(relative_path: str) -> str:
+    """
+    ユーザーデータ・動的フォルダはポータブル基底ディレクトリ直下に解決します。
+    ただし同梱静的アセット('skins')がルート直下に無い場合は src/skins へ自動フォールバックし、
+    'settings.json' がルート直下に無く src/settings.json にある場合は初回のみ自動コピーして引き継ぎます。
+    """
+    base_dir = get_portable_base_dir()
+    target_path = os.path.join(base_dir, relative_path)
+    src_dir = os.path.dirname(os.path.abspath(__file__))
+
+    norm_rel = relative_path.replace("\\", "/").strip("/")
+    if norm_rel == "skins" or norm_rel.startswith("skins/"):
+        if not os.path.exists(target_path):
+            src_fallback = os.path.join(src_dir, relative_path)
+            if os.path.exists(src_fallback):
+                return src_fallback
+    elif norm_rel == "settings.json":
+        if not os.path.exists(target_path):
+            src_settings = os.path.join(src_dir, "settings.json")
+            if os.path.isfile(src_settings):
+                try:
+                    shutil.copy2(src_settings, target_path)
+                except Exception:
+                    pass
+    return target_path
 
 def get_canvas_height_by_ratio(ratio_str):
     """

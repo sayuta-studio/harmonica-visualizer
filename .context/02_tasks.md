@@ -12,7 +12,7 @@
 
 ### 📦 Batch Package 1: ポータブル基底パス刷新 ＆ 楽曲プロジェクトマネージャー (`src/project_manager.py`) の構築（Micro-Step 1 〜 2）
 
-#### - [ ] **Micro-Step 1: `src/config.py` のポータブル基底パス刷新（Gotcha #9 実装：開発時の `src/` 汚染完全防止）と `.gitignore` 保護**
+#### - [x] **Micro-Step 1: `src/config.py` のポータブル基底パス刷新（Gotcha #9 実装：開発時の `src/` 汚染完全防止）と `.gitignore` 保護**
 - **対象ファイル**: `src/config.py`, `.gitignore`
 - **背景・目的**: 開発時（`python src/main.py` や自動テスト実行時）に `__file__` のある `src/` 配下に `projects/` や `recordings/` が生成されたり、Git追跡下の `src/settings.json` や `src/fingering/demo_chromatic_profile.json` が書き換わって Git status が汚れる問題を根絶する。
 - **実装内容**:
