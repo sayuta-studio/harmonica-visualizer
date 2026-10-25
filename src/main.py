@@ -527,6 +527,54 @@ class MarqueeLabel(QLabel):
         p.end()
 
 
+class CollapsibleSection(QFrame):
+    """タイトル行クリックで中身を1行に最小化・展開できるアコーディオンフレーム"""
+    def __init__(self, title: str, content_frame: QWidget, expanded: bool = True, parent=None):
+        super().__init__(parent)
+        self.setObjectName("groupFrame")
+        self.setMaximumWidth(328)
+        self._title = title
+        self._content = content_frame
+        self._expanded = expanded
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
+
+        self.btn_toggle = QPushButton(self)
+        self.btn_toggle.setCheckable(True)
+        self.btn_toggle.setChecked(expanded)
+        self.btn_toggle.setFlat(True)
+        self.btn_toggle.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                font-weight: bold;
+                color: #E2E8F0;
+                background-color: #1E293B;
+                border: 1px solid #334155;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+            QPushButton:hover {
+                background-color: #334155;
+                color: #38BDF8;
+            }
+        """)
+        self.btn_toggle.toggled.connect(self._on_toggled)
+        layout.addWidget(self.btn_toggle)
+
+        # 内部フレームの二重枠線を消してスッキリ収容
+        self._content.setStyleSheet("QFrame#groupFrame { border: none; background: transparent; }")
+        layout.addWidget(self._content)
+        self._on_toggled(expanded)
+
+    def _on_toggled(self, checked: bool):
+        self._expanded = checked
+        arrow = "▼" if checked else "▶"
+        self.btn_toggle.setText(f"{arrow}  {self._title}")
+        self._content.setVisible(checked)
+
+
 class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
     """v3.0 メインアプリケーションウィンドウ (クラシックL型レイアウト)"""
 
@@ -1241,7 +1289,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         r_fbtns.addWidget(self.btn_reset_fing)
         l_inst.addLayout(r_fbtns)
 
-        v_box.addWidget(f_inst)
+        v_box.addWidget(CollapsibleSection("🎷 ハーモニカモデル・運指", f_inst, expanded=True, parent=self))
 
         # 2. ⚡ ノーツ落下速度グループ
         f_fall = QFrame()
@@ -1269,7 +1317,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         r_fall.addWidget(btn_fall_100)
 
         l_fall.addLayout(r_fall)
-        v_box.addWidget(f_fall)
+        v_box.addWidget(CollapsibleSection("⚡ ノーツ落下速度", f_fall, expanded=True, parent=self))
 
         # 3. 📈 ステップアップ練習グループ
         f_stepup = QFrame()
@@ -1322,7 +1370,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.combo_sp_step.currentTextChanged.connect(lambda _: self._save_current_settings())
         r_sp1.addWidget(self.combo_sp_step)
         l_sp.addLayout(r_sp1)
-        v_box.addWidget(f_stepup)
+        v_box.addWidget(CollapsibleSection("📈 ステップアップ練習", f_stepup, expanded=False, parent=self))
 
         # 4. 🔊 練習時の再生音源 (伴奏切替)
         f_prac_audio = QFrame()
@@ -1364,7 +1412,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.lbl_prac_ext_status.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 11px;")
         l_pa.addWidget(self.lbl_prac_ext_status)
 
-        v_box.addWidget(f_prac_audio)
+        v_box.addWidget(CollapsibleSection("🔊 練習時の再生音源", f_prac_audio, expanded=False, parent=self))
 
         # 5. 🎨 練習画面の表示スタイル (練習用ビジュアル設定)
         f_prac_style = QFrame()
@@ -1434,7 +1482,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         r_pchks.addWidget(self.chk_prac_legend)
         l_ps.addLayout(r_pchks)
 
-        v_box.addWidget(f_prac_style)
+        v_box.addWidget(CollapsibleSection("🎨 練習画面の表示スタイル", f_prac_style, expanded=False, parent=self))
 
         v_box.addStretch()
         scroll.setWidget(content)
@@ -1552,7 +1600,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self._configure_sidebar_combo(self.lang_combo, max_width=230)
         r_lang.addWidget(self.lang_combo, stretch=1)
         l_disp.addLayout(r_lang)
-        v_box.addWidget(f_disp)
 
         # 2. 画面比率（動画制作・構図プレビュー）
         self.f_ratio = QFrame()
@@ -1585,7 +1632,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         lbl_ratio_note.setStyleSheet("color: #94A3B8; font-size: 11px; line-height: 1.3;")
         lbl_ratio_note.setWordWrap(True)
         l_ratio.addWidget(lbl_ratio_note)
-        v_box.addWidget(self.f_ratio)
 
         # 2. カラーテーマ & 吹吸カラー選択
         f_col = QFrame()
@@ -1649,7 +1695,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.lbl_op_val = QLabel(f"{self.slider_op.value()}%", self)
         r_op.addWidget(self.lbl_op_val)
         l_col.addLayout(r_op)
-        v_box.addWidget(f_col)
 
         # 3. 表示要素チェックボックス群 (2列グリッド)
         f_chk = QFrame()
@@ -1737,7 +1782,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self._configure_sidebar_combo(self.combo_grid4, max_width=230)
         r_grid4.addWidget(self.combo_grid4, stretch=1)
         l_chk.addLayout(r_grid4)
-        v_box.addWidget(f_chk)
 
         # 4. 背景画像 & 減光 (コントラスト)
         f_bg = QFrame()
@@ -1825,7 +1869,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.lbl_bg_dim_val.setFixedWidth(36)
         r_dim.addWidget(self.lbl_bg_dim_val)
         l_bg.addLayout(r_dim)
-        v_box.addWidget(f_bg)
 
         # 5. ハーモニカスキン装飾
         f_skin = QFrame()
@@ -1853,7 +1896,14 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.btn_reset_skin.clicked.connect(self._on_reset_preset_skin)
         r_skin_btns.addWidget(self.btn_reset_skin)
         l_skin.addLayout(r_skin_btns)
-        v_box.addWidget(f_skin)
+
+        # 画面デザイン各セクションのアコーディオン登録（①比率 ➔ ②ノーツ ➔ ③カラー ➔ ④表示要素 ➔ ⑤背景 ➔ ⑥スキン）
+        v_box.addWidget(CollapsibleSection("📐 画面比率 (構図プレビュー連動)", self.f_ratio, expanded=True, parent=self))
+        v_box.addWidget(CollapsibleSection("🎵 演奏・ノーツ表示", f_disp, expanded=True, parent=self))
+        v_box.addWidget(CollapsibleSection("🎨 カラーテーマ ＆ ノーツ装飾", f_col, expanded=True, parent=self))
+        v_box.addWidget(CollapsibleSection("☑️ 表示要素 ON/OFF ＆ 穴番号", f_chk, expanded=False, parent=self))
+        v_box.addWidget(CollapsibleSection("🖼️ 背景画像 ＆ 減光 (コントラスト)", f_bg, expanded=False, parent=self))
+        v_box.addWidget(CollapsibleSection("🎷 ハーモニカ本体スキン", f_skin, expanded=False, parent=self))
 
         v_box.addStretch()
         scroll.setWidget(content)
