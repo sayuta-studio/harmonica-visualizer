@@ -658,6 +658,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.combo_fing_preset.setCurrentText(harmonica_map.CURRENT_SONG_PRESET)
         self.combo_fing_preset.blockSignals(False)
         self._refresh_main_fg_pattern_combo()
+        self._sync_practice_style_ui_values()
 
     # =========================================================================
     # UI構築: クラシックL型レイアウト
@@ -1302,10 +1303,80 @@ class HarmonicaMainWindow(QMainWindow):
 
         v_box.addWidget(f_prac_audio)
 
+        # 5. 🎨 練習画面の表示スタイル (練習用ビジュアル設定)
+        f_prac_style = QFrame()
+        f_prac_style.setObjectName("groupFrame")
+        f_prac_style.setMaximumWidth(328)
+        l_ps = QVBoxLayout(f_prac_style)
+        l_ps.setContentsMargins(6, 6, 6, 6)
+        l_ps.setSpacing(6)
+        l_ps.addWidget(QLabel("🎨 <b>練習画面の表示スタイル:</b>"))
+
+        # 軌道モード
+        r_ptraj = QHBoxLayout()
+        r_ptraj.addWidget(QLabel("軌道モード:"))
+        self.combo_prac_traj = QComboBox(self)
+        self.combo_prac_traj.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.combo_prac_traj.addItems(["3段階 (練習標準)", "2段階 (ビジュアル)", "垂直落下 (クラシック)"])
+        self.combo_prac_traj.setToolTip("落下ノーツの軌道スタイル")
+        self._configure_sidebar_combo(self.combo_prac_traj, max_width=230)
+        self.combo_prac_traj.currentTextChanged.connect(self._on_prac_style_changed)
+        r_ptraj.addWidget(self.combo_prac_traj, stretch=1)
+        l_ps.addLayout(r_ptraj)
+
+        # 音名表記 ＆ 穴下ノート
+        r_plang = QHBoxLayout()
+        r_plang.addWidget(QLabel("音名:"))
+        self.combo_prac_lang = QComboBox(self)
+        self.combo_prac_lang.addItems(["ドレミ", "CDE"])
+        self.combo_prac_lang.setToolTip("練習時の音名言語表記")
+        self.combo_prac_lang.currentTextChanged.connect(self._on_prac_style_changed)
+        r_plang.addWidget(self.combo_prac_lang, stretch=1)
+
+        r_plang.addWidget(QLabel("穴下:"))
+        self.combo_prac_grid4 = QComboBox(self)
+        self.combo_prac_grid4.addItems(["4音グリッド表示", "1音表示 (従来)", "非表示"])
+        self.combo_prac_grid4.setToolTip("ハーモニカ穴の下に配置する音名表示")
+        self.combo_prac_grid4.currentTextChanged.connect(self._on_prac_style_changed)
+        r_plang.addWidget(self.combo_prac_grid4, stretch=1)
+        l_ps.addLayout(r_plang)
+
+        # カラーテーマ
+        r_ptheme = QHBoxLayout()
+        r_ptheme.addWidget(QLabel("配色テーマ:"))
+        self.combo_prac_theme = QComboBox(self)
+        self.combo_prac_theme.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.combo_prac_theme.addItems(["ノーマル", "サクラ", "クールネオン", "モノクロ", "カスタム"])
+        self.combo_prac_theme.setToolTip("練習時のノーツ配色テーマ")
+        self._configure_sidebar_combo(self.combo_prac_theme, max_width=230)
+        self.combo_prac_theme.currentTextChanged.connect(self._on_prac_style_changed)
+        r_ptheme.addWidget(self.combo_prac_theme, stretch=1)
+        l_ps.addLayout(r_ptheme)
+
+        # 表示チェックボックス行
+        r_pchks = QHBoxLayout()
+        self.chk_prac_lookahead = QCheckBox("ノーツ音名", self)
+        self.chk_prac_lookahead.setToolTip("落下ノーツの直上に音名ラベルを表示")
+        self.chk_prac_lookahead.toggled.connect(self._on_prac_style_changed)
+        r_pchks.addWidget(self.chk_prac_lookahead)
+
+        self.chk_prac_bar_lines = QCheckBox("小節線", self)
+        self.chk_prac_bar_lines.setToolTip("タイムラインの小節区切り線を表示")
+        self.chk_prac_bar_lines.toggled.connect(self._on_prac_style_changed)
+        r_pchks.addWidget(self.chk_prac_bar_lines)
+
+        self.chk_prac_legend = QCheckBox("吹吸凡例", self)
+        self.chk_prac_legend.setToolTip("右下に吹吸の凡例を表示")
+        self.chk_prac_legend.toggled.connect(self._on_prac_style_changed)
+        r_pchks.addWidget(self.chk_prac_legend)
+        l_ps.addLayout(r_pchks)
+
+        v_box.addWidget(f_prac_style)
+
         v_box.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll)
-        self.tab_widget.addTab(tab, "🎵 練習")
+        self.tab_widget.addTab(tab, "🎹 練習")
 
     # =========================================================================
     # タブ 2: 【🎨 画面作り】
@@ -1324,7 +1395,7 @@ class HarmonicaMainWindow(QMainWindow):
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
 
-        # 0. 🎯 編集対象ターゲットの切り替え (v3.1.0)
+        # 0. 🎬 動画プリセットの画面デザイン編集バー (v4.0.0 動画専用化)
         f_target = QFrame()
         f_target.setObjectName("groupFrame")
         f_target.setMaximumWidth(328)
@@ -1332,22 +1403,18 @@ class HarmonicaMainWindow(QMainWindow):
         l_target = QVBoxLayout(f_target)
         l_target.setContentsMargins(6, 6, 6, 6)
         l_target.setSpacing(4)
-        l_target.addWidget(QLabel("🎯 <b>編集対象のスタイルを選択:</b>"))
+        l_target.addWidget(QLabel("🎬 <b>動画プリセットのデザイン設定:</b>"))
 
-        r_tgt = QHBoxLayout()
+        # 互換性のため内部的に保持（非表示）
         self.combo_visual_target = QComboBox(self)
-        self.combo_visual_target.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_visual_target.addItems([
             "🎯 練習用の画面スタイル (標準)",
             "🎬 動画プリセットの画面スタイル"
         ])
-        self.combo_visual_target.setToolTip("編集・カスタマイズする表示対象（日常の練習画面 vs 動画書き出しプリセット）を切り替え")
-        self._configure_sidebar_combo(self.combo_visual_target, max_width=310)
-        self.combo_visual_target.currentTextChanged.connect(self._on_visual_target_changed)
-        r_tgt.addWidget(self.combo_visual_target)
-        l_target.addLayout(r_tgt)
+        self.combo_visual_target.setCurrentText("🎬 動画プリセットの画面スタイル")
+        self.combo_visual_target.setVisible(False)
 
-        self.lbl_visual_target_hint = QLabel("現在: 練習用スタイルを編集中（常時16:9・日常の作業環境）", self)
+        self.lbl_visual_target_hint = QLabel("選択中プリセットの画面スタイルを編集（画面比率・構図プレビュー連動）", self)
         self.lbl_visual_target_hint.setStyleSheet("color: #38BDF8; font-size: 10px;")
         self.lbl_visual_target_hint.setWordWrap(True)
         l_target.addWidget(self.lbl_visual_target_hint)
@@ -1385,7 +1452,7 @@ class HarmonicaMainWindow(QMainWindow):
         r_dpb_btns.addWidget(self.btn_design_preset_reset)
         l_dpb.addLayout(r_dpb_btns)
 
-        self.w_design_preset_bar.setVisible(False)
+        self.w_design_preset_bar.setVisible(True)
         l_target.addWidget(self.w_design_preset_bar)
         v_box.addWidget(f_target)
 
@@ -1428,12 +1495,12 @@ class HarmonicaMainWindow(QMainWindow):
         self.f_ratio = QFrame()
         self.f_ratio.setObjectName("groupFrame")
         self.f_ratio.setMaximumWidth(328)
-        self.f_ratio.setEnabled(False)  # 初期状態（練習用スタイル編集時）は16:9固定
+        self.f_ratio.setEnabled(True)  # 動画専用化に伴い常時有効
         l_ratio = QVBoxLayout(self.f_ratio)
         l_ratio.setContentsMargins(6, 6, 6, 6)
         l_ratio.setSpacing(6)
 
-        l_ratio.addWidget(QLabel("📐 <b>画面比率（動画プリセット編集時のみ有効）:</b>"))
+        l_ratio.addWidget(QLabel("📐 <b>画面比率（構図プレビュー連動）:</b>"))
 
         r_ratio = QHBoxLayout()
         r_ratio.addWidget(QLabel("比率:"))
@@ -1445,13 +1512,13 @@ class HarmonicaMainWindow(QMainWindow):
             if saved_ratio in self.ratio_combo.itemText(item_idx):
                 self.ratio_combo.setCurrentIndex(item_idx)
                 break
-        self.ratio_combo.setToolTip("書き出す動画の構図に合わせてフレームをプレビュー表示します（練習スタイル編集時は16:9固定）")
+        self.ratio_combo.setToolTip("書き出す動画の構図に合わせてフレームをプレビュー表示します")
         self.ratio_combo.currentTextChanged.connect(self._on_ratio_changed)
         self._configure_sidebar_combo(self.ratio_combo, max_width=230)
         r_ratio.addWidget(self.ratio_combo, stretch=1)
         l_ratio.addLayout(r_ratio)
 
-        lbl_ratio_note = QLabel("※「🎬 動画プリセットの画面スタイル」選択時のみ変更可能です。（「🎯 練習用」は常に広々とした16:9表示になります）")
+        lbl_ratio_note = QLabel("※動画プリセットの書き出し構図（YouTube Shorts 縦型・横型MV等）に合わせてキャンバスを自動プレビューします。")
         lbl_ratio_note.setStyleSheet("color: #94A3B8; font-size: 11px; line-height: 1.3;")
         lbl_ratio_note.setWordWrap(True)
         l_ratio.addWidget(lbl_ratio_note)
@@ -1728,7 +1795,7 @@ class HarmonicaMainWindow(QMainWindow):
         v_box.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll)
-        self.tab_widget.addTab(tab, "🎨 画面作り")
+        self.tab_widget.addTab(tab, "🎨 動画画面")
 
     # =========================================================================
     # タブ 3: 【🎙️ 録音・音響】
@@ -2100,7 +2167,7 @@ class HarmonicaMainWindow(QMainWindow):
         v_box.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll)
-        self.tab_widget.addTab(tab, "🎙️ 録音・音響")
+        self.tab_widget.addTab(tab, "🎙️ 録音・伴奏")
 
     # =========================================================================
     # タブ 4: 【🎬 動画出力】
@@ -2607,27 +2674,66 @@ class HarmonicaMainWindow(QMainWindow):
 
     def _on_tab_changed(self, index: int):
         if index in (0, 2):
-            # 練習タブ / 録音音響タブ: 常に「練習用スタイル」・全画面 16:9 で表示
+            # 練習タブ / 録音伴奏タブ: 常に「練習用スタイル」・全画面 16:9 で表示
+            self._visual_edit_target = "practice"
             pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
+            self._sync_practice_style_ui_values(pv)
             self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
-        elif index == 3:
-            # 動画出力タブ: 選択中の動画プリセット（Shorts 9:16やMV設定等）を完全反映プレビュー
+        elif index in (1, 3):
+            # 動画画面タブ / 動画出力タブ: 常に選択中の動画プリセット（Shorts 9:16やMV設定等）を完全反映プレビュー
+            self._visual_edit_target = "video"
             active_p = settings_manager.get_active_preset_dict(self.user_settings)
             ratio = active_p.get("aspect_ratio", "16:9")
             is_chroma = "クロマキー" in active_p.get("export_style", "")
             chroma_col = active_p.get("export_bg_color", "ノーマル（黒）")
             self._apply_visual_dict_to_ui_and_gl(active_p, aspect_ratio=ratio, is_chromakey=is_chroma, chroma_color=chroma_col)
-        elif index == 1:
-            # 画面作りタブ: 選択中のターゲット（練習用 or 動画プリセット）に応じた設定を反映
-            if getattr(self, "_visual_edit_target", "practice") == "video":
-                active_p = settings_manager.get_active_preset_dict(self.user_settings)
-                ratio = active_p.get("aspect_ratio", "16:9")
-                is_chroma = "クロマキー" in active_p.get("export_style", "")
-                chroma_col = active_p.get("export_bg_color", "ノーマル（黒）")
-                self._apply_visual_dict_to_ui_and_gl(active_p, aspect_ratio=ratio, is_chromakey=is_chroma, chroma_color=chroma_col)
-            else:
-                pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
-                self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
+
+    def _sync_practice_style_ui_values(self, pv: dict = None):
+        """練習タブ下部の表示スタイルUI要素を設定辞書と同期"""
+        if not hasattr(self, "combo_prac_traj"):
+            return
+        if pv is None:
+            pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
+
+        widgets_to_sync = [
+            (self.combo_prac_traj, pv.get("trajectory_mode", "3段階 (練習標準)")),
+            (self.combo_prac_lang, pv.get("lang_mode", "ドレミ")),
+            (self.combo_prac_grid4, pv.get("grid4_mode", "4音グリッド表示")),
+            (self.combo_prac_theme, pv.get("color_theme", "ノーマル")),
+        ]
+        for w, val in widgets_to_sync:
+            w.blockSignals(True)
+            w.setCurrentText(str(val))
+            w.blockSignals(False)
+
+        chk_sync = [
+            (self.chk_prac_lookahead, bool(pv.get("show_lookahead", True))),
+            (self.chk_prac_bar_lines, bool(pv.get("show_bar_lines", True))),
+            (self.chk_prac_legend, bool(pv.get("show_legend", True))),
+        ]
+        for chk, val in chk_sync:
+            chk.blockSignals(True)
+            chk.setChecked(val)
+            chk.blockSignals(False)
+
+    def _on_prac_style_changed(self, *args):
+        """練習タブ下部のスタイル変更ハンドラ"""
+        if not hasattr(self, "combo_prac_traj"):
+            return
+        pv = self.user_settings.setdefault("practice_visual", {})
+        pv["trajectory_mode"] = self.combo_prac_traj.currentText()
+        pv["lang_mode"] = self.combo_prac_lang.currentText()
+        pv["grid4_mode"] = self.combo_prac_grid4.currentText()
+        pv["color_theme"] = self.combo_prac_theme.currentText()
+        pv["show_lookahead"] = self.chk_prac_lookahead.isChecked()
+        pv["show_bar_lines"] = self.chk_prac_bar_lines.isChecked()
+        pv["show_legend"] = self.chk_prac_legend.isChecked()
+
+        self._save_current_settings()
+
+        # 練習表示中（タブ0またはタブ2）なら即座にGLウィジェットに反映
+        if self.tab_widget.currentIndex() in (0, 2):
+            self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
 
     def _handle_playback_finished(self):
         """非ループ再生の曲末到達ハンドラ"""
