@@ -186,10 +186,11 @@ projects/
 }
 ```
 
-### 5.4 `src/main.py`（約5,000行）の段階的モジュール分割計画（Ver.4.0.0）
-肥大化した `src/main.py` を以下の5モジュールへ安全に責務分離する：
-1. `src/project_manager.py`: プロジェクトフォルダ作成、SHA-256ハッシュ照合、`project.json` 読み書き、旧 `src/fingering/*.json` からの自動インポート。
-2. `src/ui_settings_dialog.py`: 使用頻度の低いシステム環境設定（オーディオデバイス、MIDI音源エンジン、カスタムスキン画像パス、FFmpegエンコーダ詳細等）を集約した `[⚙ 環境設定]` モーダル/モードレスウィンドウ。
-3. `src/ui_tab_practice.py`: 練習タブUI（楽器・キー別運指パターン切替・練習画面スタイル簡易設定・練習音源切替）。
-4. `src/ui_tab_studio.py`: 録音・伴奏同期・動画プリセット・書き出しタブUI。
-5. `src/main.py`: メインウィンドウ骨格、上部トランスポート、OpenGLキャンバス配置、クロック・イベント統括（約1,500行以下にスリム化）。
+### 5.4 `src/main.py`（約5,400行）の段階的モジュール分割計画（Ver.4.0.0）
+循環インポートやシグナル参照切れを100%防ぐため、肥大化した `src/main.py` を以下の構成へ安全に責務分離する：
+1. `src/project_manager.py`: プロジェクトフォルダ（`projects/<曲名>/`）作成、SHA-256ハッシュ照合、相対パス解決、`project.json` 読み書き、旧 `fingering/*.json` からの自動マイグレーション。
+2. `src/studio_controller.py` (`StudioExportMixin`): 録音テイク管理・同期試聴、外部伴奏同期、YouTubeラウドネス自動解析（FFmpeg loudnorm）、マルチトラックミキサー、動画書き出し制御ロジック（約800行）を `main.py` から分離。
+3. `src/dialogs.py` (`HarmonicaSettingsDialog` ＆ `FingeringEditorDialog`):
+   - `HarmonicaSettingsDialog`: 使用頻度の低いシステム環境設定（MIDI音源エンジン、録音チャンネル、本体スキン選択、保存先フォルダ管理）を集約した `[⚙ 設定]` ウィンドウ。
+   - `FingeringEditorDialog`: キー（移調）情報を含む運指パターン管理（`patterns`）。
+4. `src/main.py`: メインウィンドウ骨格、上部トランスポート、練習タブ（練習画面スタイル統合済）・動画画面タブ（100%動画プリセット専用）、OpenGLキャンバス配置、クロック・イベント統括。

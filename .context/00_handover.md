@@ -1,7 +1,7 @@
 # Current Status & Handover (00_handover.md)
 
 ## 最終更新日時
-- 2026-10-25 15:00 (Ver.3.2.0 UI/UX摩擦ゼロ化マイルストーン完遂・オフスクリーン自動検証全7項目PASS・Gitタグ v3.2.0 付与完了)
+- 2026-10-25 15:08 (Gemini 4.0 による Ver.4.0.0「Harmonica Studio」全8 Micro-Step 実装指示書策定完了)
 
 ---
 
@@ -77,18 +77,20 @@ harmonica-visualizer/
 
 ---
 
-## 3. 次期大型マイルストーン: Ver.4.0.0「Harmonica Studio（楽曲プロジェクト自己完結化）」
+## 3. 次期大型マイルストーン: Ver.4.0.0「Harmonica Studio（楽曲プロジェクト自己完結化 ＆ タブ抜本再編）」
 
-詳細設計・データモデル・モジュール分割計画は [`.context/01_architecture.md`](file:///c:/AI_Dev_Workspace/01_2026_10_00_harmonica-visualizer/.context/01_architecture.md) 第5章に策定済みです。
+Gemini 4.0（Architect）により、実装担当（Gemini 3.8 / Builder）が1ステップずつ安全に実装・コミットできる **全8 Micro-Step（Batch Package 1 〜 4）の詳細実装指示書** を [`.context/02_tasks.md`](file:///c:/AI_Dev_Workspace/01_2026_10_00_harmonica-visualizer/.context/02_tasks.md) に完備しました。
 
-### 🚀 開発計画（4つのPhase）
-1. **Phase 4-1: 楽曲プロジェクトマネージャー（`src/project_manager.py`）新設**:
-   - `projects/<曲名>/` ディレクトリ内に MIDI原本、テイク音声、完成動画、`project.json` を自己完結集約。
-   - SHA-256 ハッシュによる同名MIDI衝突検知・警告。
-   - 相対パス管理により、フォルダごと別PC・別ドライブへ移動しても完全に復帰可能に。
-2. **Phase 4-2: キー（移調）別・用途別の運指パターン保存システム**:
-   - `project.json` 内の `fingering_patterns` 辞書により、原曲キー用・+2キー用などの運指プロファイルを楽曲コンテナ内に保持。
-3. **Phase 4-3: 環境設定ウィンドウ（`[⚙ 環境設定]` / `src/ui_settings_dialog.py`）の新設**:
-   - メイン画面の右サイドバーからデバイス設定・リバーブ・詳細設定を別ウィンドウへ逃がし、タブを軽量化。
-4. **Phase 4-4: `src/main.py` の安全なモジュール分割 ＆ 旧プロファイル自動マイグレーション**:
-   - `src/ui_components.py`, `src/playback_controller.py` 等への安全な責務分離。
+### 🚀 実装パッケージ構成（Batch Package 1 〜 4）
+1. **Batch Package 1（Micro-Step 1 〜 2）: ポータブル基底パス刷新 ＆ `src/project_manager.py` 新設**
+   - **Step 1**: `src/config.py` の `get_portable_path` を刷新し、開発時（`.py` 実行）に動的データがすべてリポジトリルート直下に解決されるようにして `src/` 汚染を完全遮断（Gotcha #9 実装）。
+   - **Step 2**: `src/project_manager.py` を新設。`projects/<曲名>/` コンテナ生成、SHA-256 ハッシュによる同名別MIDI衝突検知、相対パス変換によるフォルダリネーム追従、旧 `fingering/*.json` からの自動マイグレーションを実装。
+2. **Batch Package 2（Micro-Step 3 〜 4）: キー（移調）別・用途別の運指パターン保存システム拡張**
+   - **Step 3**: `FingeringEditorDialog` と `harmonica_map.py` の運指パターン（`patterns`）に移調値（`transpose`, `transpose_accomp`）を統合。
+   - **Step 4**: メイン画面の `🎹 練習` タブに運指パターン切替コンボと新規保存ボタンを設置。さらに移調ロック時にワンクリックで現在パターンを保護しつつ別キー作成へ移行できる `[🔓 別キー用の運指を新規作成...]` ボタンを実装。
+3. **Batch Package 3（Micro-Step 5 〜 6）: タブ抜本再編 ＆ 環境設定ウィンドウ `[⚙ 設定]` 分離**
+   - **Step 5**: `🎨 画面作り` タブのターゲット切替コンボを撤廃し、100%動画プリセット編集専用タブ（`🎨 動画画面`）へ純化。練習画面のスタイル設定は `🎹 練習` タブ下部に統合。
+   - **Step 6**: システム環境設定（MIDI音源エンジン、録音チャンネル、本体スキン選択、保存先フォルダ管理）を `HarmonicaSettingsDialog`（`[⚙ 設定]` ウィンドウ）に統合し、上部ヘッダー Row 1 右端の `[⚙ 設定]` ボタンから呼び出し可能に。
+4. **Batch Package 4（Micro-Step 7 〜 8）: `src/studio_controller.py` 分離・プロジェクト直結 ＆ v4.0.0 リリース**
+   - **Step 7**: `src/main.py` から録音・外部伴奏・ミキサー・動画エクスポート制御（約800行）を `StudioExportMixin`（`src/studio_controller.py`）へ安全に分離。同時に録音・動画保存先を `projects/<曲名>/takes/` および `exports/` に完全直結。
+   - **Step 8**: オフスクリーン自動検証スクリプト（`tests/verify_v400_studio.py` 全8テスト）の実行・パス確認、ドキュメント更新、Gitタグ `v4.0.0` 付与。
