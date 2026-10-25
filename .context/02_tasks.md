@@ -1,242 +1,267 @@
 # タスク管理・実装指示書 (02_tasks.md)
 
-## 進行中 (In Progress) / 次期メジャーマイルストーン: Ver.4.0.0
-### 🚀 【v4.0.0】Harmonica Studio（楽曲プロジェクト自己完結化・キー別運指パターン・タブ抜本再編・モジュール分割）
+## 進行中 (In Progress) / 次期マイルストーン: Ver.4.1.0
+### 🚀 【v4.1.0】全21課題の統合解消（UI/UX 2階層タブ刷新・折りたたみアコーディオン・プリセット5種再設計・演出＆起動高速化）
 
 > **【実装担当（Gemini 3.8 / Builder）への絶対遵守ルール（Gotcha #7, #8, #9）】**
-> 1. **Git層（Micro Commit）**: 以下の **Micro-Step 1 〜 8** を **必ず1ステップずつ順番に** 実行し、各ステップ完了ごとに構文チェック（`python -m py_compile`）と指定の **Gitコミット** を必ず打つこと（複数ステップの1コミットまとめは厳禁）。
-> 2. **人間対話層（Batch Package）**: 人間の確認負荷軽減のため、**Package 1（Step 1〜2）**、**Package 2（Step 3〜4）**、**Package 3（Step 5〜6）**、**Package 4（Step 7〜8）** の単位で連続実行し、パッケージ完了（または自動停止条件到達）ごとに報告すること。
-> 3. **スコープ＆シグナル衛生**: 関数内でのインライン `import` は厳禁（ファイル先頭に集約）。UI値のプログラム変更時は必ず `blockSignals(True)` / `blockSignals(False)` で囲むこと。
+> 1. **Git層（Micro Commit）**: 以下の **Micro-Step 1 〜 10** を **必ず1ステップずつ順番に** 実行し、各ステップ完了ごとに構文チェック（`python -m py_compile`）と指定の **Gitコミット** を必ず打つこと（複数ステップの1コミットまとめは厳禁）。
+> 2. **人間対話層（Batch Package）**: 人間の確認負荷軽減のため、**Package 1（Step 1〜2）**、**Package 2（Step 3〜4）**、**Package 3（Step 5〜6）**、**Package 4（Step 7〜8）**、**Package 5（Step 9〜10）** の単位で連続実行し、パッケージ完了（または自動停止条件到達）ごとに報告すること。
+> 3. **スコープ＆シグナル衛生**: 関数内でのインライン `import` は厳禁（ファイル先頭に集約）。UI値のプログラム変更時は必ず `blockSignals(True)` / `blockSignals(False)` で囲むこと。また Windows コンソール出力時は `sys.stdout.reconfigure(encoding='utf-8')` を徹底すること。
 
 ---
 
-### 📦 Batch Package 1: ポータブル基底パス刷新 ＆ 楽曲プロジェクトマネージャー (`src/project_manager.py`) の構築（Micro-Step 1 〜 2）
+### 📊 全21課題 ➔ Micro-Step 完全対応マトリクス
 
-#### - [x] **Micro-Step 1: `src/config.py` のポータブル基底パス刷新（Gotcha #9 実装：開発時の `src/` 汚染完全防止）と `.gitignore` 保護**
-- **対象ファイル**: `src/config.py`, `.gitignore`
-- **背景・目的**: 開発時（`python src/main.py` や自動テスト実行時）に `__file__` のある `src/` 配下に `projects/` や `recordings/` が生成されたり、Git追跡下の `src/settings.json` や `src/fingering/demo_chromatic_profile.json` が書き換わって Git status が汚れる問題を根絶する。
+| 課題 | 内容要約 | 対応ステップ |
+| :---: | :--- | :---: |
+| **課題 1** | メイン画面と `[⚙ 設定]` の重複解消（メトロノーム・ステップアップを表面に一本化） | **Step 3** |
+| **課題 2** | 練習ファースト vs 動画制作の優先度整理（装飾を奥へ、音楽パラメータを表面へ） | **Step 3, 5, 6** |
+| **課題 3** | `[⚙ 設定]` のプロジェクト階層ツリー可視化 ＆ ルート直下 `recordings/` 混入防止 | **Step 1, 3** |
+| **課題 4** | `[⚙ 設定]` で変更したカスタムスキンが練習画面に即時反映されないバグ修正 | **Step 1** |
+| **課題 5** | モノクロテーマ時の変え指可能マーク白潰れ解消（明暗適応コントラスト二重枠） | **Step 2** |
+| **課題 6** | キー別運指パターンのデフォルト名 `Key+12(+12st)` の二重表記解消（`Key +12`） | **Step 2** |
+| **課題 7** | ステータスバー移調表示の簡素化（`🎹 原曲キー` / `🎹 Key +12`） | **Step 2** |
+| **課題 8** | YouTube Shorts (9:16) 上下2分割（スプリットスクリーン）構図配置の追加 | **Step 9** |
+| **課題 9** | 動画プリセット切替時に `ratio_combo` が未同期で Shorts が 4:3 等に逆上書き破壊されるバグ修正 | **Step 1** |
+| **課題 10** | 動画画面デザインの縦配置順序改善（①画面比率 ➔ ②ノーツ表示 ➔ ③カラー・装飾） | **Step 6** |
+| **課題 11** | 【実装漏れ1】動画プリセット操作部への「📋 練習画面からコピー」ボタン直結 | **Step 5** |
+| **課題 12** | 【実装漏れ2】自作プリセット選択時の「🗑️ 削除」ボタン動的切替（公式は「↺ 初期値」） | **Step 5** |
+| **課題 13** | 「🎹 練習」vs「🎬 動画制作」の2階層タブ化、プリセットバー一元化、右下保存ボタン撤去 | **Step 5** |
+| **課題 14** | 録音タブ最上部の不要な「音量＆パート音色」枠の撤去と `[🎼 パート]` への音色固定移設 | **Step 3, 7** |
+| **課題 15** | 動画出力タブの「音声にリバーブを適用（`chk_exp_reverb`）」重複チェックボックス撤去 | **Step 7** |
+| **課題 16** | タイトル表示チェックボックス廃止（配置プルダウン一本化）とフェードの余白直下への移動 | **Step 7** |
+| **課題 17** | サイドバー全セクションの「折りたたみアコーディオン（`CollapsibleSection`）」化 | **Step 6** |
+| **課題 18** | タイトルカードの表示維持時間（`0.1s〜15.0s`）と消え方（フェード/カット）の独立設定化 | **Step 7, 8** |
+| **課題 19** | 起動時スプラッシュ画面（`QSplashScreen`）、多重起動防止ロック、起動高速化 | **Step 10** |
+| **課題 20** | `[⚙ 設定]` ウィンドウへの「🎬 公式プリセット一覧・マトリクス比較表」タブ搭載 | **Step 4** |
+| **課題 21** | 公式初期プリセット（5種）の再設計（王道16:9背景画像MV追加、解説時の垂直落下化） | **Step 4** |
+
+---
+
+### 📦 Batch Package 1: 致命的バグ・データ破壊の即時解消 ＆ 表記・描画コントラスト改善（Micro-Step 1 〜 2）
+
+#### - [ ] **Micro-Step 1: 動画プリセット比率の逆上書き破壊バグ修正（課題9）、カスタムスキン即時反映（課題4）、およびトップ直下 `recordings/` 混入防止（課題3前半）**
+- **対象ファイル**: `src/main.py`, `src/project_manager.py`, `src/settings_manager.py`
 - **実装内容**:
-  1. **`src/config.py`** の `get_portable_path(relative_path)`（25〜35行付近）を以下のように刷新する：
-     ```python
-     import shutil
-
-     def get_portable_base_dir() -> str:
-         """
-         EXE化時(frozen)は実行ファイルのあるフォルダ、
-         開発時(.py実行)は src/ の1階層上（リポジトリルート）を返す。
-         """
-         if getattr(sys, "frozen", False):
-             return os.path.dirname(sys.executable)
-         return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-     def get_portable_path(relative_path: str) -> str:
-         """
-         ユーザーデータ・動的フォルダはポータブル基底ディレクトリ直下に解決する。
-         ただし同梱静的アセット('skins')がルート直下に無い場合は src/skins へ自動フォールバックし、
-         'settings.json' がルート直下に無く src/settings.json にある場合は初回のみ自動コピーして引き継ぐ。
-         """
-         base_dir = get_portable_base_dir()
-         target_path = os.path.join(base_dir, relative_path)
-         src_dir = os.path.dirname(os.path.abspath(__file__))
-
-         norm_rel = relative_path.replace("\\", "/").strip("/")
-         if norm_rel == "skins" or norm_rel.startswith("skins/"):
-             if not os.path.exists(target_path):
-                 src_fallback = os.path.join(src_dir, relative_path)
-                 if os.path.exists(src_fallback):
-                     return src_fallback
-         elif norm_rel == "settings.json":
-             if not os.path.exists(target_path):
-                 src_settings = os.path.join(src_dir, "settings.json")
-                 if os.path.isfile(src_settings):
-                     try:
-                         shutil.copy2(src_settings, target_path)
-                     except Exception:
-                         pass
-         return target_path
-     ```
-  2. **`.gitignore`** にリポジトリルート直下の動的生成フォルダ・設定ファイルを追加し、`src/` 以外の動的データを完全に Git 追跡外とする：
-     - `/projects/`
-     - `/recordings/`
-     - `/output/`
-     - `/temp/`
-     - `/fingering/`
-     - `/settings.json`
-- **コミットメッセージ**: `feat(config): resolve portable paths to repository root in dev mode to prevent src pollution`
+  1. **プリセット比率の同期と自己修復 (`src/main.py`, `src/settings_manager.py`)**:
+     - `settings_manager.load_settings()` において、公式プリセット（`DEFAULT_VIDEO_PRESETS` に存在するキー）の `"aspect_ratio"` が過去のバグで誤って書き換わっていた場合、公式定義の `"aspect_ratio"`（Shortsは `"9:16"`、横型は `"16:9"`）へ自動修復する処理を追加する。
+     - `src/main.py` の `_apply_visual_dict_to_ui_and_gl(self, d: dict, aspect_ratio: str = "16:9")` 内（および `_on_video_preset_changed`）で、`aspect_ratio` に応じて `self.ratio_combo` の選択項目を `blockSignals(True)` で必ず同期更新する（`"9:16"` なら `"9:16 (縦長 ショート/TikTok)"`、`"4:3"` なら `"4:3 (スタンダード)"`、それ以外は `"16:9 (横長 YouTube標準)"`）。
+  2. **カスタムスキンの練習画面への即時反映 (`src/main.py`)**:
+     - `_on_open_env_settings_dialog` で `HarmonicaSettingsDialog` 保存時、`skin_enabled`, `skin_mouthpiece_path`, `skin_lever_off_path`, `skin_lever_on_path` を `self.user_settings` 直下だけでなく **`self.user_settings["practice_visual"]` 辞書内にも確実にコピー** する。
+     - その上で `self._apply_user_settings()` と `self.gl_widget.update()` を呼び出し、閉じた瞬間に練習画面のハーモニカ外観が100%切り替わるようにする。
+  3. **トップ直下 `recordings/` 生成の根絶 (`src/project_manager.py`)**:
+     - `get_active_takes_dir()` と `get_active_exports_dir()` において、`ACTIVE_PROJECT_DIR` が未設定時のフォールバック先を `get_portable_path("projects/_demo_chromatic/takes")` および `get_portable_path("projects/_demo_chromatic/exports")` に変更し、`os.makedirs(..., exist_ok=True)` で自動生成する。
+     - リポジトリルート直下に空の `recordings/` フォルダが存在する場合は削除し、トップ階層をクリーンに保つ。
+- **コミットメッセージ**: `fix(core): sync aspect ratio combo on preset switch, propagate custom skins to practice visual, and route fallback takes to project container`
 
 ---
 
-#### - [x] **Micro-Step 2: 楽曲プロジェクト自己完結管理モジュール `src/project_manager.py` の新設と `src/harmonica_map.py` 連携**
-- **対象ファイル**: `src/project_manager.py` (新規作成), `src/harmonica_map.py`
-- **背景・目的**: 1曲＝1フォルダ（`projects/<曲名>/`）に MIDI原本、プロファイル（`project.json`）、録音テイク（`takes/`）、伴奏音源（`audio/`）、完成動画（`exports/`）を自己完結集約し、SHA-256ハッシュによる同名別MIDI衝突検知・リネーム追従・旧 `fingering/<曲名>_profile.json` からの自動マイグレーションを実現する。
+#### - [ ] **Micro-Step 2: モノクロ時の変え指枠線コントラスト改善（課題5）、キー別運指パターン名（課題6）＆ ステータスバー移調表記（課題7）のスリム化**
+- **対象ファイル**: `src/gl_visualizer.py`, `src/video_exporter.py`, `src/harmonica_map.py`, `src/main.py`
 - **実装内容**:
-  1. **`src/project_manager.py`** を新規作成し、以下の機能を持つ `SongProjectManager`（およびモジュール関数）を実装する：
-     - `compute_file_sha256(filepath: str) -> str`: ファイルの SHA-256 ハッシュを算出。
-     - `sanitize_folder_name(name: str) -> str`: Windows禁止文字（`\/:*?"<>|`）を `_` に置換。
-     - `resolve_song_project(midi_path: str, interactive_parent=None) -> dict`:
-       - `midi_path` が空、または実在しないデモ識別子（例: `"demo_chromatic"`）の場合は、`projects/_demo_chromatic/` フォルダ（ファイルコピーなし）を割り当てる。
-       - 実在する `.mid` / `.midi` ファイルの場合：
-         1. もし既に `projects/<フォルダ>/source/` 内のMIDI自身が選択された場合は、その親プロジェクトフォルダをそのまま使用する（自己コピー防止）。
-         2. 外部のMIDIファイルが選択された場合、`base_name = sanitize_folder_name(os.path.splitext(os.path.basename(midi_path))[0])` で `projects/<base_name>/` を候補とする。
-         3. 候補フォルダ内に `project.json`（または `source/` 内MIDI）が既に存在し、記録されている `midi_sha256` と今回読み込んだ `midi_path` の SHA-256 が **異なる（同名・別内容MIDIの衝突）** 場合：
-            - `interactive_parent` が指定されていれば `QMessageBox.question` で確認：
-              *「同名のプロジェクト『{base_name}』が既に存在しますが、MIDIファイルの内容が異なります。\n\n【はい(Yes)】別プロジェクト『{base_name}_2』として新規作成する（推奨）\n【いいえ(No)】既存プロジェクトのMIDI原本を上書き更新する」*
-            - `interactive_parent` が None（自動テスト時など）または「はい」が選ばれた場合は、空き連番 `projects/<base_name>_2/`（`_3`...）を自動採番する。
-         4. プロジェクトサブフォルダ `source/`, `takes/`, `audio/`, `exports/` を `os.makedirs(..., exist_ok=True)` で自動生成し、`source/` に MIDI原本をコピーする。
-         5. **旧プロファイル自動マイグレーション**: `projects/<folder>/project.json` がまだ存在しない場合、旧保存先（`get_portable_path("fingering")` または `src/fingering/`）に `<base_name>_profile.json` が存在すれば、その内容を `project.json` へ自動コピーして引き継ぐ。
-         6. 現在のアクティブプロジェクト情報（`ACTIVE_PROJECT_DIR`, `ACTIVE_PROJECT_JSON` 等）を更新して返す。
-     - ヘルパー関数：
-       - `get_active_project_dir() -> str`
-       - `get_active_takes_dir() -> str`（アクティブプロジェクトがあれば `<proj>/takes`、無ければ `get_portable_path("recordings")`）
-       - `get_active_exports_dir() -> str`（アクティブプロジェクトがあれば `<proj>/exports`、無ければ `get_portable_path("output")`）
-       - `get_project_profile_path(midi_path: str) -> str`: `projects/<曲名>/project.json` のパスを返す。
-       - `to_project_rel_path(abs_path: str, proj_dir: str = None) -> str`: プロジェクトフォルダ内のパスであれば相対パスに変換（フォルダ名リネーム追従用）。
-       - `from_project_rel_path(stored_path: str, proj_dir: str = None) -> str`: 相対パスを現在のプロジェクトフォルダ基準の絶対パスに復元（ファイルが存在すれば復元パスを返し、外部絶対パスならそのまま返す）。
-  2. **`src/harmonica_map.py`** の更新：
-     - ファイル先頭で `import project_manager` を行う（インライン `import` もすべてファイル先頭へ移動）。
-     - `get_song_profile_path(midi_path)` と `get_song_fingering_path(midi_path)` が `project_manager.get_project_profile_path(midi_path)` および `project_manager.get_project_fingering_txt_path(midi_path)` を返すように接続する。
-     - `load_song_profile` と `save_song_profile` で、`ext_audio_path` や `active_take_path` がプロジェクト内のファイルであれば相対パス変換・復元（`from_project_rel_path` / `to_project_rel_path`）を通すことで、**ユーザーがエクスプローラー上でプロジェクトフォルダ名をリネームしても100%追従する**ようにする。
-- **コミットメッセージ**: `feat(project): implement self-contained SongProjectManager with SHA-256 collision detection and legacy migration`
+  1. **変え指モード時の明暗適応・二重コントラスト枠線 (`src/gl_visualizer.py`, `src/video_exporter.py`)**:
+     - `gl_visualizer.py`（L1177付近）の `fingering_edit_mode` かつ `nd.get("is_editable", False)` の枠線描画において：
+       - ノーツの塗り色 `fill_color` の輝度 `lum = 0.299 * fill_color.red() + 0.587 * fill_color.green() + 0.114 * fill_color.blue()` を算出。
+       - `lum > 175`（モノクロ吹音の白や明るい黄色など）の場合：外側に濃いダーク枠 `QPen(QColor(15, 23, 42, 250), max(2.8, 3.2 * scale))` を描き、その上に鮮やかなシアン枠 `QPen(QColor(0, 229, 255, 245), max(1.4, 1.6 * scale))` を重ねる二重枠にする。
+       - `lum <= 175` の場合：外側黒縁＋白枠 `QColor(255, 255, 255, 240)` にする。これによりどんな背景・ノーツ色でも100%クッキリ浮き上がる。
+  2. **キー別運指パターンのデフォルト名スリム化 (`src/harmonica_map.py`)**:
+     - `format_transpose_key_label(transpose_val: int) -> str`（L190付近）を修正：
+       - `val == 0` ➔ `"原曲キー"`
+       - `val > 0` ➔ `f"Key +{val}"`
+       - `val < 0` ➔ `f"Key {val}"`
+       （※ `(+12st)` の二重表記を撤廃し、新規保存時の提案名が `"Key +12 - パターン 1"` となるようにする）。
+  3. **ステータスバー移調表記の簡素化 (`src/main.py`)**:
+     - L4058付近の移調ステータス更新文言を修正：
+       - `val == 0` のとき: `f"🎹 原曲キー{acc_str}"`
+       - `val != 0` のとき: `f"🎹 Key {sign}{acc_str}"`（`+12 st (+12半音)` の重複を撤廃）。
+- **コミットメッセージ**: `fix(ui-polish): add adaptive contrast outline for fingering edit mode and simplify transpose key labels`
 
 ---
 
-### 📦 Batch Package 2: キー（移調）別・用途別の運指パターン保存システム拡張（Micro-Step 3 〜 4）
+### 📦 Batch Package 2: `[⚙ 設定]` ＆ `[🎼 パート]` ダイアログの役割整理と公式5大プリセット再設計・比較表搭載（Micro-Step 3 〜 4）
 
-#### - [x] **Micro-Step 3: 変え指エディタ (`FingeringEditorDialog`) と `harmonica_map.py` の運指パターンへの「移調（Key/Transpose）情報」統合**
-- **対象ファイル**: `src/harmonica_map.py`, `src/dialogs.py`
-- **背景・目的**: 既存の変え指エディタにある「運指パターン別名保存（`patterns`）」を拡張し、「何調（移調±N）の何用」として移調値（`transpose`, `transpose_accomp`）ごとパターン保存・復元できるようにする。
-- **実装内容**:
-  1. **`src/harmonica_map.py`**:
-     - グローバル変数 `CURRENT_ACTIVE_PATTERN_NAME = "標準パターン (基本)"` を追加し、`load_song_profile` / `save_song_profile` で `"active_pattern_name"` と `"patterns"` 辞書を標準保持するように拡張する。
-     - `format_transpose_key_label(transpose_val: int) -> str` ヘルパーを追加（例: `0` -> `"原曲キー(±0)"`, `+2` -> `"Key+2(+2st)"`, `-3` -> `"Key-3(-3st)"`）。
-     - `build_current_pattern_snapshot(transpose: int = 0, transpose_accomp: bool = True) -> dict`: 現在の `CURRENT_SONG_PRESET`, `CURRENT_MONOPHONIC_MODE`, `HIDE_MUTED_NOTES`, `SONG_FINGERING_OVERRIDES`, `SONG_MUTED_NOTES`, `transpose`, `transpose_accomp` を1つの辞書スナップショットとして返す関数を追加。
-     - `apply_pattern_snapshot(pat_data: dict) -> tuple[int, bool]`: パターン辞書から運指オーバーライド・除外ノーツ・プリセット・単音化モードを復元し、`(transpose, transpose_accomp)` を返す関数を追加。
-  2. **`src/dialogs.py` (`FingeringEditorDialog`)**:
-     - `_on_save_new_pattern(self)`（1031行付近）で、新規パターン名のデフォルト提案テキストに現在の移調ラベルを自動付与する：
-       `key_lbl = harmonica_map.format_transpose_key_label(getattr(self.timeline, "transpose", 0))`
-       `default_name = f"{key_lbl} - パターン{len(self._patterns) + 1}"`
-     - 保存辞書 `self._patterns[p_name]` に `"transpose": getattr(self.timeline, "transpose", 0)` と `"transpose_accomp": getattr(self.timeline, "transpose_accomp", True)` を含める。
-     - `_on_pattern_switched(self, idx: int)`（985行付近）で、選択されたパターンに `"transpose"` が記録されていれば `self.timeline.set_transpose(pat_transpose, pat_trans_acc)` も同時に適用してテーブル・音声・OpenGLを再バインドする。
-     - `CURRENT_ACTIVE_PATTERN_NAME` を選択パターン名と同期させる。
-- **コミットメッセージ**: `feat(fingering): bind transpose key settings into saved fingering patterns`
-
----
-
-#### - [x] **Micro-Step 4: メイン画面（`🎹 練習` タブ）への「📂 運指パターン（キー別プロファイル）切替・新規保存」UI設置と別キー作成アンロック機能**
-- **対象ファイル**: `src/main.py`
-- **背景・目的**: 変え指エディタを開かなくても、練習タブ上で「原曲キー用」「Key+2 伴奏用」などの運指パターンをワンタッチで切り替えられるようにする。また、変え指設定後に別の移調キーでパターンを作りたくなった際、ワンクリックで現在パターンを保護保存しつつ別キー作成へ移行できるボタンを追加する。
-- **実装内容**:
-  1. `_build_tab_practice` の「2. 🎼 運指 & 重なり音処理」フレーム内（1085行付近、運指ルールの上）に **運指パターン選択行 (`r_fpat`)** を追加する：
-     - `パターン:` ラベル ＋ `self.combo_main_fg_pattern = QComboBox(self)`（`stretch=1`、`_configure_sidebar_combo` 適用）
-     - `[➕ 保存]` ボタン (`self.btn_main_save_fg_pattern`, 幅54px, ツールチップ: `"現在の移調キー・変え指・除外設定を名前付き運指パターンとして保存"`)
-  2. 「3. 🎚️ 移調 (トランスポーズ)」フレーム内（1180行付近）に、移調ロック中のみ表示される **`self.btn_unlock_for_new_key = QPushButton("🔓 別キー用の運指を新規作成...", self)`** を追加する：
-     - クリック時（`_on_unlock_for_new_key`）：現在の変え指をパターン（例: `"原曲キー(±0) - 自動保存"`）にバックアップ保存した上で、個別変え指（`SONG_FINGERING_OVERRIDES`）をクリアして移調ロックを即時解除し、自由に移調を変更できるようにする！
-  3. メイン画面側のハンドラ `_refresh_main_fg_pattern_combo()`, `_on_main_fg_pattern_switched(name: str)`, `_on_main_save_fg_pattern()` を実装し、曲ロード時および変え指エディタ終了時にコンボボックスを最新状態に同期させる。
-- **コミットメッセージ**: `feat(practice-tab): add quick key-based fingering pattern selector and new-key unlock workflow`
-
----
-
-### 📦 Batch Package 3: タブ抜本再編（練習スタイル統合・画面作りタブの動画専用化）＆ 環境設定ウィンドウ `[⚙ 設定]` 分離（Micro-Step 5 〜 6）
-
-#### - [x] **Micro-Step 5: `🎨 画面作り` タブの「100%動画プリセット専用化」と、`🎹 練習` タブ下部への「🎨 練習画面スタイル」統合**
-- **対象ファイル**: `src/main.py`
-- **背景・目的**: ユーザーの構想通り、`🎨 画面作り` タブの「練習用 vs 動画用」ターゲット切替コンボを撤廃して **100%動画プリセット編集専用タブ（`🎨 動画画面`）** に純化する。そして日常の練習画面の見た目（軌道モード、音名表記、穴下ノート表示、カラーテーマ、ノーツ直上音名）は **`🎹 練習` タブの下部フレーム** に統合し、タブを行き来せずに練習タブ内で練習設定が完結するようにする。
-- **実装内容**:
-  1. `_build_tab_practice` の末尾（`f_prac_audio` の下）に **「5. 🎨 練習画面の表示スタイル」フレーム (`f_prac_style`、最大幅328px）** を新設する：
-     - `軌道:` (`self.combo_prac_traj`: 3段階 / 2段階 / 垂直)
-     - `音名:` (`self.combo_prac_lang`: ドレミ / CDE) ＋ `穴下:` (`self.combo_prac_grid4`: 4音グリッド表示 / 1音表示 (従来) / 非表示)
-     - `配色:` (`self.combo_prac_theme`: ノーマル / サクラ / クールネオン / モノクロ / カスタム)
-     - チェックボックス行: `self.chk_prac_lookahead` (`"ノーツ音名"`) ＋ `self.chk_prac_bar_lines` (`"小節線"`) ＋ `self.chk_prac_legend` (`"吹吸凡例"`)
-     - これらの変更は即座に `self.user_settings["practice_visual"]` に保存され、現在練習表示中（タブ0またはタブ2）であればキャンバスにリアルタイム反映される！
-  2. `_build_tab_design` の最上部（`f_target`）を刷新：
-     - `self.combo_visual_target`（練習用/動画用の切替コンボ）を非表示（または内部的に常時 `"video"` 固定）にし、`self.w_design_preset_bar`（動画プリセット選択・保存・別名保存・初期化バー）を **常時表示 (`setVisible(True)`)** にする。
-     - `self.f_ratio`（画面比率 16:9 / 9:16 / 4:3）も常時 `setEnabled(True)` にする。
-     - 右サイドバーのタブ2のラベルを `"🎨 画面作り"` から **`"🎨 動画画面"`** に変更し、「タブ1＝🎹練習、タブ2＝🎨動画画面、タブ3＝🎙️録音・音響、タブ4＝🎬動画出力」と役割を明確化する。
-  3. `_on_sidebar_tab_changed(self, index: int)` の連動をシンプル化：
-     - `index in (0, 2)`（練習タブ・録音タブ）のときは `_visual_edit_target = "practice"` として `practice_visual`（16:9固定）をキャンバスに適用。
-     - `index in (1, 3)`（動画画面タブ・動画出力タブ）のときは `_visual_edit_target = "video"` として現在選択中の `video_preset` のスタイルと比率をキャンバスに適用！
-- **コミットメッセージ**: `feat(ui-tabs): integrate practice visual controls into practice tab and dedicate design tab to video presets`
-
----
-
-#### - [x] **Micro-Step 6: システム環境設定ウィンドウ（`[⚙ 環境設定]` / `HarmonicaSettingsDialog`）の刷新とメイン画面接続**
+#### - [ ] **Micro-Step 3: `[⚙ 設定]` からの重複項目撤去（課題1, 2）、プロジェクト階層ツリー可視化（課題3後半）、および `[🎼 パート]` への主旋律音色固定移設（課題14前半）**
 - **対象ファイル**: `src/dialogs.py`, `src/main.py`
-- **背景・目的**: 頻繁に変更しないシステム環境設定（ガイドMIDI音源エンジン、主旋律ハーモニカ固定、マイク入力デバイス、録音チャンネル数、ハーモニカ本体外観スキン、プロジェクトフォルダ一括確認）を **`[⚙ 環境設定]` ダイアログ** に整理統合し、上部ヘッダー Row 1 右端の `[⚙ 環境設定]` ボタンからワンクリックで開けるようにする。
 - **実装内容**:
-  1. **`src/dialogs.py` (`HarmonicaSettingsDialog`)** を Ver.4.0 システム環境設定仕様にアップグレードする：
-     - タブ1 **`🔊 音響・録音デバイス`**:
-       - ガイド音源エンジン (`Windows標準MIDI (推奨)` / `内蔵軽量シンセ (遅延0ms)`)
-       - 主旋律をハーモニカ音色(GM 22)に固定 (`force_harmonica`)
-       - メトロノームクリックパターン (`metronome_mode`)
-       - 録音チャンネル数 (`モノラル (1ch・DAW編集向き)` / `ステレオ (2ch)`)
-       - 録音ズレ補正初期値 (`rec_offset_ms`)
-     - タブ2 **`🎨 本体スキン・練習支援`**:
-       - ハーモニカ外観スキン有効化 (`skin_enabled`) と `[🖼️ スキン画像選択...]` ボタン接続
-       - ステップアップ練習設定 (`stepup_enabled`, 開始速度%, 目標速度%, 増分%)
-     - タブ3 **`📁 プロジェクト・保存先管理`**:
-       - 現在のポータブルデータ基底パス表示と、`[📂 projects フォルダを開く]`, `[📂 録音フォルダを開く]`, `[📂 動画出力フォルダを開く]` ショートカットボタン。
-  2. **`src/main.py`**:
-     - 上部ヘッダー Row 1 右端（サイドバー開閉ボタンの左隣）に **`self.btn_open_settings = QPushButton("⚙ 設定", self)`**（幅64px、ツールチップ: `"システム環境設定ウィンドウを開く"`）を配置。
-     - クリック時に `_on_open_env_settings_dialog(self)` を呼び出し、`HarmonicaSettingsDialog` で保存された変更をメインウィンドウの各コンボ・チェックボックス・エンジンへ即時同期反映する。
-- **コミットメッセージ**: `feat(settings-dialog): add global preferences window accessible from top header bar`
+  1. **`HarmonicaSettingsDialog` (`src/dialogs.py`) の整理**:
+     - タブ1（`🔊 音響・録音デバイス`）から、表面と重複する `combo_metro`（メトロノーム）および `chk_force_harmonica` を非表示（または撤去）にし、MIDIエンジン切替・録音チャンネル数・録音ズレ補正初期値に特化させる。
+     - タブ2（`🎨 本体スキン・外観設定`）から、練習タブと重複する「ステップアップ練習設定（`chk_stepup` 等）」を非表示（または撤去）にし、ハーモニカ本体外観スキンとノーツ基本装飾に特化させる。
+     - タブ3（`📁 プロジェクト・保存先管理`）のUIを親子階層がひと目で分かるデザインに刷新：
+       - **親セクション**: `【プロジェクトフォルダーの作成先 (親ディレクトリ)】`
+         - パス表示: `.../projects` ＋ `[📂 projects フォルダを直接開く]` ボタン
+       - **子セクション（枠付きツリー案内）**: `【プロジェクトフォルダー内の自動生成構造 (1曲＝1フォルダ)】`
+         - ツリーラベル表示:
+           - `📁 projects/<曲名>/`
+           - `  ├── 📂 source/  (読み込んだMIDI原本のバックアップ)`
+           - `  ├── 📂 takes/   (マイク録音したWAVテイク)`
+           - `  ├── 📂 audio/   (外部伴奏音源ファイル)`
+           - `  ├── 📂 exports/ (書き出した完成動画 MP4/MOV)`
+           - `  └── 📄 project.json (曲別の運指パターン・音量・同期設定)`
+         - `[📂 現在開いている曲のプロジェクトフォルダを開く]` ボタンを配置！
+  2. **`PartSelectDialog` (`src/dialogs.py`, `src/main.py`) への音色固定チェック移設**:
+     - `PartSelectDialog.__init__` に `force_harmonica: bool = True` 引数を追加し、下部ボタンバーの左端に `self.chk_force_harmonica = QCheckBox("主旋律パートをハーモニカ音色 (GM 22) に固定して再生", self)` を配置。
+     - `main.py` の `_on_open_part_dialog` でダイアログ確定時に `self.chk_force_harmonica.setChecked(dlg.chk_force_harmonica.isChecked())` を同期反映する。
+- **コミットメッセージ**: `feat(dialogs): declutter settings dialog, visualize project folder tree hierarchy, and move force-harmonica toggle to PartSelectDialog`
 
 ---
 
-### 📦 Batch Package 4: `src/main.py` の安全なモジュール分割 ＆ プロジェクトフォルダ直結 ＆ Ver.4.0.0 リリース（Micro-Step 7 〜 8）
-
-#### - [x] **Micro-Step 7: スタジオ・エクスポート制御の `src/studio_controller.py` 分離と、録音・動画出力先の `projects/<曲名>/` 完全直結**
-- **対象ファイル**: `src/studio_controller.py` (新規作成), `src/main.py`
-- **背景・目的**:
-  1. 約5,400行に肥大化した `src/main.py` から、録音・外部伴奏・YouTubeラウドネス解析・ミキサー・動画エクスポート制御ロジック（約700〜900行）を **`StudioExportMixin` (`src/studio_controller.py`)** として安全に分離し、循環インポートゼロで `src/main.py` をスリム化する。
-  2. 同時に、MIDI読み込み時に `project_manager.resolve_song_project` を呼び出し、録音保存先を `projects/<曲名>/takes/`、動画出力先を `projects/<曲名>/exports/` へ直結する。さらに上部ヘッダーや録音・動画タブの「📁 保存先」ボタンで該当楽曲のプロジェクトサブフォルダが直接開くようにする。
+#### - [ ] **Micro-Step 4: 公式初期プリセット（5種）の再設計（課題21）と、`[⚙ 設定]` への「🎬 初期プリセット比較一覧表」タブ搭載（課題20）**
+- **対象ファイル**: `src/settings_manager.py`, `src/dialogs.py`
 - **実装内容**:
-  1. **`src/studio_controller.py`** を新規作成し、`StudioExportMixin` クラスに以下のメソッド群を移動・整理する：
-     - プロジェクトフォルダ操作: `_on_open_project_folder`, `_on_open_rec_folder` (`get_active_takes_dir()` を開く), `_on_open_output_folder` (`get_active_exports_dir()` を開く)
-     - 録音・テイク・同期試聴制御: `_on_select_rec_take`, `_ensure_rec_pcm_loaded`, `_stop_rec_playback`, `_sync_rec_take_playback`, `_on_rec_offset_changed`, `_do_rec_audio_resync`, `_on_rec_offset_adjust`, `_on_toggle_rec_sync_audition`
-     - 外部伴奏・同期制御: `_ensure_ext_pcm_loaded`, `_stop_ext_playback`, `_set_ext_audio`, `_on_clear_ext_audio`, `_on_ext_mode_changed`, `_on_ext_offset_changed`, `_do_ext_audio_resync`, `_do_ext_offset_save`, `_on_ext_offset_adjust`, `_sync_ext_audio_playback`, `_on_ext_audition_play`, `_on_ext_audition_restart`, `_on_ext_audition_stop`
-     - ミキサー・YouTube音量解析・動画出力制御: `_get_current_mixer_settings`, `_update_mixer_summary_label`, `_on_open_audio_mixer`, `_apply_youtube_volume_preset`, `_build_export_render_settings`, `_on_preview_single_frame`, `_on_export_video`
-  2. **`src/main.py`**:
-     - `from studio_controller import StudioExportMixin` および `import project_manager` を先頭に追加。
-     - `class HarmonicaMainWindow(QMainWindow, StudioExportMixin):` として継承。
-     - `_load_midi_file` 内で `project_manager.resolve_song_project(filepath, interactive_parent=self)` を呼び出し、楽曲プロジェクトコンテナを自動準備する。
-     - 録音開始時の出力パス生成（`_on_record_toggle`）で `rec_dir = project_manager.get_active_takes_dir()` を使用し、動画書き出し時（`_on_export_video`）のデフォルト保存先ディレクトリに `project_manager.get_active_exports_dir()` を使用する。
-- **コミットメッセージ**: `refactor(studio): extract StudioExportMixin to studio_controller.py and bind takes/exports to song project container`
+  1. **公式5大プリセットの再定義 (`src/settings_manager.py`)**:
+     - `DEFAULT_VIDEO_PRESETS` を以下の5種にアップデートする（各プリセットに `"export_title_duration": 3.5`, `"export_title_exit_mode": "フェードアウトで消える"`, `"vertical_layout_mode": "全画面フル展開 (標準Shorts)"` も標準搭載）：
+       1. **`"📱 YouTube Shorts (縦型・解説)"`**: `aspect_ratio: "9:16"`, `trajectory_mode: "垂直落下 (穴直上)"`, `lang_mode: "ドレミ"`, `grid4_mode: "4音グリッド表示"`, `note_opacity: 100`
+       2. **`"🎥 演奏解説・レッスン (16:9)"`**: `aspect_ratio: "16:9"`, `trajectory_mode: "垂直落下 (穴直上)"`, `lang_mode: "ドレミ"`, `grid4_mode: "4音グリッド表示"`, `note_opacity: 100`
+       3. **`"🎨 演奏作品・MV (16:9・背景画像)"`** (★新設): `aspect_ratio: "16:9"`, `trajectory_mode: "3段階 (練習標準)"`, `lang_mode: "ドレミ"`, `show_lookahead: False`, `show_grid: False`, `show_bar_lines: False`, `grid4_mode: "非表示"`, `note_opacity: 85`, `bg_image_enabled: True`, `bg_dim_ratio: 40`, `export_title_template: "イントロ中央＋右上常時"`
+       4. **`"✨ ミニマル・シネマティック (16:9)"`**: `aspect_ratio: "16:9"`, `trajectory_mode: "2段階 (ビジュアル)"`, `show_lookahead: False`, `show_grid: False`, `show_bar_lines: False`, `show_hole_num: False`, `grid4_mode: "非表示"`, `note_opacity: 95`, `export_title_template: "イントロ中央のみ"`
+       5. **`"🟩 クロマキー透過素材 (外部編集用)"`**: `aspect_ratio: "16:9"`, `trajectory_mode: "垂直落下 (穴直上)"`, `export_style: "クロマキー素材 (背景・タイトルなし)"`, `export_bg_color: "グリーンバック"`, `audio_quick_mode: "無音 (映像のみ)"`
+     - `load_settings()` で新プリセット（`"🎨 演奏作品・MV (16:9・背景画像)"` 等）が既存の `video_presets` に無ければ自動追加する。
+  2. **`[⚙ 設定]` ウィンドウへの「🎬 初期プリセット一覧」タブ追加 (`src/dialogs.py`)**:
+     - `HarmonicaSettingsDialog`（サイズ `700x540`）に **タブ4「🎬 初期プリセット一覧」** を追加。
+     - `QTableWidget`（罫線グリッド表示）を配置し、公式5プリセットの「画面比率」「ノーツ軌道」「音名・穴下」「ノーツ透過度/背景減光」「タイトル配置」を一目で比較できるリファレンス表を表示する。
+     - テーブルのセル（ノーツ軌道、音名、透過度など）を編集または「↺ 公式初期プリセットをすべて工場出荷値にリセット」ボタンで初期プリセットを再構築できる機能を持たせる。
+- **コミットメッセージ**: `feat(presets): redesign 5 official video presets including 16:9 background MV and add preset comparison table tab in settings`
 
 ---
 
-#### - [x] **Micro-Step 8: Ver.4.0.0 全体結合テスト (`tests/verify_v400_studio.py`) 実行・ドキュメント更新・Gitタグ `v4.0.0` 付与**
-- **対象ファイル**: `src/main.py`, `tests/verify_v400_studio.py` (新規作成), `.context/00_handover.md`, `.context/01_architecture.md`, `.context/02_tasks.md`
+### 📦 Batch Package 3: サイドバー「2階層タブ化（🎹 練習 vs 🎬 動画制作）」＆「折りたたみアコーディオン（CollapsibleSection）」導入（Micro-Step 5 〜 6）
+
+#### - [ ] **Micro-Step 5: サイドバーの「🎹 練習」vs「🎬 動画制作」2階層タブ化、プリセット操作バーの一元化、削除ボタン動的切替、右下保存ボタン撤去（課題11, 12, 13）**
+- **対象ファイル**: `src/main.py`
 - **実装内容**:
-  1. `src/main.py` のウィンドウタイトルを **`Harmonica Visualizer v4.0.0 [Harmonica Studio Edition]`** に更新。
-  2. オフスクリーン自動検証スクリプト **`tests/verify_v400_studio.py`** を作成・実行し、以下の全8項目を自動テストする：
-     - Test 1: `get_portable_path` が開発時にリポジトリルートを返し、テスト実行後も `src/` 配下の Git status が一切汚れないこと（`git status --porcelain src/` が空であること）。
-     - Test 2: `project_manager.resolve_song_project` により `projects/<曲名>/`（`source/`, `takes/`, `audio/`, `exports/`, `project.json`）が自動生成されること。
-     - Test 3: 同名で内容（SHA-256）が異なるMIDIファイルを読み込んだ際、衝突が検知され別プロジェクトフォルダ（`<曲名>_2`）として安全に分離されること。
-     - Test 4: プロジェクトフォルダをリネームしても相対パス解決（`from_project_rel_path`）により内部アセットパスが正常に追従すること。
-     - Test 5: 運指パターン（`patterns`）に移調値（`transpose`）が保存され、練習タブの `combo_main_fg_pattern` で切り替えると移調値と変え指がセットで切り替わること。また `btn_unlock_for_new_key` で別キー作成ロック解除が動作すること。
-     - Test 6: 練習タブ下部の練習画面スタイル設定（`combo_prac_traj`, `combo_prac_lang`, `combo_prac_grid4` 等）が `practice_visual` に即座に反映され、動画画面タブ（`🎨 動画画面`）は100%動画プリセット専用として動作すること。
-     - Test 7: 上部ヘッダーの `[⚙ 設定]` ボタン（`btn_open_settings`）および `HarmonicaSettingsDialog` が正常に初期化・設定反映できること。
-     - Test 8: `StudioExportMixin`（`src/studio_controller.py`）分離後も録音・伴奏同期・動画レンダー設定構築がエラーなく動作し、`src/main.py` の行数が大幅に削減されていること。
-  3. `.context/02_tasks.md`, `.context/01_architecture.md`, `.context/00_handover.md` を完了状態に更新してコミットし、Gitタグ **`v4.0.0`** を付与する。
-- **コミットメッセージ**: `docs(release): complete v4.0.0 Harmonica Studio architecture milestone and tag release`
+  1. **2階層タブ構造への再編 (`src/main.py`)**:
+     - 最上位 `self.tab_widget` を **2タブ構成** に変更する：
+       - Tab 0: **`"🎹 練習"`**（練習タブ）
+       - Tab 1: **`"🎬 動画制作"`**（動画制作コンテナタブ）
+     - **`"🎬 動画制作"` タブの内部レイアウト**:
+       - **最上部（固定ヘッダー）**: **「🎬 動画プリセット管理バー (`f_video_preset_master`)」** を1箇所だけに集約配置！
+         - 1段目: `プリセット:` ＋ `self.combo_video_preset`（`self.combo_design_preset` と完全統合・同期）
+         - 2段目: `[💾 保存]` (`btn_preset_save`) ＋ `[➕ 別名保存...]` (`btn_preset_save_as`) ＋ `[↺ 初期値に戻す]` (`btn_preset_reset`)
+         - 3段目: **`[📋 現在の「練習画面」のスタイルをコピー]`** (`btn_copy_practice_visual`)
+       - **その下部（第2階層サブタブ `self.video_sub_tabs = QTabWidget()`）**:
+         - Sub-Tab 0: **`"🎨 画面デザイン"`**
+         - Sub-Tab 1: **`"🎙️ 録音・音響"`**
+         - Sub-Tab 2: **`"🎬 動画書き出し"`**
+       - 旧 `_build_tab_design` と `_build_tab_export` の中に個別に存在していたプリセットバーは非表示（またはマスターヘッダーへ統合）にし、重複を100%排除する！
+  2. **公式プリセット vs 自作プリセットでの「↺ 初期値 / 🗑️ 削除」ボタン動的切替（課題12）**:
+     - プリセット選択変更時（`_on_video_preset_changed`）、選択されたプリセット名が `settings_manager.DEFAULT_VIDEO_PRESETS` に含まれる公式プリセットであればボタン表記を **`"↺ 初期値"`**（ツールチップ: `"公式プリセットを初期状態に戻します"`）、ユーザーが追加した自作プリセットであれば **`"🗑️ 削除"`**（ツールチップ: `"この自作プリセットを削除します"`、赤文字アクセント）に動的に切り替える！
+  3. **右下 `[💾 設定を保存]` ボタンの撤去（課題13）**:
+     - サイドバー最下部フッターの `btn_save_all`（「💾 設定を保存」）を撤去（設定変更時は自動保存、動画プリセットは上部バーで保存と役割を明確化）。
+- **コミットメッセージ**: `feat(ui-hierarchy): implement 2-tier tab architecture (Practice vs Video Production) with unified preset header and dynamic delete button`
+
+---
+
+#### - [ ] **Micro-Step 6: 折りたたみアコーディオン（`CollapsibleSection`）の導入（課題17）と、「🎨 画面デザイン」内のセクション順序適正化（課題10）**
+- **対象ファイル**: `src/main.py`
+- **実装内容**:
+  1. **`CollapsibleSection(QFrame)` クラスの実装 (`src/main.py`)**:
+     - タイトルバー（クリック可能な `QPushButton` または `QToolButton`: 開いている時は `"▼  " + title`、閉じている時は `"▶  " + title`）と、子ウィジェットを格納する `content_widget` を持つアコーディオンコンテナを実装。
+     - `addLayout()` / `addWidget()` をそのまま呼べるラッパーメソッド（または既存の `groupFrame` を簡単にラップできるヘルパー `_wrap_collapsible(title, frame_widget, expanded=True)`）を用意し、既存レイアウトコードを一切壊さずに全セクションを1行最小化可能にする！
+  2. **「🎨 画面デザイン」タブ内のセクション縦配置の適正化（課題10）**:
+     - `v_box` への追加順序をユーザーの思考フロー通りに並べ替える：
+       1. **`📐 1. 画面比率・構図プレビュー`** (`f_ratio` を最上部へ移動！)
+       2. **`🎵 2. 演奏・ノーツ表示`** (`f_disp`: ノーツ軌道、音名表記、穴番号表記、穴下ノート)
+       3. **`🎨 3. カラーテーマ ＆ 装飾オプション`** (`f_col` + `f_opt`)
+       4. **`🖼️ 4. 背景画像 ＆ 減光 (コントラスト)`** (`f_bg`)
+       5. **`🎷 5. ハーモニカ本体スキン`** (`f_skin`)
+  3. **全タブへの折りたたみ適用**:
+     - 「🎹 練習」タブの各セクション（モデル、運指、移調、落下速度、ステップアップ練習、再生音源、練習画面スタイル）および「🎬 動画制作」の各サブタブのセクションに折りたたみヘッダーを適用し、縦スクロールなしで全項目をワンビュー俯瞰できるようにする。
+- **コミットメッセージ**: `feat(ui-accordion): add CollapsibleSection for one-line folding across sidebar panels and reorder design tab sections`
+
+---
+
+### 📦 Batch Package 4: 録音・動画出力タブのスリム化 ＆ タイトル表示時間（0.1s〜）・フェード演出の刷新（Micro-Step 7 〜 8）
+
+#### - [ ] **Micro-Step 7: 録音タブの不要音量枠撤去（課題14後半）、動画出力タブの二重リバーブ撤去（課題15）、およびタイトル・フェードUIの再配置（課題16, 18前半）**
+- **対象ファイル**: `src/main.py`
+- **実装内容**:
+  1. **「🎙️ 録音・音響」タブからの不要フレーム撤去（課題14）**:
+     - `_build_tab_audio` 最上部の `f_vol`（「🔊 音量制御 ＆ パート音色」）を `f_vol.setVisible(False)` で画面から完全に隠し、タブを開いた瞬間に「①マイク録音」「②外部伴奏」「③リバーブ」「④音量ミキサー」がすぐ目に入るようにスリム化する。
+  2. **「🎬 動画書き出し」タブの二重リバーブ撤去（課題15）**:
+     - `_build_tab_export` の音声トラック枠内にある `self.chk_exp_reverb`（「音声にリバーブを適用」）を `setVisible(False)` で撤去し、リバーブ制御を「🎙️ 録音・音響」タブ側の `self.chk_reverb` に一本化する。
+  3. **フェードイン/アウトの余白直下への移動（課題16）**:
+     - `r_fade`（`chk_fade_in`, `spin_fade_in`, `chk_fade_out`, `spin_fade_out`）を、タイトル枠（`f_tit`）から「1. 出力動画のフォーマット＆範囲」枠（`f_fmt`）の「前余白 / 後余白」行のすぐ直下へ移動する。
+  4. **タイトル設定のチェックボックス廃止と表示時間（0.1s〜15.0s）・消え方UI新設（課題16, 18）**:
+     - `self.chk_exp_title`（「タイトル・クレジットを表示」チェックボックス）を非表示化し、`self.combo_title_template`（ラベル: `"表示・配置:"`）の選択状態（`"なし"` 以外なら ON、`"なし"` なら OFF かつテキスト欄グレーアウト）に完全連動させる。
+     - タイトル枠内に **「表示時間 ＆ 消え方」行 (`r_tdur`)** を新設：
+       - `表示時間:` `self.spin_title_dur = QDoubleSpinBox(self)`（範囲 `0.1` 〜 `15.0` 秒、`singleStep=0.1`、`decimals=1`、`suffix="s"`、デフォルト `3.5s`）
+       - `消え方:` `self.combo_title_exit = QComboBox(self)`（選択肢: `["フェードアウトで消える", "即座に非表示 (カット)"]`）
+     - これらを `user_settings` および各 `video_preset` に保存・復元できるように接続する。
+- **コミットメッセージ**: `feat(export-ui): remove redundant volume/reverb widgets, relocate fade controls under margins, and add 0.1s title duration UI`
+
+---
+
+#### - [ ] **Micro-Step 8: `video_exporter.py` のタイトル独立表示時間（0.1s〜15.0s）＆ 消え方（フェード/カット）レンダリング実装（課題18後半）**
+- **対象ファイル**: `src/studio_controller.py`, `src/video_exporter.py`
+- **実装内容**:
+  1. **`src/studio_controller.py` (`_build_export_render_settings`)**:
+     - `reverb_enabled` は録音タブの `self.chk_reverb.isChecked()` を参照するように統一。
+     - `title_overlay` 辞書の `"enabled"` は `(self.combo_title_template.currentText() != "なし")` で判定。
+     - `title_overlay` 辞書に `"intro_dur": float(self.spin_title_dur.value())` および `"exit_mode": self.combo_title_exit.currentText()` を格納してレンダラーへ渡す。
+  2. **`src/video_exporter.py` (`_draw_title_overlay`, L900〜930付近)**:
+     - 前余白（`intro_sec`）に強制連動していた `if intro_sec >= 2.0: effective_intro_dur = intro_sec` の古い分岐を撤廃！
+     - 常に `effective_intro_dur = max(0.1, float(overlay_info.get("intro_dur", 3.5)))` を使用する。
+     - もし `fade_title_mode == "フェード中はタイトル非表示"` の場合は、画面フェードイン完了時刻 `f_in_dur` から `effective_intro_dur` 秒間表示されるように基準時刻を補正し、「フェードインが終わった瞬間に消える」現象を100%解消する！
+     - `exit_mode = str(overlay_info.get("exit_mode", "フェードアウトで消える"))` に応じ：
+       - `"即座に非表示"`（カット）の場合：`fade_out_time = 0.0`（指定秒数経過でスパッと消える）。
+       - `"フェードアウトで消える"` の場合：`fade_out_time = min(0.8, effective_intro_dur * 0.35)`（指定秒数の終盤で滑らかに透明へフェードアウトする）。
+- **コミットメッセージ**: `feat(video-renderer): decouple title duration from intro margin and support 0.1s-15.0s timing with fade or cut exit`
+
+---
+
+### 📦 Batch Package 5: YouTube Shorts 上下2分割レイアウト ＆ 起動スプラッシュ・多重起動防止・全体結合テスト（Micro-Step 9 〜 10）
+
+#### - [ ] **Micro-Step 9: YouTube Shorts (9:16) 上下2分割（スプリットスクリーン）構図配置の実装（課題8）**
+- **対象ファイル**: `src/main.py`, `src/gl_visualizer.py`, `src/video_exporter.py`, `src/studio_controller.py`
+- **実装内容**:
+  1. **UIコントロールの追加 (`src/main.py`)**:
+     - 「🎨 画面デザイン」タブの「📐 1. 画面比率・構図プレビュー」フレーム内に、**`縦型構図 (9:16時):` (`self.combo_vertical_layout`)** を追加：
+       - `"全画面フル展開 (標準Shorts)"`
+       - `"上半分 16:9 ハーモニカ (下半分フリー)"`
+       - `"下半分 16:9 ハーモニカ (上半分フリー)"`
+       - `"中央 16:9 ハーモニカ"`
+     - 比率が `9:16` のとき有効化（16:9 / 4:3 のときはグレーアウトまたは自動全画面）し、変更時に `gl_widget.set_vertical_layout_mode(mode)` を呼んで即時プレビュー反映する。
+  2. **OpenGLキャンバス ＆ 動画レンダラーの上下分割ビューポート対応 (`src/gl_visualizer.py`, `src/video_exporter.py`)**:
+     - `vertical_layout_mode` 属性を追加（デフォルト: `"全画面フル展開 (標準Shorts)"`）。
+     - 9:16 縦型描画時、`"上半分 16:9"` / `"下半分 16:9"` / `"中央 16:9"` が選択されている場合：
+       - 有効幅 `w` に対する 16:9 相当の高さ `sub_h = int(w * 9.0 / 16.0)` を算出。
+       - 上半分なら `sub_y0 = int(h * 0.04)`、下半分なら `sub_y0 = h - sub_h - int(h * 0.04)`、中央なら `sub_y0 = (h - sub_h) // 2` として、ノーツ落下領域とハーモニカ本体のY座標群をこの `[sub_y0, sub_y0 + sub_h]` のボックス内にクリップ＆レイアウトする！
+       - 空いた下半分（または上半分）には背景画像やグリーンバック／透過領域がそのまま綺麗に確保され、PVや実写動画との2分割合成が完璧に行えるようにする。
+- **コミットメッセージ**: `feat(shorts-layout): implement 9:16 vertical split-screen placement modes (top, bottom, center 16:9 viewport)`
+
+---
+
+#### - [ ] **Micro-Step 10: 起動時スプラッシュ画面（`QSplashScreen`）、多重起動防止ロック（課題19）および Ver.4.1.0 全体自動結合テスト (`tests/verify_v410_polish.py`)**
+- **対象ファイル**: `src/main.py`, `tests/verify_v410_polish.py` (新規作成), `.context/00_handover.md`, `.context/01_architecture.md`, `.context/02_tasks.md`
+- **実装内容**:
+  1. **多重起動防止ロック ＆ 即時スプラッシュスクリーン (`src/main.py`)**:
+     - `main()` 関数内、`app = QApplication(sys.argv)` の直後に：
+       - `from PyQt6.QtCore import QSharedMemory` で共有メモリロック `"HarmonicaStudio_SingleInstance_Lock"` を試行（ただしオフスクリーン自動テスト実行時 `QT_QPA_PLATFORM == "offscreen"` はスキップ）。既に起動している場合はメッセージを出して二重起動を防止する。
+       - `QSplashScreen` を用いて、480x260 のスタイリッシュなダークテーマ起動画面（`Harmonica Visualizer v4.1.0 [Harmonica Studio]`、「🚀 起動準備中... オーディオ＆OpenGLエンジンを初期化しています」）を `QPainter` で動的生成して即座に `splash.show(); app.processEvents()` する。
+       - `window = HarmonicaMainWindow()` の構築完了後に `splash.finish(window)` で閉じる。
+     - ウィンドウタイトルを **`Harmonica Visualizer v4.1.0 [Harmonica Studio Edition]`** に更新。
+  2. **全体自動結合テスト (`tests/verify_v410_polish.py`) の作成と実行**:
+     - 全21課題に対応する以下の全10項目をオフスクリーンで自動検証するスクリプトを作成・実行し、全項目 PASS を確認する：
+       - Test 1: プリセット切替時の `ratio_combo` 自動同期 ＆ Shorts比率保護（課題9）
+       - Test 2: `[⚙ 設定]` スキン変更時の `practice_visual` 即時同期 ＆ `_demo_chromatic` フォールバック保存先（課題3, 4）
+       - Test 3: モノクロ時の変え指二重枠描画 ＆ `Key +12` シンプル移調表記（課題5, 6, 7）
+       - Test 4: `[⚙ 設定]` の重複撤去、プロジェクト階層ツリー表示、`PartSelectDialog` の音色固定チェック（課題1, 2, 3, 14）
+       - Test 5: 公式5大プリセット（王道16:9背景MV・解説垂直落下）と設定ウィンドウのプリセット比較表タブ（課題20, 21）
+       - Test 6: 「🎹 練習」vs「🎬 動画制作」2階層タブ構造、プリセットヘッダー一元化、「📋 練習からコピー」、自作プリセット「🗑️ 削除」動的切替、右下保存ボタン撤去（課題11, 12, 13）
+       - Test 7: `CollapsibleSection` による折りたたみ開閉動作と画面デザインタブの順序（比率が先頭）（課題10, 17）
+       - Test 8: 録音タブの不要音量枠非表示、動画出力タブの二重リバーブ撤去、フェードの余白直下配置、タイトルチェック廃止（課題14, 15, 16）
+       - Test 9: タイトル表示時間（`0.1s〜15.0s`）と消え方（フェード/カット）のオフスクリーンレンダリング検証（課題18）
+       - Test 10: Shorts 9:16 上下2分割（上半分16:9 / 下半分16:9）のレンダリング検証 ＆ `src/` 汚染ゼロ確認（課題8, 19）
+  3. `.context/00_handover.md`, `.context/01_architecture.md`, `.context/02_tasks.md` を完了状態に更新してコミットし、Gitタグ **`v4.1.0`** を付与する。
+- **コミットメッセージ**: `feat(release): add startup splash screen, single-instance guard, and complete v4.1.0 verification suite`
 
 ---
 
 ## 完了 (Done)
-- [x] **【v3.2.0】UI/UX摩擦ゼロ化（音名直交化・上部タイトル伸縮復元・プリセット直結・練習音源切替・録音テイク選択＆同期試聴）** (2026-10-25)
-  - Micro-Step 1: 音名表記（`lang_mode` 2択化）と穴下ノート表示（`grid4_mode` 3択化）の完全直交化 (`b84b922`)
-  - Micro-Step 2: 上部パネル（Row 1）の曲名ボックス伸縮（`stretch=1`）復元と右詰め整列 (`5ab79e3`)
-  - Micro-Step 3: `🎨 画面作り` タブへの「動画プリセット選択・保存バー」直結配置 (`d817949`)
-  - Micro-Step 4: 練習タブへの「🔊 練習時の再生音源切替」設置と外部伴奏モードの双方向連動 (`69e4584`)
-  - Micro-Step 5: `🎙️ 録音・音響` タブへの「📂 過去テイク・録音WAV選択」機能追加 (`5a6dd16`)
-  - Micro-Step 6: 録音ズレ補正の「▶ 伴奏と同期試聴」および微調整ボタン実装 (`11d6564`)
-  - Micro-Step 7: v3.2.0 全体結合テスト（全7項目PASS）・引き継ぎ更新・Gitタグ `v3.2.0` 付与 (`751f48b`)
-- [x] **ポータブル基底パス解決規約と `src/` 汚染防止知見（Gotcha #9）の記録** (2026-10-25) (`0106276`)
-- [x] **【v3.1.0】練習環境と動画出力プリセットの分離・UI/UX抜本改修（Micro-Step 1〜7 完遂）** (2026-10-25) (`9832fb3`)
-- [x] **タスク粒度の2層構造化知見（Gotcha #8: Micro Commit × Batch Package）の記録** (2026-10-25) (`22d031b`)
-- [x] **AIモデル分業運用（Architect-Builder パターン：Gotcha #7）の知見化** (2026-10-25)
+- [x] **【v4.0.0】Harmonica Studio（楽曲プロジェクト自己完結化・キー別運指パターン・タブ抜本再編・モジュール分割）** (2026-10-25) (`8f22c84`)
+- [x] **【v3.2.0】UI/UX摩擦ゼロ化（音名直交化・上部タイトル伸縮復元・プリセット直結・練習音源切替・録音テイク選択＆同期試聴）** (2026-10-25) (`751f48b`)
+- [x] **【v3.1.0】練習環境と動画出力プリセットの分離・UI/UX抜本改修** (2026-10-25) (`9832fb3`)
 - [x] **【v3.0.0】基盤改修（Step 1〜8）および配布用パッケージクリーンビルド** (2026-10-25)
-
 
 ---
 
