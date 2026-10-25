@@ -1538,12 +1538,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
         r_dpb_top = QHBoxLayout()
         r_dpb_top.addWidget(QLabel("プリセット:"))
-        self.combo_design_preset = QComboBox(self)
-        self.combo_design_preset.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._configure_sidebar_combo(self.combo_design_preset, max_width=230)
-        self.combo_design_preset.setToolTip("編集対象の動画プリセット（動画出力タブと完全同期）")
-        self.combo_design_preset.currentTextChanged.connect(self._on_video_preset_changed)
-        r_dpb_top.addWidget(self.combo_design_preset, stretch=1)
+        # v4.1.0: プリセット操作は上部ヘッダーの combo_video_preset に一本化
+        self.combo_design_preset = getattr(self, "combo_video_preset", None)
         l_dpb.addLayout(r_dpb_top)
 
         r_dpb_btns = QHBoxLayout()
@@ -1944,7 +1940,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         v_box.setSpacing(8)
 
         # 1. 音量制御
-        f_vol = QFrame()
+        self.f_vol = QFrame(self)
+        f_vol = self.f_vol
         f_vol.setObjectName("groupFrame")
         f_vol.setMaximumWidth(328)
         l_vol = QVBoxLayout(f_vol)
@@ -2327,12 +2324,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
         r_pre_top = QHBoxLayout()
         r_pre_top.addWidget(QLabel("プリセット:"))
-        self.combo_video_preset = QComboBox(self)
-        self.combo_video_preset.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._configure_sidebar_combo(self.combo_video_preset, max_width=230)
-        self.combo_video_preset.setToolTip("目的別の動画出力設定プリセット（縦横比・解像度・装飾・タイトル・音量を一括切替）")
-        self.combo_video_preset.currentTextChanged.connect(self._on_video_preset_changed)
-        r_pre_top.addWidget(self.combo_video_preset, stretch=1)
+        # v4.1.0: プリセット操作は上部ヘッダーの combo_video_preset に一本化
         l_preset.addLayout(r_pre_top)
 
         r_pre_ops = QHBoxLayout()
@@ -3112,9 +3104,12 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         # ガイド音源 & リミッター
         guide_eng = s.get("guide_audio_engine", "Windows標準MIDI (WinMM / 推奨)")
         if hasattr(self, "combo_guide_audio"):
-            self.combo_guide_audio.blockSignals(True)
-            self.combo_guide_audio.setCurrentText(guide_eng)
-            self.combo_guide_audio.blockSignals(False)
+            try:
+                self.combo_guide_audio.blockSignals(True)
+                self.combo_guide_audio.setCurrentText(guide_eng)
+                self.combo_guide_audio.blockSignals(False)
+            except Exception:
+                pass
         self.audio_engine.set_guide_audio_engine(guide_eng)
 
         if hasattr(self, "chk_yt_limiter"):
@@ -3326,30 +3321,36 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         if active not in presets and presets:
             active = list(presets.keys())[0]
 
-        for combo_name in ("combo_video_preset", "combo_design_preset"):
+        for combo_name in ("combo_video_preset", "combo_active_preset", "combo_design_preset"):
             combo = getattr(self, combo_name, None)
             if combo is not None:
-                combo.blockSignals(True)
-                combo.clear()
-                combo.addItems(list(presets.keys()))
-                if active in presets:
-                    combo.setCurrentText(active)
-                combo.blockSignals(False)
+                try:
+                    combo.blockSignals(True)
+                    combo.clear()
+                    combo.addItems(list(presets.keys()))
+                    if active in presets:
+                        combo.setCurrentText(active)
+                    combo.blockSignals(False)
+                except Exception:
+                    pass
 
         self._update_preset_button_states(active)
 
     def _update_preset_button_states(self, preset_name: str):
         """プリセットの種類（公式か自作か）に応じて初期化/削除ボタンの表示・テキストを更新"""
         is_official = preset_name in settings_manager.DEFAULT_VIDEO_PRESETS
-        for btn_name in ("btn_preset_reset", "btn_design_preset_reset"):
+        for btn_name in ("btn_reset_or_delete_preset", "btn_preset_reset", "btn_design_preset_reset"):
             btn = getattr(self, btn_name, None)
             if btn is not None:
-                if is_official:
-                    btn.setText("↺ 初期化")
-                    btn.setToolTip("公式プリセットの設定値を初期状態に復元します")
-                else:
-                    btn.setText("🗑️ 削除")
-                    btn.setToolTip("この自作動画プリセットを削除します")
+                try:
+                    if is_official:
+                        btn.setText("↺ 初期化")
+                        btn.setToolTip("公式プリセットの設定値を初期状態に復元します")
+                    else:
+                        btn.setText("🗑️ 削除")
+                        btn.setToolTip("この自作動画プリセットを削除します")
+                except Exception:
+                    pass
 
     def _on_video_preset_changed(self, preset_name: str):
         """動画プリセット切り替えハンドラ：動画出力タブUIおよびGLプレビューを同期"""
@@ -3362,12 +3363,16 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.user_settings["active_video_preset"] = preset_name
         p = presets[preset_name]
 
-        for combo_name in ("combo_video_preset", "combo_design_preset"):
+        for combo_name in ("combo_video_preset", "combo_active_preset", "combo_design_preset"):
             combo = getattr(self, combo_name, None)
-            if combo is not None and combo.currentText() != preset_name:
-                combo.blockSignals(True)
-                combo.setCurrentText(preset_name)
-                combo.blockSignals(False)
+            if combo is not None:
+                try:
+                    if combo.currentText() != preset_name:
+                        combo.blockSignals(True)
+                        combo.setCurrentText(preset_name)
+                        combo.blockSignals(False)
+                except Exception:
+                    pass
 
         # 動画出力タブ各コントロールへの反映（シグナルブロック徹底）
         if hasattr(self, "combo_exp_style"):
