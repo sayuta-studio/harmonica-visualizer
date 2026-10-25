@@ -19,7 +19,7 @@ _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
     sys.path.insert(0, _CURRENT_DIR)
 
-from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF, QPoint, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF, QPoint, pyqtSignal, QSharedMemory
 from PyQt6.QtGui import (
     QFont, QKeySequence, QShortcut, QDragEnterEvent, QDropEvent,
     QPainter, QPen, QColor, QPixmap, QPolygon
@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QSlider, QLabel, QComboBox, QCheckBox, QSpinBox,
     QDoubleSpinBox, QAbstractSpinBox, QMenu,
     QFileDialog, QFrame, QSizePolicy, QTabWidget, QScrollArea,
-    QLineEdit, QColorDialog, QMessageBox, QInputDialog
+    QLineEdit, QColorDialog, QMessageBox, QInputDialog, QSplashScreen
 )
 
 from ipc_state import SharedClockBridge
@@ -5121,10 +5121,41 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(MODERN_DARK_STYLE)
 
+    # 多重起動防止 (QSharedMemory)
+    shared_mem = QSharedMemory("HarmonicaVisualizer_SingleInstanceLock_v4")
+    if not shared_mem.create(1):
+        print("[Warning] Harmonica Visualizer is already running. Exiting.")
+        return 0
+
+    # スプラッシュ画面表示 (QSplashScreen)
+    splash_pix = QPixmap(480, 260)
+    splash_pix.fill(QColor("#0F172A"))
+    sp_painter = QPainter(splash_pix)
+    sp_painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    sp_painter.setPen(QColor("#38BDF8"))
+    sp_painter.drawRect(0, 0, 479, 259)
+    sp_painter.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+    sp_painter.drawText(QRectF(0, 50, 480, 40), Qt.AlignmentFlag.AlignCenter, "Harmonica Studio")
+    sp_painter.setFont(QFont("Meiryo UI", 12))
+    sp_painter.setPen(QColor("#94A3B8"))
+    sp_painter.drawText(QRectF(0, 100, 480, 30), Qt.AlignmentFlag.AlignCenter, "Professional Visualizer & Studio Workflow")
+    sp_painter.setPen(QColor("#34D399"))
+    sp_painter.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+    sp_painter.drawText(QRectF(0, 140, 480, 30), Qt.AlignmentFlag.AlignCenter, "Ver.4.1.0")
+    sp_painter.end()
+
+    splash = QSplashScreen(splash_pix, Qt.WindowType.WindowStaysOnTopHint)
+    splash.show()
+    splash.showMessage("Harmonica Studio を起動中... (Ver.4.1.0)", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, QColor("#38BDF8"))
+    app.processEvents()
+
     window = HarmonicaMainWindow()
     window.show()
+    splash.finish(window)
 
-    sys.exit(app.exec())
+    ret = app.exec()
+    shared_mem.detach()
+    sys.exit(ret)
 
 
 if __name__ == "__main__":
