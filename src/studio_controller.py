@@ -50,6 +50,7 @@ class StudioExportMixin:
 
         exp_style = preset.get("export_style", self.combo_exp_style.currentText() if hasattr(self, "combo_exp_style") else "完成動画 (背景・タイトル合成)")
         bg_col = preset.get("export_bg_color", self.combo_exp_bg.currentText() if hasattr(self, "combo_exp_bg") else "ノーマル（黒）")
+        reverb_on = self.chk_reverb.isChecked() if hasattr(self, "chk_reverb") else False
 
         return {
             "inst_type": self.inst_combo.currentText(),
@@ -82,6 +83,7 @@ class StudioExportMixin:
             "bg_rotation": preset.get("bg_rotation", 0),
             "bg_dim_ratio": preset.get("bg_dim_ratio", 60),
             "bg_image_enabled": preset.get("bg_image_enabled", True),
+            "reverb_enabled": reverb_on,
         }
 
     # =========================================================================
@@ -709,11 +711,17 @@ class StudioExportMixin:
 
         render_settings = self._build_export_render_settings()
 
+        tpl_str = self.combo_title_template.currentText() if hasattr(self, "combo_title_template") else "なし"
+        title_enabled = (self.chk_exp_title.isChecked() and (tpl_str != "なし") and ("クロマキー" not in self.combo_exp_style.currentText()) and ("完全背景透過" not in self.combo_exp_style.currentText()))
+        title_dur = float(self.spin_title_dur.value()) if hasattr(self, "spin_title_dur") else 3.5
+        title_exit = self.combo_title_exit.currentText() if hasattr(self, "combo_title_exit") else "フェードアウトで消える"
         title_overlay = {
-            "enabled": self.chk_exp_title.isChecked() and ("クロマキー" not in self.combo_exp_style.currentText()) and ("完全背景透過" not in self.combo_exp_style.currentText()),
-            "template": self.combo_title_template.currentText(),
+            "enabled": title_enabled,
+            "template": tpl_str,
             "title": self.txt_exp_title.text().strip() or (self.timeline.filename or ""),
             "credit": self.txt_exp_credit.text().strip(),
+            "intro_dur": title_dur,
+            "exit_mode": title_exit,
         }
 
         try:
@@ -818,11 +826,17 @@ class StudioExportMixin:
         # タイトルカード情報
         title_text = self.txt_exp_title.text().strip() or (self.timeline.filename or "")
         credit_text = self.txt_exp_credit.text().strip()
+        tpl_str = self.combo_title_template.currentText() if hasattr(self, "combo_title_template") else "なし"
+        title_enabled = (self.chk_exp_title.isChecked() and (tpl_str != "なし") and ("クロマキー" not in self.combo_exp_style.currentText()) and ("完全背景透過" not in self.combo_exp_style.currentText()))
+        title_dur = float(self.spin_title_dur.value()) if hasattr(self, "spin_title_dur") else 3.5
+        title_exit = self.combo_title_exit.currentText() if hasattr(self, "combo_title_exit") else "フェードアウトで消える"
         title_overlay = {
-            "enabled": self.chk_exp_title.isChecked() and ("クロマキー" not in self.combo_exp_style.currentText()) and ("完全背景透過" not in self.combo_exp_style.currentText()),
-            "template": self.combo_title_template.currentText(),
+            "enabled": title_enabled,
+            "template": tpl_str,
             "title": title_text,
             "credit": credit_text,
+            "intro_dur": title_dur,
+            "exit_mode": title_exit,
         }
 
         # カウントイン小節数

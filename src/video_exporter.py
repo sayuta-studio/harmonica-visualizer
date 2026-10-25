@@ -863,6 +863,9 @@ class OffscreenVisualizerRenderer:
             fade_alpha = int(255 * ((t_in_video - (total_video_dur - f_out_dur)) / f_out_dur))
 
         has_title = (not self.is_chromakey_mode and not self.is_transparent_mode and title_overlay and title_overlay.get("enabled", False))
+        if has_title:
+            title_overlay["fade_title_mode"] = fade_title_mode
+            title_overlay["fade_in_sec"] = fade_in_sec
 
         if has_title and fade_title_mode == "画面と一緒にフェードイン":
             self._draw_title_overlay(p, cur_sec, title_overlay, x_start, y_offset, total_w, scale, t_in_video=t_in_video)
@@ -897,30 +900,34 @@ class OffscreenVisualizerRenderer:
         w, h = self.width, self.height
         is_vertical = (w < h) or ("9:16" in str(self.aspect_ratio))
 
-        # 動画タイムライン (t_in_video) 基準で前余白 (intro_sec) と完全同期
+        # 動画タイムライン (t_in_video) 基準で前余白・フェードイン・独立表示時間と完全同期
         t_ref = t_in_video if t_in_video > 0.0 else max(0.0, cur_sec)
-        configured_intro = float(overlay_info.get("intro_dur", 2.5))
-        intro_sec = float(overlay_info.get("intro_sec", 0.0))
+        configured_intro = max(0.1, float(overlay_info.get("intro_dur", 3.5)))
+        exit_mode = str(overlay_info.get("exit_mode", "フェードアウトで消える"))
+        fade_in_sec = float(overlay_info.get("fade_in_sec", 0.0))
+        fade_title_mode = str(overlay_info.get("fade_title_mode", "フェード中もタイトル表示"))
 
-        if intro_sec >= 2.0:
-            effective_intro_dur = intro_sec
-            fade_in_time = min(1.0, intro_sec * 0.25)
-            fade_out_time = min(0.8, intro_sec * 0.2)
-        else:
-            effective_intro_dur = max(configured_intro, intro_sec)
-            fade_in_time = 0.5
-            fade_out_time = 0.5
+        # 「フェード中はタイトル非表示」の場合はフェードイン完了時点から configured_intro 秒間表示する
+        start_offset = fade_in_sec if fade_title_mode == "フェード中はタイトル非表示" else 0.0
+        local_t = t_ref - start_offset
+        effective_intro_dur = configured_intro
 
-        show_intro = ("イントロ中央" in tpl and t_ref < effective_intro_dur)
+        show_intro = ("イントロ中央" in tpl and 0.0 <= local_t < effective_intro_dur)
         show_left = ("左上常時" in tpl)
         show_right = ("右上常時" in tpl)
 
         if show_intro:
+            fade_in_time = min(0.4, effective_intro_dur * 0.25)
+            if "カット" in exit_mode or "即座" in exit_mode:
+                fade_out_time = 0.0
+            else:
+                fade_out_time = min(0.8, effective_intro_dur * 0.35)
+
             fade = 1.0
-            if t_ref < fade_in_time:
-                fade = max(0.1, t_ref / max(0.01, fade_in_time))
-            elif t_ref > (effective_intro_dur - fade_out_time):
-                fade = max(0.0, (effective_intro_dur - t_ref) / max(0.01, fade_out_time))
+            if fade_in_time > 0.01 and local_t < fade_in_time:
+                fade = max(0.1, local_t / fade_in_time)
+            elif fade_out_time > 0.01 and local_t > (effective_intro_dur - fade_out_time):
+                fade = max(0.0, (effective_intro_dur - local_t) / fade_out_time)
 
             base_f_t = QFont("Meiryo UI", max(14, int(28.0 * scale)), QFont.Weight.Bold)
             base_f_c = QFont("Meiryo UI", max(10, int(15.0 * scale)), QFont.Weight.Bold)
