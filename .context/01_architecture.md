@@ -38,14 +38,14 @@ harmonica-visualizer/
 ├── docs/                      # アイデア・ログ・外部資料格納
 │   ├── ideas/
 │   ├── logs/
-│   └── sources/
+│   └── sources/               # extracted_knowledge.md, ai_development_playbook.md 等
 ├── shared_knowledge/          # 再利用可能な汎用知見集（8割の汎用知見）
 │   ├── architecture_patterns.md
 │   ├── env_build.md
 │   ├── ui_ux.md
 │   └── inbox/
 ├── 00_template/               # マスターテンプレート（複製元・還元用）
-├── v3.0/                      # 【現行稼働バージョン (v3.0)】メインコードベース
+├── v3.0/                      # 🌟【現行稼働バージョン (v3.0)】メインコードベース（トップ常駐）
 │   ├── main.py                # メインウィンドウ、L型レイアウト統括、イベント制御、UI構築
 │   ├── audio_engine.py        # WinMM MIDI再生、AudioRecorder、PCM音声スライス再生、WAV合成、リバーブDSP
 │   ├── video_exporter.py      # OffscreenVisualizerRenderer、FFmpegパイプライン、動画書き出し
@@ -58,12 +58,16 @@ harmonica-visualizer/
 │   ├── config.py              # ポータブルパス解決（get_portable_path）、フォント・定数設定
 │   ├── fingering/             # 曲別プロファイル（<曲名>_profile.json）保存領域
 │   └── skins/                 # ハーモニカ本体外観スキン画像
-├── v2.0/ , v2.1/              # 過去バージョン・リファクタリング資産（参照用）
-├── bbbbb/                     # 初期プロトタイプ・バックアップ（.gitignore 対象）
-├── 公開ファイル_Ver.3.00/      # エンドユーザー配布用パッケージ（EXE、アセット）
+├── archives/                  # 📦【過去資産アーカイブ】
+│   ├── v0_v1_notepad_prototypes/  # （旧bbbbb）メモ帳コピー時代の黎明期プロトタイプ（Ver 0.001〜1.01）
+│   ├── v2.0/                  # VS Code / Antigravity 移行後の第1世代
+│   └── v2.1/                  # VS Code / Antigravity 移行後の第2世代
+├── releases/                  # 🚀【配布パッケージ領域】（旧公開ファイル）
+│   ├── Chromatic_Harmonica_Trainer_Ver.1.01.zip
+│   ├── Chromatic_Harmonica_Trainer_Ver.2.10.zip
+│   └── Chromatic_Harmonica_Trainer_Ver.3.00.zip
 ├── AGENTS.md                  # AI開発者向けコアインストラクション
-├── ai_development_playbook.md # 開発教訓・アーキテクチャプレイブック
-└── extracted_knowledge.md     # 開発全史知見・トラブルシューティング大全
+└── .gitignore                 # 統合除外設定（archives/v0_v1_notepad_prototypes等を除外）
 ```
 
 ---

@@ -1,6 +1,5 @@
-# 過去の手動バックアップフォルダ・テストファイルを除外
-bbbbb/
-test.py
+# 過去の手動バックアップフォルダ・アーカイブを除外
+archives/v0_v1_notepad_prototypes/
 
 # Python キャッシュ・仮想環境
 __pycache__/

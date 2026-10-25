@@ -1,11 +1,17 @@
 # Current Status & Handover (00_handover.md)
 
 ## 最終更新日時
-- 2026-10-25 10:22
+- 2026-10-25 10:28
 
 ---
 
 ## 直近で完了したこと
+- [x] **ディレクトリ構造の再編成（`archives/`, `releases/` の構築）**:
+  - `archives/v0_v1_notepad_prototypes/`: メモ帳コピー時代の黎明期プロトタイプ（旧 `bbbbb`）を格納。
+  - `archives/v2.0/`, `archives/v2.1/`: VS Code/Antigravity環境の過去安定版を格納。
+  - `releases/`: 配布用ZIP・パッケージ（旧 `公開ファイル`）を文字化け対策とともにリネーム集約。
+  - ルート直下のトップ階層に「最新版（`v3.0`）」のみを常駐させる運用ルールを確立。
+  - `.gitignore` のアーカイブ除外設定更新。
 - [x] **プロジェクトクリーンアップ（Step 1〜3完了・約2.05GB削減）**:
   - Step 1: ルート直下のゴミ（`test.py`, `temp_test*.mp4`, 旧 `build/`, `dist/`, `scratch/`, `temp/*`）の完全除去（約135MB削減）。
   - Step 2: 過去フォルダ（`bbbbb/`, `v2.0/`, `v2.1/`）内のテスト生成動画（`.mp4` 計36本）のみを一括除去（**約1.92GB削減**）。ソースコード118本は完全保持。
