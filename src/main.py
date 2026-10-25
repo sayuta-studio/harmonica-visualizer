@@ -1272,6 +1272,42 @@ class HarmonicaMainWindow(QMainWindow):
         self.lbl_visual_target_hint.setStyleSheet("color: #38BDF8; font-size: 10px;")
         self.lbl_visual_target_hint.setWordWrap(True)
         l_target.addWidget(self.lbl_visual_target_hint)
+
+        # 動画プリセット選択・保存操作バー (画面作りタブ直結)
+        self.w_design_preset_bar = QWidget(self)
+        l_dpb = QVBoxLayout(self.w_design_preset_bar)
+        l_dpb.setContentsMargins(0, 4, 0, 0)
+        l_dpb.setSpacing(4)
+
+        r_dpb_top = QHBoxLayout()
+        r_dpb_top.addWidget(QLabel("プリセット:"))
+        self.combo_design_preset = QComboBox(self)
+        self.combo_design_preset.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._configure_sidebar_combo(self.combo_design_preset, max_width=230)
+        self.combo_design_preset.setToolTip("編集対象の動画プリセット（動画出力タブと完全同期）")
+        self.combo_design_preset.currentTextChanged.connect(self._on_video_preset_changed)
+        r_dpb_top.addWidget(self.combo_design_preset, stretch=1)
+        l_dpb.addLayout(r_dpb_top)
+
+        r_dpb_btns = QHBoxLayout()
+        self.btn_design_preset_save = QPushButton("💾 保存", self)
+        self.btn_design_preset_save.setToolTip("現在の画面デザインを選択中のプリセットに上書き保存")
+        self.btn_design_preset_save.clicked.connect(self._on_save_video_preset)
+        r_dpb_btns.addWidget(self.btn_design_preset_save)
+
+        self.btn_design_preset_save_as = QPushButton("➕ 別名保存...", self)
+        self.btn_design_preset_save_as.setToolTip("現在の画面デザインで新しい動画プリセットを作成")
+        self.btn_design_preset_save_as.clicked.connect(self._on_save_as_video_preset)
+        r_dpb_btns.addWidget(self.btn_design_preset_save_as)
+
+        self.btn_design_preset_reset = QPushButton("↺ 初期化", self)
+        self.btn_design_preset_reset.setToolTip("公式プリセットは初期値へ復元、自作プリセットは削除します")
+        self.btn_design_preset_reset.clicked.connect(self._on_reset_or_delete_video_preset)
+        r_dpb_btns.addWidget(self.btn_design_preset_reset)
+        l_dpb.addLayout(r_dpb_btns)
+
+        self.w_design_preset_bar.setVisible(False)
+        l_target.addWidget(self.w_design_preset_bar)
         v_box.addWidget(f_target)
 
         # 1. 演奏・ノーツ表示（練習・動画共通）
@@ -2443,6 +2479,8 @@ class HarmonicaMainWindow(QMainWindow):
                 self.lbl_visual_target_hint.setStyleSheet("color: #F43F5E; font-size: 10px; font-weight: bold;")
             if hasattr(self, "f_ratio"):
                 self.f_ratio.setEnabled(True)
+            if hasattr(self, "w_design_preset_bar"):
+                self.w_design_preset_bar.setVisible(True)
         else:
             self._visual_edit_target = "practice"
             pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
@@ -2452,6 +2490,8 @@ class HarmonicaMainWindow(QMainWindow):
                 self.lbl_visual_target_hint.setStyleSheet("color: #38BDF8; font-size: 10px;")
             if hasattr(self, "f_ratio"):
                 self.f_ratio.setEnabled(False)
+            if hasattr(self, "w_design_preset_bar"):
+                self.w_design_preset_bar.setVisible(False)
 
     def _on_tab_changed(self, index: int):
         if index in (0, 2):
@@ -2888,26 +2928,30 @@ class HarmonicaMainWindow(QMainWindow):
         if active not in presets and presets:
             active = list(presets.keys())[0]
 
-        self.combo_video_preset.blockSignals(True)
-        self.combo_video_preset.clear()
-        self.combo_video_preset.addItems(list(presets.keys()))
-        if active in presets:
-            self.combo_video_preset.setCurrentText(active)
-        self.combo_video_preset.blockSignals(False)
+        for combo_name in ("combo_video_preset", "combo_design_preset"):
+            combo = getattr(self, combo_name, None)
+            if combo is not None:
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItems(list(presets.keys()))
+                if active in presets:
+                    combo.setCurrentText(active)
+                combo.blockSignals(False)
 
         self._update_preset_button_states(active)
 
     def _update_preset_button_states(self, preset_name: str):
         """プリセットの種類（公式か自作か）に応じて初期化/削除ボタンの表示・テキストを更新"""
-        if not hasattr(self, "btn_preset_reset"):
-            return
         is_official = preset_name in settings_manager.DEFAULT_VIDEO_PRESETS
-        if is_official:
-            self.btn_preset_reset.setText("↺ 初期化")
-            self.btn_preset_reset.setToolTip("公式プリセットの設定値を初期状態に復元します")
-        else:
-            self.btn_preset_reset.setText("🗑️ 削除")
-            self.btn_preset_reset.setToolTip("この自作動画プリセットを削除します")
+        for btn_name in ("btn_preset_reset", "btn_design_preset_reset"):
+            btn = getattr(self, btn_name, None)
+            if btn is not None:
+                if is_official:
+                    btn.setText("↺ 初期化")
+                    btn.setToolTip("公式プリセットの設定値を初期状態に復元します")
+                else:
+                    btn.setText("🗑️ 削除")
+                    btn.setToolTip("この自作動画プリセットを削除します")
 
     def _on_video_preset_changed(self, preset_name: str):
         """動画プリセット切り替えハンドラ：動画出力タブUIおよびGLプレビューを同期"""
@@ -2919,6 +2963,13 @@ class HarmonicaMainWindow(QMainWindow):
 
         self.user_settings["active_video_preset"] = preset_name
         p = presets[preset_name]
+
+        for combo_name in ("combo_video_preset", "combo_design_preset"):
+            combo = getattr(self, combo_name, None)
+            if combo is not None and combo.currentText() != preset_name:
+                combo.blockSignals(True)
+                combo.setCurrentText(preset_name)
+                combo.blockSignals(False)
 
         # 動画出力タブ各コントロールへの反映（シグナルブロック徹底）
         if hasattr(self, "combo_exp_style"):
