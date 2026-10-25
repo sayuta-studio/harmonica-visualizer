@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QSlider, QLabel, QComboBox, QCheckBox, QSpinBox,
     QDoubleSpinBox, QAbstractSpinBox, QMenu,
     QFileDialog, QFrame, QSizePolicy, QTabWidget, QScrollArea,
-    QLineEdit, QColorDialog, QMessageBox
+    QLineEdit, QColorDialog, QMessageBox, QInputDialog
 )
 
 from ipc_state import SharedClockBridge
@@ -1970,6 +1970,58 @@ class HarmonicaMainWindow(QMainWindow):
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
 
+        # 0. 🗂️ 動画出力プリセット管理
+        f_preset = QFrame()
+        f_preset.setObjectName("groupFrame")
+        f_preset.setMaximumWidth(328)
+        l_preset = QVBoxLayout(f_preset)
+        l_preset.setContentsMargins(6, 6, 6, 6)
+        l_preset.setSpacing(6)
+        l_preset.addWidget(QLabel("🗂️ <b>動画出力プリセット:</b>"))
+
+        r_pre_top = QHBoxLayout()
+        r_pre_top.addWidget(QLabel("プリセット:"))
+        self.combo_video_preset = QComboBox(self)
+        self.combo_video_preset.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._configure_sidebar_combo(self.combo_video_preset, max_width=230)
+        self.combo_video_preset.setToolTip("目的別の動画出力設定プリセット（縦横比・解像度・装飾・タイトル・音量を一括切替）")
+        self.combo_video_preset.currentTextChanged.connect(self._on_video_preset_changed)
+        r_pre_top.addWidget(self.combo_video_preset, stretch=1)
+        l_preset.addLayout(r_pre_top)
+
+        r_pre_ops = QHBoxLayout()
+        self.btn_preset_save = QPushButton("💾 保存", self)
+        self.btn_preset_save.setToolTip("現在の動画設定および動画用デザインを選択中のプリセットに上書き保存")
+        self.btn_preset_save.clicked.connect(self._on_save_video_preset)
+        r_pre_ops.addWidget(self.btn_preset_save)
+
+        self.btn_preset_save_as = QPushButton("➕ 別名保存...", self)
+        self.btn_preset_save_as.setToolTip("現在の設定で新しい動画プリセットを作成")
+        self.btn_preset_save_as.clicked.connect(self._on_save_as_video_preset)
+        r_pre_ops.addWidget(self.btn_preset_save_as)
+
+        self.btn_preset_reset = QPushButton("↺ 初期化", self)
+        self.btn_preset_reset.setToolTip("公式プリセットは初期値へ復元、自作プリセットは削除します")
+        self.btn_preset_reset.clicked.connect(self._on_reset_or_delete_video_preset)
+        r_pre_ops.addWidget(self.btn_preset_reset)
+        l_preset.addLayout(r_pre_ops)
+
+        self.btn_copy_practice_visual = QPushButton("📋 現在の「練習画面」の見た目を反映", self)
+        self.btn_copy_practice_visual.setFixedHeight(26)
+        self.btn_copy_practice_visual.setStyleSheet("background-color: #1E293B; border: 1px solid #10B981; color: #6EE7B7; font-weight: bold; font-size: 11px; border-radius: 3px;")
+        self.btn_copy_practice_visual.setToolTip("練習画面で設定されている配色・スキン・音名・装飾の見た目を、現在選択中の動画プリセットにコピーしてプレビューに反映します")
+        self.btn_copy_practice_visual.clicked.connect(self._on_copy_practice_visual_to_preset)
+        l_preset.addWidget(self.btn_copy_practice_visual)
+
+        self.btn_jump_design_for_video = QPushButton("🎨 このプリセットの画面デザインを編集...", self)
+        self.btn_jump_design_for_video.setFixedHeight(24)
+        self.btn_jump_design_for_video.setStyleSheet("background-color: #18181B; border: 1px solid #6366F1; color: #A5B4FC; font-size: 11px; border-radius: 3px;")
+        self.btn_jump_design_for_video.setToolTip("画面作りタブへ移動し、この動画プリセットのデザイン（比率・色・スキン等）を編集します")
+        self.btn_jump_design_for_video.clicked.connect(self._on_jump_design_for_video)
+        l_preset.addWidget(self.btn_jump_design_for_video)
+
+        v_box.addWidget(f_preset)
+
         # 1. 動画レンダリング品質＆解像度
         f_exp = QFrame()
         f_exp.setObjectName("groupFrame")
@@ -2699,6 +2751,9 @@ class HarmonicaMainWindow(QMainWindow):
             lever_on_path=s.get("skin_lever_on_path", "")
         )
         self._update_transpose_lock_state()
+        self._refresh_video_preset_combo()
+        if hasattr(self, "combo_video_preset"):
+            self._on_video_preset_changed(self.combo_video_preset.currentText())
 
     def _save_current_settings(self):
         self.user_settings["inst_type"] = self.inst_combo.currentText()
@@ -2822,6 +2877,336 @@ class HarmonicaMainWindow(QMainWindow):
         self.user_settings["grid4_mode"] = str(mode)
         self.gl_widget.set_show_grid4(mode == "4音グリッド表示")
         self._save_current_settings()
+
+    def _refresh_video_preset_combo(self, select_name: str = None):
+        """動画プリセットコンボボックスの選択肢を再構築し、指定プリセットを選択"""
+        if not hasattr(self, "combo_video_preset"):
+            return
+        presets = self.user_settings.get("video_presets", {})
+        active = select_name or self.user_settings.get("active_video_preset", "🎥 演奏解説・練習用 (横型・標準)")
+        if active not in presets and presets:
+            active = list(presets.keys())[0]
+
+        self.combo_video_preset.blockSignals(True)
+        self.combo_video_preset.clear()
+        self.combo_video_preset.addItems(list(presets.keys()))
+        if active in presets:
+            self.combo_video_preset.setCurrentText(active)
+        self.combo_video_preset.blockSignals(False)
+
+        self._update_preset_button_states(active)
+
+    def _update_preset_button_states(self, preset_name: str):
+        """プリセットの種類（公式か自作か）に応じて初期化/削除ボタンの表示・テキストを更新"""
+        if not hasattr(self, "btn_preset_reset"):
+            return
+        is_official = preset_name in settings_manager.DEFAULT_VIDEO_PRESETS
+        if is_official:
+            self.btn_preset_reset.setText("↺ 初期化")
+            self.btn_preset_reset.setToolTip("公式プリセットの設定値を初期状態に復元します")
+        else:
+            self.btn_preset_reset.setText("🗑️ 削除")
+            self.btn_preset_reset.setToolTip("この自作動画プリセットを削除します")
+
+    def _on_video_preset_changed(self, preset_name: str):
+        """動画プリセット切り替えハンドラ：動画出力タブUIおよびGLプレビューを同期"""
+        if not preset_name:
+            return
+        presets = self.user_settings.get("video_presets", {})
+        if preset_name not in presets:
+            return
+
+        self.user_settings["active_video_preset"] = preset_name
+        p = presets[preset_name]
+
+        # 動画出力タブ各コントロールへの反映（シグナルブロック徹底）
+        if hasattr(self, "combo_exp_style"):
+            self.combo_exp_style.blockSignals(True)
+            self.combo_exp_style.setCurrentText(p.get("export_style", "完成動画 (背景・タイトル合成)"))
+            self.combo_exp_style.blockSignals(False)
+            self._on_export_style_changed(self.combo_exp_style.currentText())
+
+        if hasattr(self, "combo_exp_bg"):
+            self.combo_exp_bg.blockSignals(True)
+            self.combo_exp_bg.setCurrentText(p.get("export_bg_color", "ノーマル（黒）"))
+            self.combo_exp_bg.blockSignals(False)
+
+        if hasattr(self, "combo_exp_res"):
+            self.combo_exp_res.blockSignals(True)
+            self.combo_exp_res.setCurrentText(p.get("export_resolution", "Full HD (1920x1080・推奨)"))
+            self.combo_exp_res.blockSignals(False)
+
+        if hasattr(self, "combo_exp_fps"):
+            self.combo_exp_fps.blockSignals(True)
+            self.combo_exp_fps.setCurrentText(p.get("export_fps", "60 FPS (滑らか・推奨)"))
+            self.combo_exp_fps.blockSignals(False)
+
+        if hasattr(self, "combo_exp_intro"):
+            self.combo_exp_intro.blockSignals(True)
+            self.combo_exp_intro.setCurrentText(str(p.get("export_intro_sec", "1秒")))
+            self.combo_exp_intro.blockSignals(False)
+
+        if hasattr(self, "combo_exp_outro"):
+            self.combo_exp_outro.blockSignals(True)
+            self.combo_exp_outro.setCurrentText(str(p.get("export_outro_sec", "2秒")))
+            self.combo_exp_outro.blockSignals(False)
+
+        if hasattr(self, "chk_fade_in"):
+            self.chk_fade_in.blockSignals(True)
+            self.chk_fade_in.setChecked(bool(p.get("export_fade_in", True)))
+            self.chk_fade_in.blockSignals(False)
+
+        if hasattr(self, "spin_fade_in"):
+            self.spin_fade_in.blockSignals(True)
+            self.spin_fade_in.setValue(float(p.get("export_fade_in_sec", 1.5)))
+            self.spin_fade_in.setEnabled(self.chk_fade_in.isChecked())
+            self.spin_fade_in.blockSignals(False)
+
+        if hasattr(self, "chk_fade_out"):
+            self.chk_fade_out.blockSignals(True)
+            self.chk_fade_out.setChecked(bool(p.get("export_fade_out", True)))
+            self.chk_fade_out.blockSignals(False)
+
+        if hasattr(self, "spin_fade_out"):
+            self.spin_fade_out.blockSignals(True)
+            self.spin_fade_out.setValue(float(p.get("export_fade_out_sec", 1.5)))
+            self.spin_fade_out.setEnabled(self.chk_fade_out.isChecked())
+            self.spin_fade_out.blockSignals(False)
+
+        if hasattr(self, "combo_fade_title"):
+            self.combo_fade_title.blockSignals(True)
+            self.combo_fade_title.setCurrentText(str(p.get("export_fade_title_mode", "フェード中もタイトル表示")))
+            self.combo_fade_title.blockSignals(False)
+
+        if hasattr(self, "chk_exp_title"):
+            self.chk_exp_title.blockSignals(True)
+            self.chk_exp_title.setChecked(bool(p.get("export_title_enabled", True)))
+            self.chk_exp_title.blockSignals(False)
+
+        if hasattr(self, "combo_title_template"):
+            self.combo_title_template.blockSignals(True)
+            self.combo_title_template.setCurrentText(str(p.get("export_title_template", "イントロ中央＋右上常時")))
+            self.combo_title_template.blockSignals(False)
+
+        if hasattr(self, "combo_exp_audio"):
+            self.combo_exp_audio.blockSignals(True)
+            self.combo_exp_audio.setCurrentText(str(p.get("audio_quick_mode", "伴奏音源 (外部音源優先)")))
+            self.combo_exp_audio.blockSignals(False)
+
+        if hasattr(self, "chk_exp_reverb"):
+            self.chk_exp_reverb.blockSignals(True)
+            self.chk_exp_reverb.setChecked(bool(p.get("reverb_enabled", False)))
+            self.chk_exp_reverb.blockSignals(False)
+
+        if hasattr(self, "chk_yt_limiter"):
+            self.chk_yt_limiter.blockSignals(True)
+            self.chk_yt_limiter.setChecked(bool(p.get("yt_limiter", True)))
+            self.chk_yt_limiter.blockSignals(False)
+
+        if hasattr(self, "slider_exp_audio_vol"):
+            vol_val = int(p.get("export_audio_volume", 100))
+            self.slider_exp_audio_vol.blockSignals(True)
+            self.slider_exp_audio_vol.setValue(vol_val)
+            self.slider_exp_audio_vol.blockSignals(False)
+            if hasattr(self, "lbl_exp_audio_vol"):
+                self.lbl_exp_audio_vol.setText(f"{vol_val}%")
+
+        self._update_preset_button_states(preset_name)
+
+        # 現在のタブが動画出力タブ(3)、または画面作りタブ(1)で動画プリセット編集中ならGLに即時反映
+        cur_tab = self.tab_widget.currentIndex() if hasattr(self, "tab_widget") else 0
+        if cur_tab == 3 or (cur_tab == 1 and getattr(self, "_visual_edit_target", "practice") == "video"):
+            asp = str(p.get("aspect_ratio", "16:9"))
+            is_chroma = ("クロマキー" in str(p.get("export_style", "")))
+            bg_col = str(p.get("export_bg_color", "ノーマル（黒）"))
+            self._apply_visual_dict_to_ui_and_gl(p, aspect_ratio=asp, is_chromakey=is_chroma, chroma_color=bg_col)
+
+    def _on_save_video_preset(self):
+        """現在の動画設定および動画用ビジュアル設定を選択中プリセットに上書き保存"""
+        active = self.combo_video_preset.currentText()
+        if not active:
+            return
+        presets = self.user_settings.setdefault("video_presets", {})
+        target = presets.setdefault(active, {})
+
+        if getattr(self, "_visual_edit_target", "practice") == "video":
+            cur_vis = self._get_current_visual_dict_from_ui()
+            target.update(cur_vis)
+
+        ratio_raw = self.ratio_combo.currentText() if hasattr(self, "ratio_combo") else "16:9"
+        clean_ratio = "9:16" if "9:16" in ratio_raw else ("4:3" if "4:3" in ratio_raw else "16:9")
+        target["aspect_ratio"] = clean_ratio
+        if hasattr(self, "combo_exp_style"):
+            target["export_style"] = self.combo_exp_style.currentText()
+        if hasattr(self, "combo_exp_bg"):
+            target["export_bg_color"] = self.combo_exp_bg.currentText()
+        if hasattr(self, "combo_exp_res"):
+            target["export_resolution"] = self.combo_exp_res.currentText()
+        if hasattr(self, "combo_exp_fps"):
+            target["export_fps"] = self.combo_exp_fps.currentText()
+        if hasattr(self, "combo_exp_intro"):
+            target["export_intro_sec"] = self.combo_exp_intro.currentText()
+        if hasattr(self, "combo_exp_outro"):
+            target["export_outro_sec"] = self.combo_exp_outro.currentText()
+        if hasattr(self, "chk_fade_in"):
+            target["export_fade_in"] = self.chk_fade_in.isChecked()
+        if hasattr(self, "spin_fade_in"):
+            target["export_fade_in_sec"] = self.spin_fade_in.value()
+        if hasattr(self, "chk_fade_out"):
+            target["export_fade_out"] = self.chk_fade_out.isChecked()
+        if hasattr(self, "spin_fade_out"):
+            target["export_fade_out_sec"] = self.spin_fade_out.value()
+        if hasattr(self, "combo_fade_title"):
+            target["export_fade_title_mode"] = self.combo_fade_title.currentText()
+        if hasattr(self, "chk_exp_title"):
+            target["export_title_enabled"] = self.chk_exp_title.isChecked()
+        if hasattr(self, "combo_title_template"):
+            target["export_title_template"] = self.combo_title_template.currentText()
+        if hasattr(self, "combo_exp_audio"):
+            target["audio_quick_mode"] = self.combo_exp_audio.currentText()
+        if hasattr(self, "chk_exp_reverb"):
+            target["reverb_enabled"] = self.chk_exp_reverb.isChecked()
+        if hasattr(self, "chk_yt_limiter"):
+            target["yt_limiter"] = self.chk_yt_limiter.isChecked()
+        if hasattr(self, "slider_exp_audio_vol"):
+            target["export_audio_volume"] = self.slider_exp_audio_vol.value()
+
+        self._save_current_settings()
+        QMessageBox.information(self, "プリセット保存", f"プリセット「{active}」に現在の設定を保存しました。")
+
+    def _on_save_as_video_preset(self):
+        """現在の設定をもとに新しい名前で動画プリセットを保存"""
+        cur_active = self.combo_video_preset.currentText()
+        presets = self.user_settings.setdefault("video_presets", {})
+        base_dict = copy.deepcopy(presets.get(cur_active, {}))
+
+        new_name, ok = QInputDialog.getText(
+            self, "新規プリセット作成",
+            "新しい動画プリセット名を入力してください:",
+            QLineEdit.EchoMode.Normal,
+            f"{cur_active} (コピー)"
+        )
+        if not ok or not new_name.strip():
+            return
+        name = new_name.strip()
+        if name in presets:
+            reply = QMessageBox.question(
+                self, "上書き確認",
+                f"プリセット「{name}」は既に存在します。上書きしますか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        if getattr(self, "_visual_edit_target", "practice") == "video":
+            base_dict.update(self._get_current_visual_dict_from_ui())
+        if hasattr(self, "combo_exp_style"):
+            base_dict["export_style"] = self.combo_exp_style.currentText()
+        if hasattr(self, "combo_exp_bg"):
+            base_dict["export_bg_color"] = self.combo_exp_bg.currentText()
+        if hasattr(self, "combo_exp_res"):
+            base_dict["export_resolution"] = self.combo_exp_res.currentText()
+        if hasattr(self, "combo_exp_fps"):
+            base_dict["export_fps"] = self.combo_exp_fps.currentText()
+        if hasattr(self, "combo_exp_intro"):
+            base_dict["export_intro_sec"] = self.combo_exp_intro.currentText()
+        if hasattr(self, "combo_exp_outro"):
+            base_dict["export_outro_sec"] = self.combo_exp_outro.currentText()
+        if hasattr(self, "chk_fade_in"):
+            base_dict["export_fade_in"] = self.chk_fade_in.isChecked()
+        if hasattr(self, "spin_fade_in"):
+            base_dict["export_fade_in_sec"] = self.spin_fade_in.value()
+        if hasattr(self, "chk_fade_out"):
+            base_dict["export_fade_out"] = self.chk_fade_out.isChecked()
+        if hasattr(self, "spin_fade_out"):
+            base_dict["export_fade_out_sec"] = self.spin_fade_out.value()
+        if hasattr(self, "combo_fade_title"):
+            base_dict["export_fade_title_mode"] = self.combo_fade_title.currentText()
+        if hasattr(self, "chk_exp_title"):
+            base_dict["export_title_enabled"] = self.chk_exp_title.isChecked()
+        if hasattr(self, "combo_title_template"):
+            base_dict["export_title_template"] = self.combo_title_template.currentText()
+        if hasattr(self, "combo_exp_audio"):
+            base_dict["audio_quick_mode"] = self.combo_exp_audio.currentText()
+        if hasattr(self, "chk_exp_reverb"):
+            base_dict["reverb_enabled"] = self.chk_exp_reverb.isChecked()
+        if hasattr(self, "chk_yt_limiter"):
+            base_dict["yt_limiter"] = self.chk_yt_limiter.isChecked()
+        if hasattr(self, "slider_exp_audio_vol"):
+            base_dict["export_audio_volume"] = self.slider_exp_audio_vol.value()
+
+        presets[name] = base_dict
+        self.user_settings["active_video_preset"] = name
+        self._refresh_video_preset_combo(select_name=name)
+        self._on_video_preset_changed(name)
+        self._save_current_settings()
+        QMessageBox.information(self, "作成完了", f"新規プリセット「{name}」を作成しました。")
+
+    def _on_reset_or_delete_video_preset(self):
+        """公式プリセットなら初期値にリセット、自作プリセットなら削除"""
+        active = self.combo_video_preset.currentText()
+        if not active:
+            return
+        presets = self.user_settings.setdefault("video_presets", {})
+        if active in settings_manager.DEFAULT_VIDEO_PRESETS:
+            reply = QMessageBox.question(
+                self, "初期化確認",
+                f"公式プリセット「{active}」の設定を標準の初期値に戻しますか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                presets[active] = copy.deepcopy(settings_manager.DEFAULT_VIDEO_PRESETS[active])
+                self._on_video_preset_changed(active)
+                self._save_current_settings()
+                QMessageBox.information(self, "初期化完了", f"「{active}」を初期設定に復元しました。")
+        else:
+            reply = QMessageBox.question(
+                self, "プリセット削除確認",
+                f"自作プリセット「{active}」を削除してもよろしいですか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                presets.pop(active, None)
+                fallback = "🎥 演奏解説・練習用 (横型・標準)"
+                if fallback not in presets and presets:
+                    fallback = list(presets.keys())[0]
+                self.user_settings["active_video_preset"] = fallback
+                self._refresh_video_preset_combo(select_name=fallback)
+                self._on_video_preset_changed(fallback)
+                self._save_current_settings()
+                QMessageBox.information(self, "削除完了", f"プリセット「{active}」を削除しました。")
+
+    def _on_copy_practice_visual_to_preset(self):
+        """現在の練習画面の見た目設定（色、装飾、音名、凡例、背景、スキン）を選択中の動画プリセットにコピー"""
+        active = self.combo_video_preset.currentText()
+        if not active:
+            return
+        presets = self.user_settings.setdefault("video_presets", {})
+        target = presets.setdefault(active, {})
+        prac = self.user_settings.get("practice_visual", {})
+
+        for k in settings_manager.VISUAL_KEYS:
+            if k in prac:
+                target[k] = prac[k]
+
+        asp = str(target.get("aspect_ratio", "16:9"))
+        is_chroma = ("クロマキー" in str(target.get("export_style", "")))
+        bg_col = str(target.get("export_bg_color", "ノーマル（黒）"))
+        self._apply_visual_dict_to_ui_and_gl(target, aspect_ratio=asp, is_chromakey=is_chroma, chroma_color=bg_col)
+        self._save_current_settings()
+        QMessageBox.information(
+            self, "反映完了",
+            f"現在の「練習画面」の見た目設定をプリセット「{active}」にコピーしました。\n動画プレビュー画面に即時反映されています。"
+        )
+
+    def _on_jump_design_for_video(self):
+        """「🎨 このプリセットの画面デザインを編集...」ボタン：画面作りタブに移動し、ターゲットを動画プリセットに設定"""
+        self.tab_widget.setCurrentIndex(1)
+        if hasattr(self, "combo_visual_target"):
+            self.combo_visual_target.setCurrentIndex(1)
 
     def _on_export_style_changed(self, style: str):
         is_chroma = ("クロマキー" in style)
