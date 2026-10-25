@@ -61,9 +61,16 @@ def get_active_takes_dir() -> str:
         takes_dir = os.path.join(proj_dir, "takes")
         os.makedirs(takes_dir, exist_ok=True)
         return takes_dir
-    rec_dir = get_portable_path("recordings")
-    os.makedirs(rec_dir, exist_ok=True)
-    return rec_dir
+    demo_dir = get_portable_path("projects/_demo_chromatic/takes")
+    os.makedirs(demo_dir, exist_ok=True)
+    legacy_rec = get_portable_path("recordings")
+    if os.path.isdir(legacy_rec):
+        try:
+            if not os.listdir(legacy_rec):
+                os.rmdir(legacy_rec)
+        except Exception:
+            pass
+    return demo_dir
 
 def get_active_exports_dir() -> str:
     """現在の動画書き出し保存先ディレクトリ（アクティブプロジェクト優先）"""
@@ -72,9 +79,9 @@ def get_active_exports_dir() -> str:
         exp_dir = os.path.join(proj_dir, "exports")
         os.makedirs(exp_dir, exist_ok=True)
         return exp_dir
-    out_dir = get_portable_path("output")
-    os.makedirs(out_dir, exist_ok=True)
-    return out_dir
+    demo_exp = get_portable_path("projects/_demo_chromatic/exports")
+    os.makedirs(demo_exp, exist_ok=True)
+    return demo_exp
 
 def get_active_audio_dir() -> str:
     """現在の外部伴奏保存先ディレクトリ"""

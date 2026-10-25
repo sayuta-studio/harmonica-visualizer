@@ -380,10 +380,18 @@ def load_settings() -> dict:
     if "video_presets" not in settings or not isinstance(settings["video_presets"], dict) or not settings["video_presets"]:
         settings["video_presets"] = copy.deepcopy(DEFAULT_VIDEO_PRESETS)
     else:
-        # 公式プリセット4種が存在しなければ追加
+        # 公式プリセット4種が存在しなければ追加、存在する場合は比率等の重要パラメータを自己修復
         for def_name, def_preset in DEFAULT_VIDEO_PRESETS.items():
             if def_name not in settings["video_presets"]:
                 settings["video_presets"][def_name] = copy.deepcopy(def_preset)
+            else:
+                p_item = settings["video_presets"][def_name]
+                if isinstance(p_item, dict):
+                    # Shortsプリセット等の公式比率が過去のバグで4:3等に上書きされていたら修復
+                    if "Shorts" in def_name or "縦型" in def_name:
+                        p_item["aspect_ratio"] = "9:16"
+                    elif "横" in def_name or "16:9" in def_name or "MV" in def_name or "クロマキー" in def_name:
+                        p_item["aspect_ratio"] = "16:9"
 
     # 3. active_video_preset の整合性
     if settings.get("active_video_preset") not in settings["video_presets"]:

@@ -2873,6 +2873,18 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self._update_color_btn(self.btn_col_blow, vis.get("color_blow", "#FF5500"))
         if hasattr(self, "btn_col_draw"):
             self._update_color_btn(self.btn_col_draw, vis.get("color_draw", "#00BFFF"))
+
+        # ★ プリセット切り替え時に比率コンボボックスを確実に同期
+        if hasattr(self, "ratio_combo"):
+            self.ratio_combo.blockSignals(True)
+            if "9:16" in str(aspect_ratio):
+                self.ratio_combo.setCurrentText("9:16 (縦長 ショート/TikTok)")
+            elif "4:3" in str(aspect_ratio):
+                self.ratio_combo.setCurrentText("4:3 (スタンダード)")
+            else:
+                self.ratio_combo.setCurrentText("16:9 (横長 YouTube標準)")
+            self.ratio_combo.blockSignals(False)
+
         self.gl_widget.update()
 
     def _on_open_env_settings_dialog(self):
@@ -2881,13 +2893,24 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         if dlg.exec():
             new_settings = dlg.get_settings()
             self.user_settings.update(new_settings)
+            # ★ 練習用ビジュアル辞書にもカスタムスキン設定を同期反映
+            pv = self.user_settings.setdefault("practice_visual", copy.deepcopy(settings_manager.DEFAULT_PRACTICE_VISUAL))
+            for sk in ("skin_enabled", "skin_mouthpiece_path", "skin_lever_off_path", "skin_lever_on_path", "lever_deco_mode", "note_opacity"):
+                if sk in new_settings:
+                    pv[sk] = new_settings[sk]
             settings_manager.save_settings(self.user_settings)
             self._apply_user_settings()
             self._sync_practice_style_ui_values()
-            # 練習・録音タブ表示中であれば、スキンを含む練習表示をGLウィジェットに再描画
-            if self.tab_widget.currentIndex() in (0, 2):
-                pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
+            if getattr(self, "_visual_edit_target", "practice") == "practice":
                 self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
+            else:
+                self.gl_widget.set_skin_enabled(bool(new_settings.get("skin_enabled", True)))
+                self.gl_widget.set_custom_skins(
+                    mouthpiece_path=new_settings.get("skin_mouthpiece_path", ""),
+                    lever_off_path=new_settings.get("skin_lever_off_path", ""),
+                    lever_on_path=new_settings.get("skin_lever_on_path", "")
+                )
+                self.gl_widget.update()
 
     def _apply_user_settings(self):
         s = self.user_settings
