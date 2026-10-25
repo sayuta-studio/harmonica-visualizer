@@ -1,37 +1,38 @@
 @echo off
 chcp 65001 > nul
 echo ====================================================
-echo  00_template から最新規約・共有知見を取り込みます
+echo  00_template から最新のルールと共通知見を取得します
 echo ====================================================
 
 set TEMPLATE_DIR=..\00_template
 
 if not exist "%TEMPLATE_DIR%" (
-    echo [エラー] 親フォルダに 00_template が見つかりません。
-    echo フォルダの階層構造（親フォルダに 00_template があるか）を確認してください。
+    echo [エラー] 親階層に 00_template が見つかりません。
+    echo フォルダの配置を確認してください。
     pause
     exit /b
 )
 
-echo [1/3] 共有知見（_shared_knowledge）を同期中...
+echo.
+echo [1/2] 最新のルール (.agent/rules/) を更新中...
+if exist "%TEMPLATE_DIR%\.agent\rules" (
+    xcopy /Y /E /I "%TEMPLATE_DIR%\.agent\rules" ".\.agent\rules\" > nul
+    echo  - ルールの更新が完了しました。
+)
+
+echo.
+echo [2/2] 最新の共通知見 (_shared_knowledge/) を更新中...
 if exist "%TEMPLATE_DIR%\_shared_knowledge" (
-    xcopy /E /I /Y "%TEMPLATE_DIR%\_shared_knowledge" ".\_shared_knowledge" > nul
-    echo 完了: _shared_knowledge
-)
-
-echo [2/3] エージェント規約（.agent）を同期中...
-if exist "%TEMPLATE_DIR%\.agent" (
-    xcopy /E /I /Y "%TEMPLATE_DIR%\.agent" ".\.agent" > nul
-    echo 完了: .agent
-)
-
-echo [3/3] AGENTS.md を同期中...
-if exist "%TEMPLATE_DIR%\AGENTS.md" (
-    copy /Y "%TEMPLATE_DIR%\AGENTS.md" ".\AGENTS.md" > nul
-    echo 完了: AGENTS.md
+    for %%f in ("%TEMPLATE_DIR%\_shared_knowledge\*.md") do (
+        copy /Y "%%f" ".\_shared_knowledge\" > nul
+    )
+    echo  - 共通知見の更新が完了しました。
 )
 
 echo.
-echo 最新テンプレート規約の同期が完了しました。
-echo.
+echo ====================================================
+echo  更新が正常に完了しました！
+echo  ※ プロジェクト固有の .context やコードは保護されています。
+echo ====================================================
 pause
+

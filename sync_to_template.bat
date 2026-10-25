@@ -32,3 +32,4 @@ echo すべての共有知見を 00_template\_shared_knowledge\inbox に安全�
 echo ※ 既存の 00_template のファイルは上書きされていません。
 echo.
 pause
+
