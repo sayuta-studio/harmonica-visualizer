@@ -1972,7 +1972,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.chk_force_harmonica.setToolTip("MIDIファイル内の楽器指定に関わらず主旋律パートをハーモニカ音色(GM 22)で再生")
         self.chk_force_harmonica.toggled.connect(lambda v: setattr(self.audio_engine, "force_main_harmonica", v))
         l_vol.addWidget(self.chk_force_harmonica)
-        v_box.addWidget(f_vol)
+        f_vol.setVisible(False)
 
         # 2. 🎙️ マイク録音 (ワンクリック録音)
         f_rec = QFrame()
@@ -2099,7 +2099,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         r_rec_sync.addWidget(self.btn_rec_sync_audition, stretch=1)
         l_rec.addLayout(r_rec_sync)
 
-        v_box.addWidget(f_rec)
 
         # 3. ✨ ハーモニカ用リバーブ (空間残響エフェクト)
         f_rev = QFrame()
@@ -2140,7 +2139,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.slider_reverb_wet.valueChanged.connect(self._on_reverb_slider_changed)
         r_rev2.addWidget(self.slider_reverb_wet)
         l_rev.addLayout(r_rev2)
-        v_box.addWidget(f_rev)
 
         # 4. 🎵 伴奏・外部音源 (D&D対応)
         f_ext = QFrame()
@@ -2275,7 +2273,10 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.btn_ext_restart.setEnabled(has_ext)
         self.btn_ext_stop.setEnabled(has_ext)
 
-        v_box.addWidget(f_ext)
+        # 録音・音響セクションのアコーディオン登録（①マイク録音 ➔ ②外部伴奏 ➔ ③リバーブ）
+        v_box.addWidget(CollapsibleSection("🎙️ マイク演奏録音", f_rec, expanded=True, parent=self))
+        v_box.addWidget(CollapsibleSection("🎵 伴奏・外部音源", f_ext, expanded=True, parent=self))
+        v_box.addWidget(CollapsibleSection("✨ ハーモニカ用リバーブ", f_rev, expanded=False, parent=self))
 
         v_box.addStretch()
         scroll.setWidget(content)
@@ -2474,7 +2475,50 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.combo_exp_outro.setToolTip("動画末尾（演奏終了後）に追加する余韻時間")
         r_margin.addWidget(self.combo_exp_outro)
         l_exp.addLayout(r_margin)
-        v_box.addWidget(f_exp)
+
+        # フェードイン/アウト（余白直下に配置）
+        r_fade = QHBoxLayout()
+        self.chk_fade_in = QCheckBox("フェードイン:", self)
+        self.chk_fade_in.setChecked(bool(self.user_settings.get("export_fade_in", True)))
+        self.chk_fade_in.setToolTip("動画冒頭のフェードイン効果")
+        self.chk_fade_in.toggled.connect(lambda v: (self.spin_fade_in.setEnabled(v), self._save_current_settings()))
+        r_fade.addWidget(self.chk_fade_in)
+
+        self.spin_fade_in = QDoubleSpinBox(self)
+        self.spin_fade_in.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.spin_fade_in.setRange(0.0, 5.0)
+        self.spin_fade_in.setSingleStep(0.5)
+        self.spin_fade_in.setDecimals(1)
+        self.spin_fade_in.setSuffix("s")
+        self.spin_fade_in.setFixedWidth(54)
+        self.spin_fade_in.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_fade_in.setValue(float(self.user_settings.get("export_fade_in_sec", 1.5)))
+        self.spin_fade_in.setToolTip("動画冒頭のフェードイン秒数 (0.0〜5.0秒) [直接入力 / マウスホイールで変更]")
+        self.spin_fade_in.setEnabled(self.chk_fade_in.isChecked())
+        self.spin_fade_in.valueChanged.connect(lambda _: self._save_current_settings())
+        r_fade.addWidget(self.spin_fade_in)
+
+        self.chk_fade_out = QCheckBox("フェードアウト:", self)
+        self.chk_fade_out.setChecked(bool(self.user_settings.get("export_fade_out", True)))
+        self.chk_fade_out.setToolTip("動画末尾のフェードアウト効果")
+        self.chk_fade_out.toggled.connect(lambda v: (self.spin_fade_out.setEnabled(v), self._save_current_settings()))
+        r_fade.addWidget(self.chk_fade_out)
+
+        self.spin_fade_out = QDoubleSpinBox(self)
+        self.spin_fade_out.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.spin_fade_out.setRange(0.0, 5.0)
+        self.spin_fade_out.setSingleStep(0.5)
+        self.spin_fade_out.setDecimals(1)
+        self.spin_fade_out.setSuffix("s")
+        self.spin_fade_out.setFixedWidth(54)
+        self.spin_fade_out.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_fade_out.setValue(float(self.user_settings.get("export_fade_out_sec", 1.5)))
+        self.spin_fade_out.setToolTip("動画末尾のフェードアウト秒数 (0.0〜5.0秒) [直接入力 / マウスホイールで変更]")
+        self.spin_fade_out.setEnabled(self.chk_fade_out.isChecked())
+        self.spin_fade_out.valueChanged.connect(lambda _: self._save_current_settings())
+        r_fade.addWidget(self.spin_fade_out)
+
+        l_exp.addLayout(r_fade)
 
         # 2. 動画の音声トラック設定
         f_aud = QFrame()
@@ -2518,8 +2562,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
         self.chk_exp_reverb = QCheckBox("音声にリバーブを適用", self)
         self.chk_exp_reverb.setChecked(bool(self.user_settings.get("reverb_enabled", False)))
-        self.chk_exp_reverb.setToolTip("書き出す動画の音声トラックにハーモニカ用リバーブエフェクトを適用")
-        l_aud.addWidget(self.chk_exp_reverb)
+        self.chk_exp_reverb.setVisible(False)
 
         self.chk_yt_limiter = QCheckBox("YouTube推奨 リミッター (-1.0dBFS)", self)
         self.chk_yt_limiter.setChecked(bool(self.user_settings.get("yt_limiter", True)))
@@ -2549,7 +2592,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         r_yt_preset.addWidget(self.btn_yt_vol_preset)
         l_aud.addLayout(r_yt_preset)
 
-        v_box.addWidget(f_aud)
 
         # 3. タイトル・クレジット表示
         f_tit = QFrame()
@@ -2562,11 +2604,10 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
         self.chk_exp_title = QCheckBox("タイトル・クレジットを表示", self)
         self.chk_exp_title.setChecked(True)
-        self.chk_exp_title.setToolTip("動画内に曲名タイトルやクレジット文字列をオーバーレイ合成（透過MOV・クロマキー時は自動OFF）")
-        l_tit.addWidget(self.chk_exp_title)
+        self.chk_exp_title.setVisible(False)
 
         r_tpl = QHBoxLayout()
-        self.lbl_title_tpl = QLabel("配置テンプレート:")
+        self.lbl_title_tpl = QLabel("表示・配置:")
         r_tpl.addWidget(self.lbl_title_tpl)
         self.combo_title_template = QComboBox(self)
         self.combo_title_template.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -2580,6 +2621,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         ])
         self.combo_title_template.setToolTip("タイトルカードの画面上配置位置")
         self._configure_sidebar_combo(self.combo_title_template, max_width=230)
+        self.combo_title_template.currentTextChanged.connect(self._on_title_template_changed)
         r_tpl.addWidget(self.combo_title_template, stretch=1)
         l_tit.addLayout(r_tpl)
 
@@ -2599,48 +2641,30 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.txt_exp_credit.setToolTip("動画に表示する演奏者名・楽器名等")
         l_tit.addWidget(self.txt_exp_credit)
 
-        r_fade = QHBoxLayout()
-        self.chk_fade_in = QCheckBox("フェードイン:", self)
-        self.chk_fade_in.setChecked(bool(self.user_settings.get("export_fade_in", True)))
-        self.chk_fade_in.setToolTip("動画冒頭のフェードイン効果")
-        self.chk_fade_in.toggled.connect(lambda v: (self.spin_fade_in.setEnabled(v), self._save_current_settings()))
-        r_fade.addWidget(self.chk_fade_in)
+        r_tdur = QHBoxLayout()
+        r_tdur.addWidget(QLabel("表示時間:"))
+        self.spin_title_dur = QDoubleSpinBox(self)
+        self.spin_title_dur.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.spin_title_dur.setRange(0.1, 15.0)
+        self.spin_title_dur.setSingleStep(0.1)
+        self.spin_title_dur.setDecimals(1)
+        self.spin_title_dur.setSuffix("s")
+        self.spin_title_dur.setFixedWidth(54)
+        self.spin_title_dur.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_title_dur.setValue(float(self.user_settings.get("export_title_duration", 3.5)))
+        self.spin_title_dur.setToolTip("イントロ中央タイトルの表示維持秒数 (0.1〜15.0秒、0.1秒刻み)")
+        self.spin_title_dur.valueChanged.connect(lambda _: self._save_current_settings())
+        r_tdur.addWidget(self.spin_title_dur)
 
-        self.spin_fade_in = QDoubleSpinBox(self)
-        self.spin_fade_in.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.spin_fade_in.setRange(0.0, 5.0)
-        self.spin_fade_in.setSingleStep(0.5)
-        self.spin_fade_in.setDecimals(1)
-        self.spin_fade_in.setSuffix("s")
-        self.spin_fade_in.setFixedWidth(54)
-        self.spin_fade_in.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_fade_in.setValue(float(self.user_settings.get("export_fade_in_sec", 1.5)))
-        self.spin_fade_in.setToolTip("動画冒頭のフェードイン秒数 (0.0〜5.0秒) [直接入力 / マウスホイールで変更]")
-        self.spin_fade_in.setEnabled(self.chk_fade_in.isChecked())
-        self.spin_fade_in.valueChanged.connect(lambda _: self._save_current_settings())
-        r_fade.addWidget(self.spin_fade_in)
-
-        self.chk_fade_out = QCheckBox("フェードアウト:", self)
-        self.chk_fade_out.setChecked(bool(self.user_settings.get("export_fade_out", True)))
-        self.chk_fade_out.setToolTip("動画末尾のフェードアウト効果")
-        self.chk_fade_out.toggled.connect(lambda v: (self.spin_fade_out.setEnabled(v), self._save_current_settings()))
-        r_fade.addWidget(self.chk_fade_out)
-
-        self.spin_fade_out = QDoubleSpinBox(self)
-        self.spin_fade_out.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.spin_fade_out.setRange(0.0, 5.0)
-        self.spin_fade_out.setSingleStep(0.5)
-        self.spin_fade_out.setDecimals(1)
-        self.spin_fade_out.setSuffix("s")
-        self.spin_fade_out.setFixedWidth(54)
-        self.spin_fade_out.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spin_fade_out.setValue(float(self.user_settings.get("export_fade_out_sec", 1.5)))
-        self.spin_fade_out.setToolTip("動画末尾のフェードアウト秒数 (0.0〜5.0秒) [直接入力 / マウスホイールで変更]")
-        self.spin_fade_out.setEnabled(self.chk_fade_out.isChecked())
-        self.spin_fade_out.valueChanged.connect(lambda _: self._save_current_settings())
-        r_fade.addWidget(self.spin_fade_out)
-
-        l_tit.addLayout(r_fade)
+        r_tdur.addWidget(QLabel("消え方:"))
+        self.combo_title_exit = QComboBox(self)
+        self.combo_title_exit.addItems(["フェードアウトで消える", "即座に非表示 (カット)"])
+        self.combo_title_exit.setCurrentText(str(self.user_settings.get("export_title_exit_mode", "フェードアウトで消える")))
+        self.combo_title_exit.setToolTip("表示時間経過後のタイトルの消え方（滑らかに消える / パッと一瞬で消える）")
+        self._configure_sidebar_combo(self.combo_title_exit, max_width=150)
+        self.combo_title_exit.currentTextChanged.connect(lambda _: self._save_current_settings())
+        r_tdur.addWidget(self.combo_title_exit, stretch=1)
+        l_tit.addLayout(r_tdur)
 
         r_ftitle = QHBoxLayout()
         self.lbl_fade_title = QLabel("フェード対象:")
@@ -2653,7 +2677,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self._configure_sidebar_combo(self.combo_fade_title, max_width=230)
         r_ftitle.addWidget(self.combo_fade_title, stretch=1)
         l_tit.addLayout(r_ftitle)
-        v_box.addWidget(f_tit)
 
         # 4. 出力実行
         f_btn = QFrame()
@@ -2691,7 +2714,12 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         btn_open_out_dir.clicked.connect(self._on_open_output_folder)
         l_btn.addWidget(btn_open_out_dir)
 
-        v_box.addWidget(f_btn)
+
+        # 動画出力セクションのアコーディオン登録（①フォーマット ➔ ②音声トラック ➔ ③タイトル ➔ ④出力実行）
+        v_box.addWidget(CollapsibleSection("🎬 出力フォーマット ＆ 範囲", f_exp, expanded=True, parent=self))
+        v_box.addWidget(CollapsibleSection("🎚️ 動画音声トラック ＆ ミキサー", f_aud, expanded=True, parent=self))
+        v_box.addWidget(CollapsibleSection("✨ タイトル ＆ クレジット表示", f_tit, expanded=True, parent=self))
+        v_box.addWidget(CollapsibleSection("🚀 出力実行", f_btn, expanded=True, parent=self))
 
         v_box.addStretch()
         scroll.setWidget(content)
@@ -3188,6 +3216,10 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.user_settings["export_fade_out_sec"] = round(self.spin_fade_out.value(), 1)
         if hasattr(self, "combo_fade_title"):
             self.user_settings["export_fade_title_mode"] = self.combo_fade_title.currentText()
+        if hasattr(self, "spin_title_dur"):
+            self.user_settings["export_title_duration"] = self.spin_title_dur.value()
+        if hasattr(self, "combo_title_exit"):
+            self.user_settings["export_title_exit_mode"] = self.combo_title_exit.currentText()
         if hasattr(self, "chk_notes"):
             self.user_settings["show_notes"] = self.chk_notes.isChecked()
         if hasattr(self, "chk_lookahead"):
@@ -3376,6 +3408,16 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.combo_fade_title.setCurrentText(str(p.get("export_fade_title_mode", "フェード中もタイトル表示")))
             self.combo_fade_title.blockSignals(False)
 
+        if hasattr(self, "spin_title_dur"):
+            self.spin_title_dur.blockSignals(True)
+            self.spin_title_dur.setValue(float(p.get("export_title_duration", 3.5)))
+            self.spin_title_dur.blockSignals(False)
+
+        if hasattr(self, "combo_title_exit"):
+            self.combo_title_exit.blockSignals(True)
+            self.combo_title_exit.setCurrentText(str(p.get("export_title_exit_mode", "フェードアウトで消える")))
+            self.combo_title_exit.blockSignals(False)
+
         if hasattr(self, "chk_exp_title"):
             self.chk_exp_title.blockSignals(True)
             self.chk_exp_title.setChecked(bool(p.get("export_title_enabled", True)))
@@ -3457,6 +3499,10 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             target["export_fade_out_sec"] = self.spin_fade_out.value()
         if hasattr(self, "combo_fade_title"):
             target["export_fade_title_mode"] = self.combo_fade_title.currentText()
+        if hasattr(self, "spin_title_dur"):
+            target["export_title_duration"] = self.spin_title_dur.value()
+        if hasattr(self, "combo_title_exit"):
+            target["export_title_exit_mode"] = self.combo_title_exit.currentText()
         if hasattr(self, "chk_exp_title"):
             target["export_title_enabled"] = self.chk_exp_title.isChecked()
         if hasattr(self, "combo_title_template"):
@@ -3606,6 +3652,21 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.tab_widget.setCurrentIndex(1)
         if hasattr(self, "combo_visual_target"):
             self.combo_visual_target.setCurrentIndex(1)
+
+    def _on_title_template_changed(self, text: str):
+        """タイトル配置テンプレート切替時、「なし」なら入力項目をグレーアウト"""
+        is_enabled = (text != "なし")
+        if hasattr(self, "txt_exp_title"):
+            self.txt_exp_title.setEnabled(is_enabled)
+        if hasattr(self, "txt_exp_credit"):
+            self.txt_exp_credit.setEnabled(is_enabled)
+        if hasattr(self, "spin_title_dur"):
+            self.spin_title_dur.setEnabled(is_enabled)
+        if hasattr(self, "combo_title_exit"):
+            self.combo_title_exit.setEnabled(is_enabled)
+        if hasattr(self, "combo_fade_title"):
+            self.combo_fade_title.setEnabled(is_enabled)
+        self._save_current_settings()
 
     def _on_export_style_changed(self, style: str):
         is_chroma = ("クロマキー" in style)
