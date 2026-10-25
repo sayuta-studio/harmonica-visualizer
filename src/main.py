@@ -686,6 +686,7 @@ class HarmonicaMainWindow(QMainWindow):
         # 曲名表示ボックス (伸縮)
         self.lbl_song_title = QLabel("Demo (Chromatic Scale).mid", self)
         self.lbl_song_title.setMinimumWidth(140)
+        self.lbl_song_title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.lbl_song_title.setStyleSheet("background-color: #0E0E12; border: 1px solid #22222E; border-radius: 4px; padding: 2px 8px; color: #38BDF8; font-weight: bold;")
         row1.addWidget(self.lbl_song_title, stretch=1)
 
@@ -3957,7 +3958,10 @@ class HarmonicaMainWindow(QMainWindow):
             self.audio_engine.all_notes_off()
             self.audio_engine.seek(0.0)
 
-            self._set_elided_label_text(self.lbl_song_title, self.timeline.filename, filepath, max_width=240)
+            self.lbl_song_title.setMinimumWidth(140)
+            self.lbl_song_title.setMaximumWidth(16777215)
+            self.lbl_song_title.setText(self.timeline.filename)
+            self.lbl_song_title.setToolTip(filepath)
             self._update_track_list()
             self._update_song_info_labels()
             self._reset_loop_ranges_to_song()

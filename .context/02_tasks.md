@@ -41,7 +41,7 @@
 
 ---
 
-#### - [ ] **Micro-Step 2: 上部パネル（Row 1）の曲名ボックス伸縮（`stretch=1`）復元と右詰め整列**
+#### - [x] **Micro-Step 2: 上部パネル（Row 1）の曲名ボックス伸縮（`stretch=1`）復元と右詰め整列**
 - **対象ファイル**: `src/main.py`
 - **背景・目的**: `_load_midi_file`（4293行付近）で `self._set_elided_label_text(self.lbl_song_title, ..., max_width=240)` を呼んでいたため、曲名ラベルに `setMaximumWidth(240)` が掛かり、上部パネルのレイアウトが崩れていた問題を解消する。
 - **実装内容**:
