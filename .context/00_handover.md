@@ -1,7 +1,7 @@
 # Current Status & Handover (00_handover.md)
 
 ## 最終更新日時
-- 2026-10-25 15:15 (Ver.4.0.0 Batch Package 1 完遂: 基底パス刷新・project_manager 新設・プロジェクト自己完結化)
+- 2026-10-25 15:25 (Ver.4.0.0 Batch Package 2 完遂: キー別運指パターン統合・練習タブ切替UI・別キー作成アンロック)
 
 ---
 
