@@ -1223,6 +1223,48 @@ class HarmonicaMainWindow(QMainWindow):
         l_sp.addLayout(r_sp1)
         v_box.addWidget(f_stepup)
 
+        # 4. 🔊 練習時の再生音源 (伴奏切替)
+        f_prac_audio = QFrame()
+        f_prac_audio.setObjectName("groupFrame")
+        f_prac_audio.setMaximumWidth(328)
+        l_pa = QVBoxLayout(f_prac_audio)
+        l_pa.setContentsMargins(6, 6, 6, 6)
+        l_pa.setSpacing(6)
+        l_pa.addWidget(QLabel("🔊 <b>練習時の再生音源 (伴奏切替):</b>"))
+
+        r_pa = QHBoxLayout()
+        r_pa.addWidget(QLabel("再生音源:"))
+        self.combo_prac_audio_mode = QComboBox(self)
+        self.combo_prac_audio_mode.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.combo_prac_audio_mode.addItems([
+            "ガイド音のみ (伴奏ミュート)",
+            "伴奏 ＋ ガイド音 (両方再生)",
+            "伴奏のみ (ガイド音オフ)"
+        ])
+        raw_mode = str(self.user_settings.get("ext_audio_mode", "伴奏 ＋ ガイド音 (両方再生)"))
+        if "伴奏のみ" in raw_mode or "外部音源のみ" in raw_mode:
+            cur_p_mode = "伴奏のみ (ガイド音オフ)"
+        elif "ガイド音のみ" in raw_mode or "外部音源オフ" in raw_mode or "伴奏ミュート" in raw_mode:
+            cur_p_mode = "ガイド音のみ (伴奏ミュート)"
+        else:
+            cur_p_mode = "伴奏 ＋ ガイド音 (両方再生)"
+        self.combo_prac_audio_mode.setCurrentText(cur_p_mode)
+        self.combo_prac_audio_mode.setToolTip("練習再生時に鳴らす音源の構成（MIDIガイド単体練習 vs 外部伴奏合わせ）")
+        self._configure_sidebar_combo(self.combo_prac_audio_mode, max_width=230)
+        self.combo_prac_audio_mode.currentTextChanged.connect(self._on_ext_mode_changed)
+        r_pa.addWidget(self.combo_prac_audio_mode, stretch=1)
+        l_pa.addLayout(r_pa)
+
+        self.lbl_prac_ext_status = QLabel("伴奏音源: 未設定 (MIDIガイド再生)", self)
+        self.lbl_prac_ext_status.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        self.lbl_prac_ext_status.setWordWrap(True)
+        if getattr(self, "ext_audio_path", "") and os.path.exists(self.ext_audio_path):
+            self.lbl_prac_ext_status.setText(f"伴奏音源: {os.path.basename(self.ext_audio_path)}")
+            self.lbl_prac_ext_status.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 11px;")
+        l_pa.addWidget(self.lbl_prac_ext_status)
+
+        v_box.addWidget(f_prac_audio)
+
         v_box.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll)
@@ -4556,6 +4598,9 @@ class HarmonicaMainWindow(QMainWindow):
         base_name = os.path.basename(path)
         self._set_elided_label_text(self.lbl_ext_audio, base_name, path, max_width=290)
         self.lbl_ext_audio.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 11px; background-color: #121218; border: 1px solid #22222E; border-radius: 3px; padding: 2px 6px;")
+        if hasattr(self, "lbl_prac_ext_status"):
+            self.lbl_prac_ext_status.setText(f"伴奏音源: {base_name}")
+            self.lbl_prac_ext_status.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 11px;")
         self.btn_ext_audition.setEnabled(True)
         self.btn_ext_restart.setEnabled(True)
         self.btn_ext_stop.setEnabled(True)
@@ -4571,6 +4616,9 @@ class HarmonicaMainWindow(QMainWindow):
         self.lbl_ext_audio.setText("未選択 (MP3/WAV等をD&D可)")
         self.lbl_ext_audio.setToolTip("")
         self.lbl_ext_audio.setStyleSheet("color: #64748B; font-size: 11px; background-color: #121218; border: 1px solid #22222E; border-radius: 3px; padding: 2px 6px;")
+        if hasattr(self, "lbl_prac_ext_status"):
+            self.lbl_prac_ext_status.setText("伴奏音源: 未設定 (MIDIガイド再生)")
+            self.lbl_prac_ext_status.setStyleSheet("color: #94A3B8; font-size: 11px;")
         self.btn_ext_audition.setEnabled(False)
         self.btn_ext_restart.setEnabled(False)
         self.btn_ext_stop.setEnabled(False)
@@ -4581,8 +4629,20 @@ class HarmonicaMainWindow(QMainWindow):
     def _on_ext_mode_changed(self, mode: str):
         self.ext_audio_mode = str(mode)
         self.user_settings["ext_audio_mode"] = self.ext_audio_mode
-        if "ガイド音のみ" in mode or "伴奏ミュート" in mode or "外部音源オフ" in mode:
+
+        for combo_name in ("combo_ext_mode", "combo_prac_audio_mode"):
+            combo = getattr(self, combo_name, None)
+            if combo is not None and combo.currentText() != mode:
+                combo.blockSignals(True)
+                combo.setCurrentText(mode)
+                combo.blockSignals(False)
+
+        is_mute = ("ガイド音のみ" in mode or "伴奏ミュート" in mode or "外部音源オフ" in mode)
+        if is_mute:
             self._stop_ext_playback()
+        elif self.clock.get_state() == SharedClockBridge.STATE_PLAYING:
+            cur_sec = self.clock.get_current_base_sec()
+            self._sync_ext_audio_playback(True, cur_sec)
 
         if "伴奏のみ" in mode or "外部音源のみ" in mode:
             self.audio_engine.set_midi_notes_muted(True)
