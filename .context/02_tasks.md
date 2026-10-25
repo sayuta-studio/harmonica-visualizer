@@ -1,7 +1,7 @@
 # タスク管理・実装指示書 (02_tasks.md)
 
 ## 進行中 (In Progress) / 次期マイルストーン: Ver.4.1.0
-### 🚀 【v4.1.0】全21課題の統合解消（UI/UX 2階層タブ刷新・折りたたみアコーディオン・プリセット5種再設計・演出＆起動高速化）
+### 🚀 【v4.1.0】全21課題の統合解消（UI/UX 2階層タブ刷新・折りたたみアコーディオン・公式5大プリセット再設計・演出＆起動高速化）
 
 > **【実装担当（Gemini 3.8 / Builder）への絶対遵守ルール（Gotcha #7, #8, #9）】**
 > 1. **Git層（Micro Commit）**: 以下の **Micro-Step 1 〜 10** を **必ず1ステップずつ順番に** 実行し、各ステップ完了ごとに構文チェック（`python -m py_compile`）と指定の **Gitコミット** を必ず打つこと（複数ステップの1コミットまとめは厳禁）。
@@ -41,39 +41,113 @@
 ### 📦 Batch Package 1: 致命的バグ・データ破壊の即時解消 ＆ 表記・描画コントラスト改善（Micro-Step 1 〜 2）
 
 #### - [ ] **Micro-Step 1: 動画プリセット比率の逆上書き破壊バグ修正（課題9）、カスタムスキン即時反映（課題4）、およびトップ直下 `recordings/` 混入防止（課題3前半）**
-- **対象ファイル**: `src/main.py`, `src/project_manager.py`, `src/settings_manager.py`
-- **実装内容**:
-  1. **プリセット比率の同期と自己修復 (`src/main.py`, `src/settings_manager.py`)**:
-     - `settings_manager.load_settings()` において、公式プリセット（`DEFAULT_VIDEO_PRESETS` に存在するキー）の `"aspect_ratio"` が過去のバグで誤って書き換わっていた場合、公式定義の `"aspect_ratio"`（Shortsは `"9:16"`、横型は `"16:9"`）へ自動修復する処理を追加する。
-     - `src/main.py` の `_apply_visual_dict_to_ui_and_gl(self, d: dict, aspect_ratio: str = "16:9")` 内（および `_on_video_preset_changed`）で、`aspect_ratio` に応じて `self.ratio_combo` の選択項目を `blockSignals(True)` で必ず同期更新する（`"9:16"` なら `"9:16 (縦長 ショート/TikTok)"`、`"4:3"` なら `"4:3 (スタンダード)"`、それ以外は `"16:9 (横長 YouTube標準)"`）。
-  2. **カスタムスキンの練習画面への即時反映 (`src/main.py`)**:
-     - `_on_open_env_settings_dialog` で `HarmonicaSettingsDialog` 保存時、`skin_enabled`, `skin_mouthpiece_path`, `skin_lever_off_path`, `skin_lever_on_path` を `self.user_settings` 直下だけでなく **`self.user_settings["practice_visual"]` 辞書内にも確実にコピー** する。
-     - その上で `self._apply_user_settings()` と `self.gl_widget.update()` を呼び出し、閉じた瞬間に練習画面のハーモニカ外観が100%切り替わるようにする。
-  3. **トップ直下 `recordings/` 生成の根絶 (`src/project_manager.py`)**:
-     - `get_active_takes_dir()` と `get_active_exports_dir()` において、`ACTIVE_PROJECT_DIR` が未設定時のフォールバック先を `get_portable_path("projects/_demo_chromatic/takes")` および `get_portable_path("projects/_demo_chromatic/exports")` に変更し、`os.makedirs(..., exist_ok=True)` で自動生成する。
-     - リポジトリルート直下に空の `recordings/` フォルダが存在する場合は削除し、トップ階層をクリーンに保つ。
+- **対象ファイル**: `src/settings_manager.py`, `src/main.py`, `src/project_manager.py`
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **`src/settings_manager.py` (`load_settings`, L430付近)**:
+     - 公式プリセットの `aspect_ratio` が過去のバグで 4:3 等に汚染されている場合、公式デフォルト定義の値で自動修復するガードを追加：
+       ```python
+       for p_name, def_p in DEFAULT_VIDEO_PRESETS.items():
+           if p_name not in presets or not isinstance(presets[p_name], dict):
+               presets[p_name] = copy.deepcopy(def_p)
+           else:
+               for pk, pv in def_p.items():
+                   presets[p_name].setdefault(pk, copy.deepcopy(pv))
+               # ★ Shorts等の公式プリセットの比率が誤って上書きされていた場合は公式比率に修復
+               if "Shorts" in p_name or "縦型" in p_name:
+                   presets[p_name]["aspect_ratio"] = "9:16"
+       ```
+  2. **`src/main.py` (`_apply_visual_dict_to_ui_and_gl`, L2796〜2876付近)**:
+     - `aspect_ratio` 引数に応じて `self.ratio_combo` の選択状態を `blockSignals(True)` で確実に同期するコードを追加：
+       ```python
+       if hasattr(self, "ratio_combo"):
+           self.ratio_combo.blockSignals(True)
+           if "9:16" in str(aspect_ratio):
+               self.ratio_combo.setCurrentText("9:16 (縦長 ショート/TikTok)")
+           elif "4:3" in str(aspect_ratio):
+               self.ratio_combo.setCurrentText("4:3 (スタンダード)")
+           else:
+               self.ratio_combo.setCurrentText("16:9 (横長 YouTube標準)")
+           self.ratio_combo.blockSignals(False)
+       ```
+  3. **`src/main.py` (`_on_open_env_settings_dialog`, L2878〜2891付近)**:
+     - `[⚙ 設定]` ダイアログで保存されたスキン設定を `self.user_settings["practice_visual"]` 辞書にも即時伝搬させる：
+       ```python
+       def _on_open_env_settings_dialog(self):
+           dlg = HarmonicaSettingsDialog(self.user_settings, parent=self)
+           if dlg.exec():
+               new_settings = dlg.get_settings()
+               self.user_settings.update(new_settings)
+               # ★ 練習用ビジュアル辞書にもカスタムスキン設定を同期反映
+               pv = self.user_settings.setdefault("practice_visual", copy.deepcopy(settings_manager.DEFAULT_PRACTICE_VISUAL))
+               for sk in ("skin_enabled", "skin_mouthpiece_path", "skin_lever_off_path", "skin_lever_on_path", "lever_deco_mode", "note_opacity"):
+                   if sk in new_settings:
+                       pv[sk] = new_settings[sk]
+               settings_manager.save_settings(self.user_settings)
+               self._apply_user_settings()
+               self._sync_practice_style_ui_values(pv)
+               if getattr(self, "_visual_edit_target", "practice") == "practice":
+                   self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
+               else:
+                   self.gl_widget.set_skin_enabled(bool(new_settings.get("skin_enabled", True)))
+                   self.gl_widget.set_custom_skins(
+                       mouthpiece_path=new_settings.get("skin_mouthpiece_path", ""),
+                       lever_off_path=new_settings.get("skin_lever_off_path", ""),
+                       lever_on_path=new_settings.get("skin_lever_on_path", "")
+                   )
+                   self.gl_widget.update()
+       ```
+  4. **`src/project_manager.py` (`get_active_takes_dir`, `get_active_exports_dir`, L190〜210付近)**:
+     - フォールバック先を `get_portable_path("projects/_demo_chromatic/takes")` および `get_portable_path("projects/_demo_chromatic/exports")` に変更して `os.makedirs(..., exist_ok=True)` を実行し、リポジトリルート直下に `recordings/` が生成されないようにする。またリポジトリ直下に空の `recordings` があれば削除する。
 - **コミットメッセージ**: `fix(core): sync aspect ratio combo on preset switch, propagate custom skins to practice visual, and route fallback takes to project container`
 
 ---
 
 #### - [ ] **Micro-Step 2: モノクロ時の変え指枠線コントラスト改善（課題5）、キー別運指パターン名（課題6）＆ ステータスバー移調表記（課題7）のスリム化**
-- **対象ファイル**: `src/gl_visualizer.py`, `src/video_exporter.py`, `src/harmonica_map.py`, `src/main.py`
-- **実装内容**:
-  1. **変え指モード時の明暗適応・二重コントラスト枠線 (`src/gl_visualizer.py`, `src/video_exporter.py`)**:
-     - `gl_visualizer.py`（L1177付近）の `fingering_edit_mode` かつ `nd.get("is_editable", False)` の枠線描画において：
-       - ノーツの塗り色 `fill_color` の輝度 `lum = 0.299 * fill_color.red() + 0.587 * fill_color.green() + 0.114 * fill_color.blue()` を算出。
-       - `lum > 175`（モノクロ吹音の白や明るい黄色など）の場合：外側に濃いダーク枠 `QPen(QColor(15, 23, 42, 250), max(2.8, 3.2 * scale))` を描き、その上に鮮やかなシアン枠 `QPen(QColor(0, 229, 255, 245), max(1.4, 1.6 * scale))` を重ねる二重枠にする。
-       - `lum <= 175` の場合：外側黒縁＋白枠 `QColor(255, 255, 255, 240)` にする。これによりどんな背景・ノーツ色でも100%クッキリ浮き上がる。
-  2. **キー別運指パターンのデフォルト名スリム化 (`src/harmonica_map.py`)**:
-     - `format_transpose_key_label(transpose_val: int) -> str`（L190付近）を修正：
-       - `val == 0` ➔ `"原曲キー"`
-       - `val > 0` ➔ `f"Key +{val}"`
-       - `val < 0` ➔ `f"Key {val}"`
-       （※ `(+12st)` の二重表記を撤廃し、新規保存時の提案名が `"Key +12 - パターン 1"` となるようにする）。
-  3. **ステータスバー移調表記の簡素化 (`src/main.py`)**:
-     - L4058付近の移調ステータス更新文言を修正：
-       - `val == 0` のとき: `f"🎹 原曲キー{acc_str}"`
-       - `val != 0` のとき: `f"🎹 Key {sign}{acc_str}"`（`+12 st (+12半音)` の重複を撤廃）。
+- **対象ファイル**: `src/gl_visualizer.py`, `src/harmonica_map.py`, `src/main.py`
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **`src/gl_visualizer.py` (L1175〜1182付近)**:
+     - 変え指モード時の枠線描画を、ノーツ塗り色 `fill_color` の輝度に応じた二重コントラスト枠に刷新：
+       ```python
+       if not is_muted and getattr(self, "fingering_edit_mode", False) and nd.get("is_editable", False):
+           lum = 0.299 * fill_color.red() + 0.587 * fill_color.green() + 0.114 * fill_color.blue()
+           if lum > 175:
+               # 白や高輝度ノーツ（モノクロテーマ等）: 外側ダーク枠 ＋ 内側シアン強調枠
+               painter.setPen(QPen(QColor(15, 23, 42, 250), max(3.0, 3.4 * scale)))
+               painter.drawPolygon(QPolygonF(poly_pts))
+               painter.setPen(QPen(QColor(0, 229, 255, 255), max(1.5, 1.8 * scale)))
+               painter.drawPolygon(QPolygonF(poly_pts))
+           else:
+               # 通常・暗色ノーツ: 外側黒縁 ＋ 内側白枠
+               painter.setPen(QPen(QColor(0, 0, 0, 200), max(2.8, 3.2 * scale)))
+               painter.drawPolygon(QPolygonF(poly_pts))
+               painter.setPen(QPen(QColor(255, 255, 255, 245), max(1.5, 1.8 * scale)))
+               painter.drawPolygon(QPolygonF(poly_pts))
+       ```
+  2. **`src/harmonica_map.py` (`format_transpose_key_label`, L190〜202付近)**:
+     - `(+12st)` の冗長な二重表記を廃止：
+       ```python
+       def format_transpose_key_label(transpose_val: int) -> str:
+           try:
+               val = int(transpose_val)
+           except Exception:
+               val = 0
+           if val == 0:
+               return "原曲キー"
+           elif val > 0:
+               return f"Key +{val}"
+           else:
+               return f"Key {val}"
+       ```
+  3. **`src/main.py` (`_on_transpose_changed`, L4052〜4062付近)**:
+     - ステータスバーの移調表示から `st` と `半音` の重複を省き、原曲時のみ「原曲キー」、移調時は「Key +12」のみとする：
+       ```python
+       acc_str = " (伴奏含む)" if accomp else " (主旋律のみ)"
+       if val == 0:
+           self.lbl_status_msg.setText(f"🎹 原曲キー{acc_str}")
+       else:
+           sign = f"+{val}" if val > 0 else str(val)
+           self.lbl_status_msg.setText(f"🎹 Key {sign}{acc_str}")
+       ```
 - **コミットメッセージ**: `fix(ui-polish): add adaptive contrast outline for fingering edit mode and simplify transpose key labels`
 
 ---
@@ -82,44 +156,74 @@
 
 #### - [ ] **Micro-Step 3: `[⚙ 設定]` からの重複項目撤去（課題1, 2）、プロジェクト階層ツリー可視化（課題3後半）、および `[🎼 パート]` への主旋律音色固定移設（課題14前半）**
 - **対象ファイル**: `src/dialogs.py`, `src/main.py`
-- **実装内容**:
-  1. **`HarmonicaSettingsDialog` (`src/dialogs.py`) の整理**:
-     - タブ1（`🔊 音響・録音デバイス`）から、表面と重複する `combo_metro`（メトロノーム）および `chk_force_harmonica` を非表示（または撤去）にし、MIDIエンジン切替・録音チャンネル数・録音ズレ補正初期値に特化させる。
-     - タブ2（`🎨 本体スキン・外観設定`）から、練習タブと重複する「ステップアップ練習設定（`chk_stepup` 等）」を非表示（または撤去）にし、ハーモニカ本体外観スキンとノーツ基本装飾に特化させる。
-     - タブ3（`📁 プロジェクト・保存先管理`）のUIを親子階層がひと目で分かるデザインに刷新：
-       - **親セクション**: `【プロジェクトフォルダーの作成先 (親ディレクトリ)】`
-         - パス表示: `.../projects` ＋ `[📂 projects フォルダを直接開く]` ボタン
-       - **子セクション（枠付きツリー案内）**: `【プロジェクトフォルダー内の自動生成構造 (1曲＝1フォルダ)】`
-         - ツリーラベル表示:
-           - `📁 projects/<曲名>/`
-           - `  ├── 📂 source/  (読み込んだMIDI原本のバックアップ)`
-           - `  ├── 📂 takes/   (マイク録音したWAVテイク)`
-           - `  ├── 📂 audio/   (外部伴奏音源ファイル)`
-           - `  ├── 📂 exports/ (書き出した完成動画 MP4/MOV)`
-           - `  └── 📄 project.json (曲別の運指パターン・音量・同期設定)`
-         - `[📂 現在開いている曲のプロジェクトフォルダを開く]` ボタンを配置！
-  2. **`PartSelectDialog` (`src/dialogs.py`, `src/main.py`) への音色固定チェック移設**:
-     - `PartSelectDialog.__init__` に `force_harmonica: bool = True` 引数を追加し、下部ボタンバーの左端に `self.chk_force_harmonica = QCheckBox("主旋律パートをハーモニカ音色 (GM 22) に固定して再生", self)` を配置。
-     - `main.py` の `_on_open_part_dialog` でダイアログ確定時に `self.chk_force_harmonica.setChecked(dlg.chk_force_harmonica.isChecked())` を同期反映する。
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **`src/dialogs.py` (`HarmonicaSettingsDialog._init_ui`, L60〜225付近)**:
+     - タブ1（`🔊 音響・録音デバイス`）: `row_metro`（メトロノーム）と `chk_force_harmonica` を画面レイアウトから外し（互換のため内部属性としては保持）、MIDI音源エンジン・録音チャンネル数・録音ズレ補正初期値のみを表示。
+     - タブ2（`🎨 本体スキン・外観設定`）: タブ名を `"🎨 本体スキン・外観設定"` とし、練習タブと重複するステップアップ練習設定（`chk_stepup`, `row_sp`）を画面レイアウトから外す。
+     - タブ3（`📁 プロジェクト・保存先管理`）を以下の親子階層デザインに全面刷新：
+       ```python
+       v_proj.addWidget(QLabel("<b>【1. プロジェクトフォルダーの作成先 (親フォルダー)】</b>"))
+       v_proj.addWidget(QLabel("読み込んだMIDI曲ごとに固有フォルダーが自動作成される親ディレクトリ："))
+       self.edit_base_path = QLineEdit(self)
+       self.edit_base_path.setReadOnly(True)
+       self.edit_base_path.setText(os.path.abspath(get_portable_path("projects")))
+       v_proj.addWidget(self.edit_base_path)
+
+       btn_proj_dir = QPushButton("📂 プロジェクト一覧フォルダー (projects/) を直接開く", self)
+       btn_proj_dir.clicked.connect(lambda: self._open_dir(get_portable_path("projects")))
+       v_proj.addWidget(btn_proj_dir)
+
+       v_proj.addSpacing(8)
+       v_proj.addWidget(QLabel("<b>【2. プロジェクトフォルダー内の自動生成構造 (子フォルダー)】</b>"))
+       tree_frame = QFrame(self)
+       tree_frame.setStyleSheet("QFrame { background-color: #0F172A; border: 1px solid #334155; border-radius: 6px; padding: 8px; }")
+       l_tree = QVBoxLayout(tree_frame)
+       tree_label = QLabel(
+           "📁 <b>projects / &lt;各MIDI曲名フォルダー&gt; /</b><br>"
+           "&nbsp;&nbsp;├── 📂 <b>source/</b> &nbsp;&nbsp;<span style='color:#94A3B8;'>（読み込んだMIDI原本の自動バックアップ）</span><br>"
+           "&nbsp;&nbsp;├── 📂 <b>takes/</b> &nbsp;&nbsp;&nbsp;<span style='color:#94A3B8;'>（マイク録音した演奏テイク WAV）</span><br>"
+           "&nbsp;&nbsp;├── 📂 <b>audio/</b> &nbsp;&nbsp;&nbsp;<span style='color:#94A3B8;'>（外部伴奏音源 WAV/MP3）</span><br>"
+           "&nbsp;&nbsp;├── 📂 <b>exports/</b> &nbsp;<span style='color:#94A3B8;'>（書き出した完成動画 MP4/MOV）</span><br>"
+           "&nbsp;&nbsp;└── 📄 <b>project.json</b> <span style='color:#94A3B8;'>（曲別の運指パターン・移調・同期設定）</span>"
+       )
+       tree_label.setStyleSheet("font-size: 12px; line-height: 1.5;")
+       l_tree.addWidget(tree_label)
+       v_proj.addWidget(tree_frame)
+
+       btn_cur_song_dir = QPushButton("📂 現在開いている楽曲の固有フォルダーを開く", self)
+       btn_cur_song_dir.clicked.connect(lambda: self._open_dir(project_manager.get_active_project_dir()))
+       v_proj.addWidget(btn_cur_song_dir)
+       ```
+       （※ `src/dialogs.py` 先頭に `import project_manager` を追加すること）。
+  2. **`src/dialogs.py` (`PartSelectDialog`, L348〜512付近) & `src/main.py` (`_on_open_part_dialog`, L4442付近)**:
+     - `PartSelectDialog.__init__` に `force_harmonica: bool = True` 引数を追加。
+     - `PartSelectDialog._init_ui` の下部ボタン行（`btn_layout`）の左端に：
+       ```python
+       self.chk_force_harmonica = QCheckBox("主旋律パートをハーモニカ音色 (GM 22) に固定して再生", self)
+       self.chk_force_harmonica.setChecked(bool(self.force_harmonica))
+       btn_layout.addWidget(self.chk_force_harmonica)
+       ```
+       を追加。
+     - `src/main.py` の `_on_open_part_dialog` で `PartSelectDialog(..., force_harmonica=self.user_settings.get("force_harmonica", True))` を渡し、`dlg.exec()` 確定時に `fh = dlg.chk_force_harmonica.isChecked()` を `self.user_settings["force_harmonica"] = fh` および `self.audio_engine.force_main_harmonica = fh`（さらに `self.chk_force_harmonica.setChecked(fh)`）へ同期反映する。
 - **コミットメッセージ**: `feat(dialogs): declutter settings dialog, visualize project folder tree hierarchy, and move force-harmonica toggle to PartSelectDialog`
 
 ---
 
 #### - [ ] **Micro-Step 4: 公式初期プリセット（5種）の再設計（課題21）と、`[⚙ 設定]` への「🎬 初期プリセット比較一覧表」タブ搭載（課題20）**
 - **対象ファイル**: `src/settings_manager.py`, `src/dialogs.py`
-- **実装内容**:
-  1. **公式5大プリセットの再定義 (`src/settings_manager.py`)**:
-     - `DEFAULT_VIDEO_PRESETS` を以下の5種にアップデートする（各プリセットに `"export_title_duration": 3.5`, `"export_title_exit_mode": "フェードアウトで消える"`, `"vertical_layout_mode": "全画面フル展開 (標準Shorts)"` も標準搭載）：
-       1. **`"📱 YouTube Shorts (縦型・解説)"`**: `aspect_ratio: "9:16"`, `trajectory_mode: "垂直落下 (穴直上)"`, `lang_mode: "ドレミ"`, `grid4_mode: "4音グリッド表示"`, `note_opacity: 100`
-       2. **`"🎥 演奏解説・レッスン (16:9)"`**: `aspect_ratio: "16:9"`, `trajectory_mode: "垂直落下 (穴直上)"`, `lang_mode: "ドレミ"`, `grid4_mode: "4音グリッド表示"`, `note_opacity: 100`
-       3. **`"🎨 演奏作品・MV (16:9・背景画像)"`** (★新設): `aspect_ratio: "16:9"`, `trajectory_mode: "3段階 (練習標準)"`, `lang_mode: "ドレミ"`, `show_lookahead: False`, `show_grid: False`, `show_bar_lines: False`, `grid4_mode: "非表示"`, `note_opacity: 85`, `bg_image_enabled: True`, `bg_dim_ratio: 40`, `export_title_template: "イントロ中央＋右上常時"`
-       4. **`"✨ ミニマル・シネマティック (16:9)"`**: `aspect_ratio: "16:9"`, `trajectory_mode: "2段階 (ビジュアル)"`, `show_lookahead: False`, `show_grid: False`, `show_bar_lines: False`, `show_hole_num: False`, `grid4_mode: "非表示"`, `note_opacity: 95`, `export_title_template: "イントロ中央のみ"`
-       5. **`"🟩 クロマキー透過素材 (外部編集用)"`**: `aspect_ratio: "16:9"`, `trajectory_mode: "垂直落下 (穴直上)"`, `export_style: "クロマキー素材 (背景・タイトルなし)"`, `export_bg_color: "グリーンバック"`, `audio_quick_mode: "無音 (映像のみ)"`
-     - `load_settings()` で新プリセット（`"🎨 演奏作品・MV (16:9・背景画像)"` 等）が既存の `video_presets` に無ければ自動追加する。
-  2. **`[⚙ 設定]` ウィンドウへの「🎬 初期プリセット一覧」タブ追加 (`src/dialogs.py`)**:
-     - `HarmonicaSettingsDialog`（サイズ `700x540`）に **タブ4「🎬 初期プリセット一覧」** を追加。
-     - `QTableWidget`（罫線グリッド表示）を配置し、公式5プリセットの「画面比率」「ノーツ軌道」「音名・穴下」「ノーツ透過度/背景減光」「タイトル配置」を一目で比較できるリファレンス表を表示する。
-     - テーブルのセル（ノーツ軌道、音名、透過度など）を編集または「↺ 公式初期プリセットをすべて工場出荷値にリセット」ボタンで初期プリセットを再構築できる機能を持たせる。
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **`src/settings_manager.py` (`DEFAULT_VIDEO_PRESETS`, L59〜248付近)**:
+     - 公式プリセットを以下の **5種** に刷新する（全プリセット共通で `"export_title_duration": 3.5`, `"export_title_exit_mode": "フェードアウトで消える"`, `"vertical_layout_mode": "全画面フル展開 (標準Shorts)"` も含める）：
+       1. **`"📱 YouTube Shorts (縦型・解説)"`**: `aspect_ratio: "9:16"`, `trajectory_mode: "垂直落下 (穴直上)"`, `lang_mode: "ドレミ"`, `grid4_mode: "4音グリッド表示"`, `note_opacity: 100`, `bg_dim_ratio: 60`
+       2. **`"🎥 演奏解説・レッスン (16:9)"`**: `aspect_ratio: "16:9"`, `trajectory_mode: "垂直落下 (穴直上)"`, `lang_mode: "ドレミ"`, `grid4_mode: "4音グリッド表示"`, `note_opacity: 100`, `bg_dim_ratio: 60`
+       3. **`"🎨 演奏作品・MV (16:9・背景画像)"`** (★新設): `aspect_ratio: "16:9"`, `trajectory_mode: "3段階 (練習標準)"`, `lang_mode: "ドレミ"`, `show_lookahead: False`, `show_grid: False`, `show_bar_lines: False`, `show_hole_num: True`, `grid4_mode: "非表示"`, `note_opacity: 85`, `bg_image_enabled: True`, `bg_dim_ratio: 40`, `export_title_template: "イントロ中央＋右上常時"`
+       4. **`"✨ ミニマル・シネマティック (16:9)"`**: `aspect_ratio: "16:9"`, `trajectory_mode: "2段階 (ビジュアル)"`, `show_lookahead: False`, `show_grid: False`, `show_bar_lines: False`, `show_hole_num: False`, `grid4_mode: "非表示"`, `note_opacity: 95`, `bg_dim_ratio: 60`, `export_title_template: "イントロ中央のみ"`
+       5. **`"🟩 クロマキー透過素材 (外部編集用)"`**: `aspect_ratio: "16:9"`, `trajectory_mode: "垂直落下 (穴直上)"`, `export_style: "クロマキー素材 (背景・タイトルなし)"`, `export_bg_color: "グリーンバック"`, `export_title_template: "なし"`, `audio_quick_mode: "無音 (映像のみ)"`
+  2. **`src/dialogs.py` (`HarmonicaSettingsDialog`, L220付近)**:
+     - ダイアログサイズを `self.resize(720, 540)` に拡大し、**タブ4「🎬 初期プリセット一覧」** を追加する：
+       - `self.table_presets = QTableWidget(5, 7, self)` を配置（列ヘッダー: `["初期プリセット名", "画面比率", "ノーツ軌道", "音名表記", "穴下表示", "ノーツ不透明度", "背景減光"]`）。
+       - `settings_manager.DEFAULT_VIDEO_PRESETS`（および `self.settings.get("video_presets", {})` 内の該当プリセット）から5行を表示し、軌道・音名・穴下・不透明度・背景減光を一覧比較・直接編集可能にする。
+       - 下部に `[↺ 公式初期プリセットを工場出荷時の設定に一括復元]` ボタン（`btn_restore_factory_presets`）を配置し、クリックすると `self.settings["video_presets"].update(copy.deepcopy(settings_manager.DEFAULT_VIDEO_PRESETS))` でいつでも初期状態に戻せるようにする。
 - **コミットメッセージ**: `feat(presets): redesign 5 official video presets including 16:9 background MV and add preset comparison table tab in settings`
 
 ---
@@ -128,44 +232,147 @@
 
 #### - [ ] **Micro-Step 5: サイドバーの「🎹 練習」vs「🎬 動画制作」2階層タブ化、プリセット操作バーの一元化、削除ボタン動的切替、右下保存ボタン撤去（課題11, 12, 13）**
 - **対象ファイル**: `src/main.py`
-- **実装内容**:
-  1. **2階層タブ構造への再編 (`src/main.py`)**:
-     - 最上位 `self.tab_widget` を **2タブ構成** に変更する：
-       - Tab 0: **`"🎹 練習"`**（練習タブ）
-       - Tab 1: **`"🎬 動画制作"`**（動画制作コンテナタブ）
-     - **`"🎬 動画制作"` タブの内部レイアウト**:
-       - **最上部（固定ヘッダー）**: **「🎬 動画プリセット管理バー (`f_video_preset_master`)」** を1箇所だけに集約配置！
-         - 1段目: `プリセット:` ＋ `self.combo_video_preset`（`self.combo_design_preset` と完全統合・同期）
-         - 2段目: `[💾 保存]` (`btn_preset_save`) ＋ `[➕ 別名保存...]` (`btn_preset_save_as`) ＋ `[↺ 初期値に戻す]` (`btn_preset_reset`)
-         - 3段目: **`[📋 現在の「練習画面」のスタイルをコピー]`** (`btn_copy_practice_visual`)
-       - **その下部（第2階層サブタブ `self.video_sub_tabs = QTabWidget()`）**:
-         - Sub-Tab 0: **`"🎨 画面デザイン"`**
-         - Sub-Tab 1: **`"🎙️ 録音・音響"`**
-         - Sub-Tab 2: **`"🎬 動画書き出し"`**
-       - 旧 `_build_tab_design` と `_build_tab_export` の中に個別に存在していたプリセットバーは非表示（またはマスターヘッダーへ統合）にし、重複を100%排除する！
-  2. **公式プリセット vs 自作プリセットでの「↺ 初期値 / 🗑️ 削除」ボタン動的切替（課題12）**:
-     - プリセット選択変更時（`_on_video_preset_changed`）、選択されたプリセット名が `settings_manager.DEFAULT_VIDEO_PRESETS` に含まれる公式プリセットであればボタン表記を **`"↺ 初期値"`**（ツールチップ: `"公式プリセットを初期状態に戻します"`）、ユーザーが追加した自作プリセットであれば **`"🗑️ 削除"`**（ツールチップ: `"この自作プリセットを削除します"`、赤文字アクセント）に動的に切り替える！
-  3. **右下 `[💾 設定を保存]` ボタンの撤去（課題13）**:
-     - サイドバー最下部フッターの `btn_save_all`（「💾 設定を保存」）を撤去（設定変更時は自動保存、動画プリセットは上部バーで保存と役割を明確化）。
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **2階層タブ構造への再構築 (`src/main.py`, L1035〜1065付近)**:
+     - `self.tab_widget`（最上位タブ）を **「🎹 練習」(Tab 0)** と **「🎬 動画制作」(Tab 1)** の2タブ構成に刷新する：
+       ```python
+       self.tab_widget = QTabWidget(self.sidebar_frame)
+
+       # Tab 0: 🎹 練習
+       self._build_tab_practice()
+
+       # Tab 1: 🎬 動画制作 (上部: プリセット共通ヘッダー ＋ 下部: 3つのサブタブ)
+       self.tab_video_production = QWidget(self)
+       v_prod_layout = QVBoxLayout(self.tab_video_production)
+       v_prod_layout.setContentsMargins(4, 6, 4, 4)
+       v_prod_layout.setSpacing(6)
+
+       # --- 動画制作 共通プリセットヘッダー (1箇所に完全一元化) ---
+       self.f_video_preset_master = QFrame(self)
+       self.f_video_preset_master.setObjectName("groupFrame")
+       self.f_video_preset_master.setStyleSheet("QFrame#groupFrame { border: 1px solid #38BDF8; background-color: #0F172A; }")
+       l_vpm = QVBoxLayout(self.f_video_preset_master)
+       l_vpm.setContentsMargins(6, 6, 6, 6)
+       l_vpm.setSpacing(4)
+
+       r_vpm_top = QHBoxLayout()
+       r_vpm_top.addWidget(QLabel("🎬 <b>プリセット:</b>"))
+       self.combo_video_preset = QComboBox(self)
+       self.combo_video_preset.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+       self._configure_sidebar_combo(self.combo_video_preset, max_width=230)
+       self.combo_video_preset.currentTextChanged.connect(self._on_video_preset_changed)
+       r_vpm_top.addWidget(self.combo_video_preset, stretch=1)
+       l_vpm.addLayout(r_vpm_top)
+
+       r_vpm_btns = QHBoxLayout()
+       self.btn_preset_save = QPushButton("💾 保存", self)
+       self.btn_preset_save.setToolTip("現在の画面・音響・出力設定を選択中プリセットに上書き保存")
+       self.btn_preset_save.clicked.connect(self._on_save_video_preset)
+       r_vpm_btns.addWidget(self.btn_preset_save)
+
+       self.btn_preset_save_as = QPushButton("➕ 別名保存...", self)
+       self.btn_preset_save_as.setToolTip("現在の設定で新しい動画プリセットを作成")
+       self.btn_preset_save_as.clicked.connect(self._on_save_as_video_preset)
+       r_vpm_btns.addWidget(self.btn_preset_save_as)
+
+       self.btn_preset_reset = QPushButton("↺ 初期化", self)
+       self.btn_preset_reset.setToolTip("公式プリセットは初期値へ復元、自作プリセットは削除します")
+       self.btn_preset_reset.clicked.connect(self._on_reset_or_delete_video_preset)
+       r_vpm_btns.addWidget(self.btn_preset_reset)
+       l_vpm.addLayout(r_vpm_btns)
+
+       self.btn_copy_practice_visual = QPushButton("📥 現在の「練習画面」の見た目を反映 (コピー)", self)
+       self.btn_copy_practice_visual.setFixedHeight(24)
+       self.btn_copy_practice_visual.setToolTip("普段の練習画面の軌道・音名・配色・スキン設定をこの動画プリセットに一括コピーします")
+       self.btn_copy_practice_visual.clicked.connect(self._on_copy_practice_to_video_preset)
+       l_vpm.addWidget(self.btn_copy_practice_visual)
+
+       v_prod_layout.addWidget(self.f_video_preset_master)
+
+       # --- 第2階層サブタブ (🎨 画面デザイン / 🎙️ 録音・音響 / 🎬 動画書き出し) ---
+       self.video_sub_tabs = QTabWidget(self.tab_video_production)
+       self._build_tab_design()
+       self._build_tab_audio()
+       self._build_tab_export()
+       self.video_sub_tabs.currentChanged.connect(self._on_video_sub_tab_changed)
+       v_prod_layout.addWidget(self.video_sub_tabs, stretch=1)
+
+       self.tab_widget.addTab(self.tab_video_production, "🎬 動画制作")
+       self.tab_widget.currentChanged.connect(self._on_tab_changed)
+       ```
+     - `_build_tab_design`, `_build_tab_audio`, `_build_tab_export` の末尾にある `self.tab_widget.addTab(tab, ...)` を **`self.video_sub_tabs.addTab(tab, ...)`**（ラベルは `"🎨 画面"`, `"🎙️ 録音・伴奏"`, `"🎬 動画出力"`）に変更する。
+     - `_build_tab_design` 内の旧 `f_target` と `_build_tab_export` 内の旧 `f_preset`（重複していたプリセット枠）は `setVisible(False)` にし、マスターヘッダーの `self.combo_video_preset` に完全一本化する。
+  2. **サイドバー最下部の `[💾 設定を保存]` (`btn_save_all`) の撤去**:
+     - `sb_foot` から `btn_save_all` を削除（または `setVisible(False)`）し、`self.lbl_fps` と自動保存インジケーター `QLabel("✓ 設定自動保存", self)` のみにする。
+  3. **タブ切替連動 (`_on_tab_changed`, `_on_video_sub_tab_changed`)**:
+     - `self.tab_widget.currentIndex() == 0`（`🎹 練習`）のときは常に `_visual_edit_target = "practice"` で `practice_visual`（16:9）を表示。
+     - `self.tab_widget.currentIndex() == 1`（`🎬 動画制作`）のときは、サブタブが `0`（画面）または `2`（動画出力）なら `_visual_edit_target = "video"` で選択中の動画プリセットをキャンバスに表示、サブタブが `1`（録音・伴奏）なら録音・練習しやすいよう `practice_visual`（または現在プリセット）を表示。
 - **コミットメッセージ**: `feat(ui-hierarchy): implement 2-tier tab architecture (Practice vs Video Production) with unified preset header and dynamic delete button`
 
 ---
 
 #### - [ ] **Micro-Step 6: 折りたたみアコーディオン（`CollapsibleSection`）の導入（課題17）と、「🎨 画面デザイン」内のセクション順序適正化（課題10）**
 - **対象ファイル**: `src/main.py`
-- **実装内容**:
-  1. **`CollapsibleSection(QFrame)` クラスの実装 (`src/main.py`)**:
-     - タイトルバー（クリック可能な `QPushButton` または `QToolButton`: 開いている時は `"▼  " + title`、閉じている時は `"▶  " + title`）と、子ウィジェットを格納する `content_widget` を持つアコーディオンコンテナを実装。
-     - `addLayout()` / `addWidget()` をそのまま呼べるラッパーメソッド（または既存の `groupFrame` を簡単にラップできるヘルパー `_wrap_collapsible(title, frame_widget, expanded=True)`）を用意し、既存レイアウトコードを一切壊さずに全セクションを1行最小化可能にする！
-  2. **「🎨 画面デザイン」タブ内のセクション縦配置の適正化（課題10）**:
-     - `v_box` への追加順序をユーザーの思考フロー通りに並べ替える：
-       1. **`📐 1. 画面比率・構図プレビュー`** (`f_ratio` を最上部へ移動！)
-       2. **`🎵 2. 演奏・ノーツ表示`** (`f_disp`: ノーツ軌道、音名表記、穴番号表記、穴下ノート)
-       3. **`🎨 3. カラーテーマ ＆ 装飾オプション`** (`f_col` + `f_opt`)
-       4. **`🖼️ 4. 背景画像 ＆ 減光 (コントラスト)`** (`f_bg`)
-       5. **`🎷 5. ハーモニカ本体スキン`** (`f_skin`)
-  3. **全タブへの折りたたみ適用**:
-     - 「🎹 練習」タブの各セクション（モデル、運指、移調、落下速度、ステップアップ練習、再生音源、練習画面スタイル）および「🎬 動画制作」の各サブタブのセクションに折りたたみヘッダーを適用し、縦スクロールなしで全項目をワンビュー俯瞰できるようにする。
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **`CollapsibleSection` クラスおよびラッパーヘルパーの追加 (`src/main.py` 先頭クラス群付近)**:
+     ```python
+     class CollapsibleSection(QFrame):
+         """タイトル行クリックで中身を1行に最小化・展開できるアコーディオンフレーム"""
+         def __init__(self, title: str, content_frame: QWidget, expanded: bool = True, parent=None):
+             super().__init__(parent)
+             self.setObjectName("groupFrame")
+             self.setMaximumWidth(328)
+             self._title = title
+             self._content = content_frame
+             self._expanded = expanded
+
+             layout = QVBoxLayout(self)
+             layout.setContentsMargins(4, 4, 4, 4)
+             layout.setSpacing(4)
+
+             self.btn_toggle = QPushButton(self)
+             self.btn_toggle.setCheckable(True)
+             self.btn_toggle.setChecked(expanded)
+             self.btn_toggle.setFlat(True)
+             self.btn_toggle.setStyleSheet("""
+                 QPushButton {
+                     text-align: left;
+                     font-weight: bold;
+                     color: #E2E8F0;
+                     background-color: #1E293B;
+                     border: 1px solid #334155;
+                     border-radius: 4px;
+                     padding: 4px 8px;
+                 }
+                 QPushButton:hover {
+                     background-color: #334155;
+                     color: #38BDF8;
+                 }
+             """)
+             self.btn_toggle.toggled.connect(self._on_toggled)
+             layout.addWidget(self.btn_toggle)
+
+             # 内部フレームの二重枠線を消してスッキリ収容
+             self._content.setStyleSheet("QFrame#groupFrame { border: none; background: transparent; }")
+             layout.addWidget(self._content)
+             self._on_toggled(expanded)
+
+         def _on_toggled(self, checked: bool):
+             self._expanded = checked
+             arrow = "▼" if checked else "▶"
+             self.btn_toggle.setText(f"{arrow}  {self._title}")
+             self._content.setVisible(checked)
+     ```
+  2. **「🎨 画面デザイン」タブ内のセクション順序入れ替え（課題10）**:
+     - `_build_tab_design` 内で `v_box.addWidget(...)` する順序を以下のように変更する（各フレームを `CollapsibleSection` で包んで追加）：
+       1. **`📐 画面比率 (構図プレビュー連動)`** (`self.f_ratio`, `expanded=True`) ← **最上部に配置！**
+       2. **`🎵 演奏・ノーツ表示`** (`f_disp`, `expanded=True`)
+       3. **`🎨 カラーテーマ ＆ ノーツ装飾`** (`f_col`, `expanded=True`)
+       4. **`☑️ 表示要素 ON/OFF ＆ 穴番号`** (`f_opt`, `expanded=False`)
+       5. **`🖼️ 背景画像 ＆ 減光 (コントラスト)`** (`f_bg`, `expanded=False`)
+       6. **`🎷 ハーモニカ本体スキン`** (`f_skin`, `expanded=False`)
+  3. **「🎹 練習」タブの各セクションも `CollapsibleSection` 化**:
+     - モデル選択（`expanded=True`）、運指パターン＆重なり音（`expanded=True`）、落下速度（`expanded=True`）、ステップアップ練習（`expanded=False`）、練習時の再生音源（`expanded=False`）、練習画面の表示スタイル（`expanded=False`）としてラップし、スクロールなしで全項目を一望できるようにする！
 - **コミットメッセージ**: `feat(ui-accordion): add CollapsibleSection for one-line folding across sidebar panels and reorder design tab sections`
 
 ---
@@ -174,37 +381,100 @@
 
 #### - [ ] **Micro-Step 7: 録音タブの不要音量枠撤去（課題14後半）、動画出力タブの二重リバーブ撤去（課題15）、およびタイトル・フェードUIの再配置（課題16, 18前半）**
 - **対象ファイル**: `src/main.py`
-- **実装内容**:
-  1. **「🎙️ 録音・音響」タブからの不要フレーム撤去（課題14）**:
-     - `_build_tab_audio` 最上部の `f_vol`（「🔊 音量制御 ＆ パート音色」）を `f_vol.setVisible(False)` で画面から完全に隠し、タブを開いた瞬間に「①マイク録音」「②外部伴奏」「③リバーブ」「④音量ミキサー」がすぐ目に入るようにスリム化する。
-  2. **「🎬 動画書き出し」タブの二重リバーブ撤去（課題15）**:
-     - `_build_tab_export` の音声トラック枠内にある `self.chk_exp_reverb`（「音声にリバーブを適用」）を `setVisible(False)` で撤去し、リバーブ制御を「🎙️ 録音・音響」タブ側の `self.chk_reverb` に一本化する。
-  3. **フェードイン/アウトの余白直下への移動（課題16）**:
-     - `r_fade`（`chk_fade_in`, `spin_fade_in`, `chk_fade_out`, `spin_fade_out`）を、タイトル枠（`f_tit`）から「1. 出力動画のフォーマット＆範囲」枠（`f_fmt`）の「前余白 / 後余白」行のすぐ直下へ移動する。
-  4. **タイトル設定のチェックボックス廃止と表示時間（0.1s〜15.0s）・消え方UI新設（課題16, 18）**:
-     - `self.chk_exp_title`（「タイトル・クレジットを表示」チェックボックス）を非表示化し、`self.combo_title_template`（ラベル: `"表示・配置:"`）の選択状態（`"なし"` 以外なら ON、`"なし"` なら OFF かつテキスト欄グレーアウト）に完全連動させる。
-     - タイトル枠内に **「表示時間 ＆ 消え方」行 (`r_tdur`)** を新設：
-       - `表示時間:` `self.spin_title_dur = QDoubleSpinBox(self)`（範囲 `0.1` 〜 `15.0` 秒、`singleStep=0.1`、`decimals=1`、`suffix="s"`、デフォルト `3.5s`）
-       - `消え方:` `self.combo_title_exit = QComboBox(self)`（選択肢: `["フェードアウトで消える", "即座に非表示 (カット)"]`）
-     - これらを `user_settings` および各 `video_preset` に保存・復元できるように接続する。
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **「🎙️ 録音・伴奏」タブの不要音量枠撤去 (`_build_tab_audio`, L1826〜1872付近)**:
+     - `f_vol`（「🔊 音量制御 ＆ パート音色」）を `f_vol.setVisible(False)` にし、`v_box` の先頭からマイク録音（`f_rec`）、外部伴奏（`f_ext`）、リバーブ（`f_rev`）が表示されるようにする（各枠にも `CollapsibleSection` を適用）。
+  2. **「🎬 動画出力」タブの二重リバーブ撤去 (`_build_tab_export`, L2415付近)**:
+     - `self.chk_exp_reverb` を `self.chk_exp_reverb.setVisible(False)` にし、画面から撤去する。
+  3. **フェードイン／アウト行（`r_fade`）を「前余白／後余白」のすぐ直下へ移動 (`_build_tab_export`, L2300〜2540付近)**:
+     - `f_tit`（タイトル枠）内にあった `r_fade`（`chk_fade_in`, `spin_fade_in`, `chk_fade_out`, `spin_fade_out`）を切り出し、`f_fmt`（「1. 出力動画のフォーマット ＆ 範囲」）内の `r_margin`（前余白・後余白）の直下に `l_fmt.addLayout(r_fade)` で配置する。
+  4. **タイトル設定のチェックボックス廃止と表示時間（0.1s〜15.0s）・消え方UIの新設 (`_build_tab_export`, L2450〜2552付近)**:
+     - `self.chk_exp_title` を `setVisible(False)` にし、`self.lbl_title_tpl.setText("表示・配置:")` に変更。
+     - `self.combo_title_template.currentTextChanged` で `"なし"` が選ばれたら `txt_exp_title` 等をグレーアウトし、`"なし"` 以外なら有効化する。
+     - タイトル枠（`l_tit`）内に以下の **「表示時間（0.1s〜15.0s）＆ 消え方」行** を追加：
+       ```python
+       r_tdur = QHBoxLayout()
+       r_tdur.addWidget(QLabel("表示時間:"))
+       self.spin_title_dur = QDoubleSpinBox(self)
+       self.spin_title_dur.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+       self.spin_title_dur.setRange(0.1, 15.0)
+       self.spin_title_dur.setSingleStep(0.1)
+       self.spin_title_dur.setDecimals(1)
+       self.spin_title_dur.setSuffix("s")
+       self.spin_title_dur.setFixedWidth(54)
+       self.spin_title_dur.setAlignment(Qt.AlignmentFlag.AlignCenter)
+       self.spin_title_dur.setValue(float(self.user_settings.get("export_title_duration", 3.5)))
+       self.spin_title_dur.setToolTip("イントロ中央タイトルの表示維持秒数 (0.1〜15.0秒、0.1秒刻み)")
+       self.spin_title_dur.valueChanged.connect(lambda _: self._save_current_settings())
+       r_tdur.addWidget(self.spin_title_dur)
+
+       r_tdur.addWidget(QLabel("消え方:"))
+       self.combo_title_exit = QComboBox(self)
+       self.combo_title_exit.addItems(["フェードアウトで消える", "即座に非表示 (カット)"])
+       self.combo_title_exit.setCurrentText(str(self.user_settings.get("export_title_exit_mode", "フェードアウトで消える")))
+       self.combo_title_exit.setToolTip("表示時間経過後のタイトルの消え方（滑らかに消える / パッと一瞬で消える）")
+       self._configure_sidebar_combo(self.combo_title_exit, max_width=150)
+       self.combo_title_exit.currentTextChanged.connect(lambda _: self._save_current_settings())
+       r_tdur.addWidget(self.combo_title_exit, stretch=1)
+       l_tit.addLayout(r_tdur)
+       ```
+     - `_on_video_preset_changed`, `_on_save_video_preset`, `_save_current_settings` で `"export_title_duration"` と `"export_title_exit_mode"` を保存・復元するように接続する。
 - **コミットメッセージ**: `feat(export-ui): remove redundant volume/reverb widgets, relocate fade controls under margins, and add 0.1s title duration UI`
 
 ---
 
 #### - [ ] **Micro-Step 8: `video_exporter.py` のタイトル独立表示時間（0.1s〜15.0s）＆ 消え方（フェード/カット）レンダリング実装（課題18後半）**
 - **対象ファイル**: `src/studio_controller.py`, `src/video_exporter.py`
-- **実装内容**:
-  1. **`src/studio_controller.py` (`_build_export_render_settings`)**:
-     - `reverb_enabled` は録音タブの `self.chk_reverb.isChecked()` を参照するように統一。
-     - `title_overlay` 辞書の `"enabled"` は `(self.combo_title_template.currentText() != "なし")` で判定。
-     - `title_overlay` 辞書に `"intro_dur": float(self.spin_title_dur.value())` および `"exit_mode": self.combo_title_exit.currentText()` を格納してレンダラーへ渡す。
-  2. **`src/video_exporter.py` (`_draw_title_overlay`, L900〜930付近)**:
-     - 前余白（`intro_sec`）に強制連動していた `if intro_sec >= 2.0: effective_intro_dur = intro_sec` の古い分岐を撤廃！
-     - 常に `effective_intro_dur = max(0.1, float(overlay_info.get("intro_dur", 3.5)))` を使用する。
-     - もし `fade_title_mode == "フェード中はタイトル非表示"` の場合は、画面フェードイン完了時刻 `f_in_dur` から `effective_intro_dur` 秒間表示されるように基準時刻を補正し、「フェードインが終わった瞬間に消える」現象を100%解消する！
-     - `exit_mode = str(overlay_info.get("exit_mode", "フェードアウトで消える"))` に応じ：
-       - `"即座に非表示"`（カット）の場合：`fade_out_time = 0.0`（指定秒数経過でスパッと消える）。
-       - `"フェードアウトで消える"` の場合：`fade_out_time = min(0.8, effective_intro_dur * 0.35)`（指定秒数の終盤で滑らかに透明へフェードアウトする）。
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **`src/studio_controller.py` (`_build_export_render_settings`, L530〜610付近)**:
+     - `reverb_enabled` は `self.chk_reverb.isChecked()`（録音タブのリバーブ設定）を参照するように変更。
+     - `title_overlay` 辞書の構築を更新：
+       ```python
+       tpl_str = self.combo_title_template.currentText() if hasattr(self, "combo_title_template") else "なし"
+       title_enabled = (tpl_str != "なし")
+       title_dur = float(self.spin_title_dur.value()) if hasattr(self, "spin_title_dur") else 3.5
+       title_exit = self.combo_title_exit.currentText() if hasattr(self, "combo_title_exit") else "フェードアウトで消える"
+       title_overlay = {
+           "enabled": title_enabled,
+           "template": tpl_str,
+           "title": self.txt_exp_title.text() if hasattr(self, "txt_exp_title") else "",
+           "credit": self.txt_exp_credit.text() if hasattr(self, "txt_exp_credit") else "",
+           "intro_dur": title_dur,
+           "exit_mode": title_exit,
+       }
+       ```
+  2. **`src/video_exporter.py` (`_draw_title_overlay`, L889〜930付近)**:
+     - 前余白（`intro_sec`）に強制束縛されていた古いロジックを撤廃し、`intro_dur`（0.1s〜15.0s）と `exit_mode`（フェードアウト / カット）に完全対応させる：
+       ```python
+       t_ref = t_in_video if t_in_video > 0.0 else max(0.0, cur_sec)
+       configured_intro = max(0.1, float(overlay_info.get("intro_dur", 3.5)))
+       exit_mode = str(overlay_info.get("exit_mode", "フェードアウトで消える"))
+       fade_in_sec = float(overlay_info.get("fade_in_sec", 0.0))
+       fade_title_mode = str(overlay_info.get("fade_title_mode", "フェード中もタイトル表示"))
+
+       # 「フェード中はタイトル非表示」の場合はフェードイン完了時点から configured_intro 秒間表示する
+       start_offset = fade_in_sec if fade_title_mode == "フェード中はタイトル非表示" else 0.0
+       local_t = t_ref - start_offset
+       effective_intro_dur = configured_intro
+
+       show_intro = ("イントロ中央" in tpl and 0.0 <= local_t < effective_intro_dur)
+       show_left = ("左上常時" in tpl)
+       show_right = ("右上常時" in tpl)
+
+       if show_intro:
+           fade_in_time = min(0.4, effective_intro_dur * 0.25)
+           if "カット" in exit_mode or "即座" in exit_mode:
+               fade_out_time = 0.0
+           else:
+               fade_out_time = min(0.8, effective_intro_dur * 0.35)
+
+           fade = 1.0
+           if fade_in_time > 0.01 and local_t < fade_in_time:
+               fade = max(0.1, local_t / fade_in_time)
+           elif fade_out_time > 0.01 and local_t > (effective_intro_dur - fade_out_time):
+               fade = max(0.0, (effective_intro_dur - local_t) / fade_out_time)
+       ```
+       （※ `render_frame_bytes` 内で `title_overlay["fade_title_mode"] = fade_title_mode` をセットして `_draw_title_overlay` に渡すこと）。
 - **コミットメッセージ**: `feat(video-renderer): decouple title duration from intro margin and support 0.1s-15.0s timing with fade or cut exit`
 
 ---
@@ -213,45 +483,91 @@
 
 #### - [ ] **Micro-Step 9: YouTube Shorts (9:16) 上下2分割（スプリットスクリーン）構図配置の実装（課題8）**
 - **対象ファイル**: `src/main.py`, `src/gl_visualizer.py`, `src/video_exporter.py`, `src/studio_controller.py`
-- **実装内容**:
-  1. **UIコントロールの追加 (`src/main.py`)**:
-     - 「🎨 画面デザイン」タブの「📐 1. 画面比率・構図プレビュー」フレーム内に、**`縦型構図 (9:16時):` (`self.combo_vertical_layout`)** を追加：
-       - `"全画面フル展開 (標準Shorts)"`
-       - `"上半分 16:9 ハーモニカ (下半分フリー)"`
-       - `"下半分 16:9 ハーモニカ (上半分フリー)"`
-       - `"中央 16:9 ハーモニカ"`
-     - 比率が `9:16` のとき有効化（16:9 / 4:3 のときはグレーアウトまたは自動全画面）し、変更時に `gl_widget.set_vertical_layout_mode(mode)` を呼んで即時プレビュー反映する。
-  2. **OpenGLキャンバス ＆ 動画レンダラーの上下分割ビューポート対応 (`src/gl_visualizer.py`, `src/video_exporter.py`)**:
-     - `vertical_layout_mode` 属性を追加（デフォルト: `"全画面フル展開 (標準Shorts)"`）。
-     - 9:16 縦型描画時、`"上半分 16:9"` / `"下半分 16:9"` / `"中央 16:9"` が選択されている場合：
-       - 有効幅 `w` に対する 16:9 相当の高さ `sub_h = int(w * 9.0 / 16.0)` を算出。
-       - 上半分なら `sub_y0 = int(h * 0.04)`、下半分なら `sub_y0 = h - sub_h - int(h * 0.04)`、中央なら `sub_y0 = (h - sub_h) // 2` として、ノーツ落下領域とハーモニカ本体のY座標群をこの `[sub_y0, sub_y0 + sub_h]` のボックス内にクリップ＆レイアウトする！
-       - 空いた下半分（または上半分）には背景画像やグリーンバック／透過領域がそのまま綺麗に確保され、PVや実写動画との2分割合成が完璧に行えるようにする。
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **`src/main.py` (`_build_tab_design` の `f_ratio` 内, L1510〜1530付近)**:
+     - `self.ratio_combo` のすぐ下に **`縦型配置 (9:16時):` (`self.combo_vertical_layout`)** を追加：
+       ```python
+       r_vlay = QHBoxLayout()
+       r_vlay.addWidget(QLabel("縦型配置:"))
+       self.combo_vertical_layout = QComboBox(self)
+       self.combo_vertical_layout.addItems([
+           "全画面フル展開 (標準Shorts)",
+           "上半分 16:9 ハーモニカ (下半分フリー)",
+           "下半分 16:9 ハーモニカ (上半分フリー)",
+           "中央 16:9 ハーモニカ"
+       ])
+       self._configure_sidebar_combo(self.combo_vertical_layout, max_width=220)
+       self.combo_vertical_layout.setToolTip("9:16 縦型動画において、16:9比率のハーモニカ画面を上半分または下半分に配置し、残りの領域に別の動画やPVを合成しやすくします")
+       self.combo_vertical_layout.currentTextChanged.connect(self._on_vertical_layout_changed)
+       r_vlay.addWidget(self.combo_vertical_layout, stretch=1)
+       l_ratio.addLayout(r_vlay)
+       ```
+     - `_on_vertical_layout_changed(self, text: str)` ハンドラを追加し、`self.gl_widget.set_vertical_layout_mode(text)` と設定保存を呼ぶ。また `_apply_visual_dict_to_ui_and_gl` および `_get_current_visual_dict_from_ui`、`_build_export_render_settings` にも `"vertical_layout_mode"` を接続する。
+  2. **`src/gl_visualizer.py` & `src/video_exporter.py` のビューポート分割対応**:
+     - 両クラスに `self.vertical_layout_mode = "全画面フル展開 (標準Shorts)"` と `set_vertical_layout_mode(self, mode: str)` を追加。
+     - 描画時のキャンバス矩形計算（`gl_visualizer.py` の `paintGL` 内の `dest_rect` / `y_offset` / `disp_h`、および `video_exporter.py` の `render_frame_bytes` 内の `h` / `y_offset`）において：
+       - アスペクト比が `"9:16"` かつ `self.vertical_layout_mode` に `"16:9"` が含まれる場合：
+         - ハーモニカ描画バンドの高さ `band_h = int(effective_w * 9.0 / 16.0)` を算出。
+         - `"上半分"` ならバンド上端 `band_y0 = base_y0 + int(full_h * 0.04)`
+         - `"下半分"` ならバンド上端 `band_y0 = base_y0 + full_h - band_h - int(full_h * 0.04)`
+         - `"中央"` ならバンド上端 `band_y0 = base_y0 + (full_h - band_h) // 2`
+         - ノーツ落下開始Y〜ハーモニカ口金Yの座標系をこの `[band_y0, band_y0 + band_h]` 内にマッピング（クリッピング）して描画する！
 - **コミットメッセージ**: `feat(shorts-layout): implement 9:16 vertical split-screen placement modes (top, bottom, center 16:9 viewport)`
 
 ---
 
 #### - [ ] **Micro-Step 10: 起動時スプラッシュ画面（`QSplashScreen`）、多重起動防止ロック（課題19）および Ver.4.1.0 全体自動結合テスト (`tests/verify_v410_polish.py`)**
 - **対象ファイル**: `src/main.py`, `tests/verify_v410_polish.py` (新規作成), `.context/00_handover.md`, `.context/01_architecture.md`, `.context/02_tasks.md`
-- **実装内容**:
-  1. **多重起動防止ロック ＆ 即時スプラッシュスクリーン (`src/main.py`)**:
-     - `main()` 関数内、`app = QApplication(sys.argv)` の直後に：
-       - `from PyQt6.QtCore import QSharedMemory` で共有メモリロック `"HarmonicaStudio_SingleInstance_Lock"` を試行（ただしオフスクリーン自動テスト実行時 `QT_QPA_PLATFORM == "offscreen"` はスキップ）。既に起動している場合はメッセージを出して二重起動を防止する。
-       - `QSplashScreen` を用いて、480x260 のスタイリッシュなダークテーマ起動画面（`Harmonica Visualizer v4.1.0 [Harmonica Studio]`、「🚀 起動準備中... オーディオ＆OpenGLエンジンを初期化しています」）を `QPainter` で動的生成して即座に `splash.show(); app.processEvents()` する。
-       - `window = HarmonicaMainWindow()` の構築完了後に `splash.finish(window)` で閉じる。
-     - ウィンドウタイトルを **`Harmonica Visualizer v4.1.0 [Harmonica Studio Edition]`** に更新。
-  2. **全体自動結合テスト (`tests/verify_v410_polish.py`) の作成と実行**:
-     - 全21課題に対応する以下の全10項目をオフスクリーンで自動検証するスクリプトを作成・実行し、全項目 PASS を確認する：
-       - Test 1: プリセット切替時の `ratio_combo` 自動同期 ＆ Shorts比率保護（課題9）
-       - Test 2: `[⚙ 設定]` スキン変更時の `practice_visual` 即時同期 ＆ `_demo_chromatic` フォールバック保存先（課題3, 4）
-       - Test 3: モノクロ時の変え指二重枠描画 ＆ `Key +12` シンプル移調表記（課題5, 6, 7）
-       - Test 4: `[⚙ 設定]` の重複撤去、プロジェクト階層ツリー表示、`PartSelectDialog` の音色固定チェック（課題1, 2, 3, 14）
-       - Test 5: 公式5大プリセット（王道16:9背景MV・解説垂直落下）と設定ウィンドウのプリセット比較表タブ（課題20, 21）
-       - Test 6: 「🎹 練習」vs「🎬 動画制作」2階層タブ構造、プリセットヘッダー一元化、「📋 練習からコピー」、自作プリセット「🗑️ 削除」動的切替、右下保存ボタン撤去（課題11, 12, 13）
-       - Test 7: `CollapsibleSection` による折りたたみ開閉動作と画面デザインタブの順序（比率が先頭）（課題10, 17）
-       - Test 8: 録音タブの不要音量枠非表示、動画出力タブの二重リバーブ撤去、フェードの余白直下配置、タイトルチェック廃止（課題14, 15, 16）
-       - Test 9: タイトル表示時間（`0.1s〜15.0s`）と消え方（フェード/カット）のオフスクリーンレンダリング検証（課題18）
-       - Test 10: Shorts 9:16 上下2分割（上半分16:9 / 下半分16:9）のレンダリング検証 ＆ `src/` 汚染ゼロ確認（課題8, 19）
+- **詳細実装仕様（コードスニペット付き）**:
+  1. **`src/main.py` のスプラッシュスクリーン ＆ 多重起動防止ロック (L4875 `main()` 関数)**:
+     - ファイル先頭の `PyQt6.QtWidgets` インポートに `QSplashScreen`、`PyQt6.QtCore` インポートに `QSharedMemory` を追加。
+     - ウィンドウタイトル（L655付近）を **`"Harmonica Visualizer v4.1.0 [Harmonica Studio Edition]"`** に更新。
+     - `create_startup_splash() -> QSplashScreen` ヘルパー関数と `main()` 内の多重起動ロックを実装：
+       ```python
+       def create_startup_splash() -> QSplashScreen:
+           pix = QPixmap(500, 260)
+           pix.fill(QColor("#0F172A"))
+           p = QPainter(pix)
+           p.setRenderHint(QPainter.RenderHint.Antialiasing)
+           p.setPen(QPen(QColor("#38BDF8"), 2))
+           p.drawRoundedRect(1, 1, 498, 258, 10, 10)
+           p.setPen(QColor("#38BDF8"))
+           p.setFont(QFont("Meiryo UI", 18, QFont.Weight.Bold))
+           p.drawText(QRectF(0, 55, 500, 45), Qt.AlignmentFlag.AlignCenter, "Harmonica Visualizer v4.1.0")
+           p.setPen(QColor("#94A3B8"))
+           p.setFont(QFont("Meiryo UI", 11, QFont.Weight.Bold))
+           p.drawText(QRectF(0, 100, 500, 30), Qt.AlignmentFlag.AlignCenter, "[ Harmonica Studio Edition ]")
+           p.setPen(QColor("#E2E8F0"))
+           p.setFont(QFont("Meiryo UI", 10))
+           p.drawText(QRectF(0, 175, 500, 30), Qt.AlignmentFlag.AlignCenter, "🚀 起動準備中... OpenGL ＆ オーディオエンジンを初期化しています")
+           p.end()
+           splash = QSplashScreen(pix, Qt.WindowType.WindowStaysOnTopHint)
+           return splash
+
+       def main():
+           app = QApplication(sys.argv)
+           app.setStyle("Fusion")
+
+           # 多重起動防止ロック (オフスクリーンテスト時は除外)
+           shared_mem = None
+           if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+               shared_mem = QSharedMemory("HarmonicaVisualizerStudio_SingleInstance_v4")
+               if not shared_mem.create(1):
+                   QMessageBox.information(None, "起動中", "Harmonica Visualizer は既に起動しています。\nしばらくお待ちいただくか、タスクバーをご確認ください。")
+                   sys.exit(0)
+
+           splash = create_startup_splash()
+           splash.show()
+           app.processEvents()
+
+           window = HarmonicaMainWindow()
+           window._single_instance_lock = shared_mem
+           window.show()
+           splash.finish(window)
+           sys.exit(app.exec())
+       ```
+  2. **全体自動検証スクリプト `tests/verify_v410_polish.py` の作成と実行**:
+     - 全10ステップ（全21課題）の動作をオフスクリーンで自動テストし、すべて `PASS` すること、および `git status --porcelain src/` で未追跡のゴミファイルが生成されていないことを確認する。
   3. `.context/00_handover.md`, `.context/01_architecture.md`, `.context/02_tasks.md` を完了状態に更新してコミットし、Gitタグ **`v4.1.0`** を付与する。
 - **コミットメッセージ**: `feat(release): add startup splash screen, single-instance guard, and complete v4.1.0 verification suite`
 

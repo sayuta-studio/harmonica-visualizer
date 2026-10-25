@@ -1,13 +1,13 @@
 # Current Status & Handover (00_handover.md)
 
 ## 最終更新日時
-- 2026-10-25 15:52 (Ver.4.0.0 Harmonica Studio 全8 Micro-Step 完遂・全体自動統合テスト PASS・v4.0.0 リリース準備完了)
+- 2026-10-25 18:10 (Ver.4.1.0 全21課題統合・実装仕様書［Batch Package 1〜5 / Micro-Step 1〜10］策定完了)
 
 ---
 
 ## 1. プロジェクト現在地と最新ディレクトリ構造
 
-ビルトインタスク管理規則およびマスタールールに準拠し、**Ver.4.0.0「Harmonica Studio」の全8ステップ（Batch Package 1 〜 4）がすべて実装・結合テスト・コミットされ、完全リリース状態** に到達しました。
+現在、Ver.4.0.0 リリース後の実機動作確認および過去の打ち合わせ照合によって洗い出された **全21課題（バグ解消、2階層タブ化、折りたたみアコーディオン、公式5大プリセット再設計、タイトル0.1s演出、Shorts上下分割、起動スプラッシュ等）** を解決するための **Ver.4.1.0 詳細実装仕様書** が `.context/02_tasks.md` に完成しています。
 
 ```text
 harmonica-visualizer/
@@ -15,16 +15,16 @@ harmonica-visualizer/
 │   └── rules/                 # knowledge_classifier.md, safety_limits.md
 ├── .context/                  # プロジェクト管理コンテキスト（最優先参照）
 │   ├── 00_handover.md         # 本ファイル（現在地スナップショット・引き継ぎ情報）
-│   ├── 01_architecture.md     # システム概要・技術スタック・設計制約・v4.0.0完成設計図
-│   ├── 02_tasks.md            # タスク管理（全マイルストーン完遂状態）
+│   ├── 01_architecture.md     # システム概要・技術スタック・設計制約
+│   ├── 02_tasks.md            # 🌟 Ver.4.1.0 詳細実装仕様書（Micro-Step 1〜10 コードスニペット付）
 │   └── 03_troubleshooting.md  # プロジェクト固有トラブルシューティング
-├── _docs/                     # アイデア・ログ・外部資料（旧 docs）
+├── _docs/                     # アイデア・ログ・外部資料
 ├── _shared_knowledge/         # 再利用可能な汎用知見集（Gotcha #7, #8, #9）
-├── src/                       # 🌟【現行稼働コード】メインコードベース（v4.0.0 リリース）
-│   ├── main.py                # メインウィンドウ、L型レイアウト、ヘッダー [⚙ 設定] ボタン、タブ切替連動 (4,888行)
-│   ├── studio_controller.py   # 🌟 (New v4.0) StudioExportMixin（録音・伴奏同期・ミキサー・動画出力）
-│   ├── project_manager.py     # 🌟 (New v4.0) SongProjectManager（1曲1フォルダ、ハッシュ衝突検知、相対パス解決）
-│   ├── config.py              # 🌟 (Updated v4.0) ポータブル基底パス解決（開発時リポジトリルート、配布時exe直下）
+├── src/                       # 🌟【現行稼働コード】メインコードベース
+│   ├── main.py                # メインウィンドウ、サイドバー構築、タブ連動、スプラッシュ起動
+│   ├── studio_controller.py   # StudioExportMixin（録音・伴奏同期・ミキサー・動画出力設定）
+│   ├── project_manager.py     # SongProjectManager（1曲1フォルダ、ハッシュ衝突検知、相対パス解決）
+│   ├── config.py              # ポータブル基底パス解決（開発時リポジトリルート、配布時exe直下）
 │   ├── audio_engine.py        # WinMM MIDI再生、AudioRecorder、PCM音声スライス再生、WAV合成、リバーブDSP
 │   ├── video_exporter.py      # OffscreenVisualizerRenderer、FFmpegパイプライン、動画書き出し
 │   ├── gl_visualizer.py       # HarmonicaGLWidget（OpenGLノーツバー描画、ハーモニカ本体、穴発光アニメーション）
@@ -32,49 +32,35 @@ harmonica-visualizer/
 │   ├── harmonica_map.py       # 12/14/16穴運指定義、キー別運指パターン保存、曲別プロファイル管理
 │   ├── dialogs.py             # モーダルダイアログ群（HarmonicaSettingsDialog [⚙ 設定], PartSelectDialog 等）
 │   ├── ipc_state.py           # SharedClockBridge（共有メモリスレッドクロック、再生状態管理）
-│   └── settings_manager.py    # practice_visual と video_presets (公式4種) の永続化管理
-├── projects/                  # 🌟 (New v4.0) 楽曲プロジェクト自己完結コンテナ
+│   └── settings_manager.py    # practice_visual と video_presets (公式5種) の永続化管理
+├── projects/                  # 楽曲プロジェクト自己完結コンテナ
 │   └── <曲名>/                # source/ (原本MIDI), takes/ (WAV), audio/ (外部伴奏), exports/ (動画), project.json
 └── tests/                     # オフスクリーン単体・統合テスト群
-    └── verify_v400_studio.py  # 🌟 (New v4.0) 全8項目オフスクリーン自動統合検証スクリプト
+    └── verify_v400_studio.py  # v4.0.0 自動統合検証スクリプト（次ステップで verify_v410_polish.py を追加）
 ```
 
 ---
 
+## 2. Ver.4.1.0 実装ロードマップ（Batch Package 1 〜 5 / Micro-Step 1 〜 10）
 
-### 🛠️ 直近の修正（Ver.4.0.0 安定化パッチ）
-1. **[⚙ 設定] ダイアログ保存時の強制終了（クラッシュ）の解消**:
-   - src/main.py の _on_open_env_settings_dialog において、存在しない関数 settings_manager.save_user_settings を呼び出していたため AttributeError でアプリが落ちていた問題を特定し、正しく settings_manager.save_settings を呼ぶように修正。
-2. **カスタムスキン設定の完全直交化（動画版 SkinSelectDialog との統合）**:
-   - HarmonicaSettingsDialog の外観スキン設定ボタンから、動画画面タブと同じ **SkinSelectDialog**（マウスピース、レバーOFF、レバーON、リアルタイム合成プレビュー）を開けるように接続。
-   - 設定保存時にメイン画面の _apply_user_settings で gl_widget.set_custom_skins(...) を実行し、練習画面のハーモニカにも即時反映されるように改修。
+すべての詳細仕様・対象ファイル・行番号・実装コードスニペットは **`.context/02_tasks.md`** に記載されています。
 
-## 2. Ver.4.0.0 全マイルストーン完了実績一覧
-
-| パッケージ | ステップ | コミット | 主な成果 |
-| :--- | :--- | :--- | :--- |
-| **Package 1** | Step 1 | `56ba68d` | `src/config.py`: 開発環境実行時に `src/` 配下を汚さないリポジトリルート解決と `.gitignore` 遮断を確立（Gotcha #9） |
-| | Step 2 | `aa39003` | `src/project_manager.py`: 1曲＝1フォルダのコンテナ生成、SHA-256衝突検知、相対パス自動追従、旧プロファイルマイグレーション |
-| **Package 2** | Step 3 | `1d38423` | `src/dialogs.py` & `src/harmonica_map.py`: 運指パターンに `transpose` / `transpose_accomp` をスナップショット統合保存 |
-| | Step 4 | `1ce5f0a` | `src/main.py`: `🎹 練習` タブにキー別運指パターン切替コンボと、別キー作成アンロックボタンを実装 |
-| **Package 3** | Step 5 | `6176667` | `src/main.py`: `🎨 動画画面` タブを100%動画プリセット専用化し、練習時の視覚スタイル設定を `🎹 練習` タブ下部に集約 |
-| | Step 6 | `ddfdbb4` | `src/dialogs.py` & `src/main.py`: システム環境設定ダイアログ（`[⚙ 設定]`）の3タブ刷新とメイン画面上部ヘッダー分離 |
-| **Package 4** | Step 7 | `0c09126` | `src/studio_controller.py`: `StudioExportMixin` へ録音・動画エクスポート制御（約850行）を分離し、プロジェクトフォルダへ完全直結 |
-| | Step 8 | （本コミット） | `tests/verify_v400_studio.py`（全8項目自動テスト）パス確認、タイトル更新、Gitタグ `v4.0.0` 付与 |
+| パッケージ | ステップ | 解決課題 | 実装概要 | 状態 |
+| :--- | :--- | :--- | :--- | :---: |
+| **Package 1** | **Step 1** | 課題 3, 4, 9 | プリセット比率（`ratio_combo`）逆上書きバグ修正、カスタムスキンの練習画面即時反映、フォールバック保存先の `_demo_chromatic` 集約 | 未着手 |
+| | **Step 2** | 課題 5, 6, 7 | モノクロ時の変え指二重コントラスト枠線、`Key +12` パターン名＆ステータスバー移調表記の重複解消 | 未着手 |
+| **Package 2** | **Step 3** | 課題 1, 2, 3, 14 | `[⚙ 設定]` からの重複項目（メトロノーム・ステップアップ）撤去、プロジェクト親子階層ツリー図解、`[🎼 パート]` への主旋律音色固定移設 | 未着手 |
+| | **Step 4** | 課題 20, 21 | 公式5大プリセット再設計（王道16:9背景画像MV追加・解説の垂直落下化）＆ `[⚙ 設定]` への「🎬 初期プリセット比較一覧表」タブ追加 | 未着手 |
+| **Package 3** | **Step 5** | 課題 11, 12, 13 | サイドバーの「🎹 練習 vs 🎬 動画制作」2階層タブ化、プリセットヘッダー一元化、「📥 練習画面からコピー」ボタン、自作プリセット「🗑️ 削除」動的切替、右下保存ボタン撤去 | 未着手 |
+| | **Step 6** | 課題 10, 17 | 全セクションをタイトル1行に最小化できる `CollapsibleSection`（折りたたみアコーディオン）導入 ＆ 画面デザインタブの順序適正化（比率を最上部へ） | 未着手 |
+| **Package 4** | **Step 7** | 課題 14, 15, 16, 18 | 録音タブの不要音量枠撤去、動画出力タブの二重リバーブ撤去、フェードの余白直下への移動、タイトル表示時間（`0.1s〜15.0s`）＆消え方UI新設 | 未着手 |
+| | **Step 8** | 課題 18 | `video_exporter.py` のタイトル表示時間を前余白から独立させ、`0.1s〜15.0s` 維持＆フェード/カット消去レンダリング実装 | 未着手 |
+| **Package 5** | **Step 9** | 課題 8 | YouTube Shorts (9:16) 上下2分割レイアウト（上半分16:9 / 下半分16:9 / 中央16:9）の実装 | 未着手 |
+| | **Step 10** | 課題 19 | 起動直後の `QSplashScreen`（起動準備中画面）＆ `QSharedMemory` 多重起動防止ロック実装、`tests/verify_v410_polish.py` 全項目PASS検証、タグ `v4.1.0` 付与 | 未着手 |
 
 ---
 
-## 3. 全体自動統合テスト（`tests/verify_v400_studio.py`）検証結果
-- **TEST 1**: ポータブル基底パス解決（開発時リポジトリルート解決・`src/` 汚染ゼロ） -> **PASS**
-- **TEST 2 & 3**: 楽曲プロジェクト自己完結コンテナ生成 ＆ SHA-256 ハッシュ同名別曲衝突検知・自動分離 -> **PASS**
-- **TEST 4**: プロジェクトフォルダ名リネーム時の相対パス解決追従 -> **PASS**
-- **TEST 5**: キー（移調）別運指パターン切替 ＆ 別キー作成アンロック動作 -> **PASS**
-- **TEST 6**: 練習タブ下部スタイル設定と 100%動画専用画面タブの完全直交分離 -> **PASS**
-- **TEST 7**: ヘッダー `[⚙ 設定]` ボタンと `HarmonicaSettingsDialog`（3タブ構成）の初期化・設定反映 -> **PASS**
-- **TEST 8**: `StudioExportMixin` 分離後の録音・動画設定構築動作確認 ＆ `src/main.py` 行数削減（4,888行 < 5,000行） -> **PASS**
-
----
-
-## 4. 次回アクション（Ver.4.1.0 実装フェーズへの移行準備完了）
-- **Ver.4.1.0「全21課題の統合解消（UI/UX 2階層タブ刷新・折りたたみアコーディオン・公式5大プリセット再設計・演出＆起動高速化）」** の完全な実装指示書（**Batch Package 1〜5 / Micro-Step 1〜10**）を `.context/02_tasks.md` に策定完了しました。
-- 実装担当モデル（Gemini 3.8 Flash 等）に切り替え、**「Package 1 から順番に Ver.4.1.0 の実装を進めてください」** と指示するだけで、1ステップ1コミットの原則に従い安全・確実に全21課題の実装が進行します。
+## 3. 次回アクション（Builder / Gemini 3.8 への引き継ぎ指示）
+- `.context/02_tasks.md` の **Batch Package 1（Micro-Step 1 〜 2）** から順番に着手してください。
+- **1 Micro-Step 完了ごとに必ず `python -m py_compile` で構文検証を行い、指定されたコミットメッセージで Git コミットを刻んでください**（複数ステップのまとめコミットは厳禁）。
+- 1つの Batch Package（2ステップ）が完了するごとに `.context/00_handover.md` と `.context/02_tasks.md` のチェックボックスを更新してコミットし、ユーザーへ進行状況を報告してください。
