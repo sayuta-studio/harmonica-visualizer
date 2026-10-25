@@ -184,7 +184,7 @@
 
 ### 📦 Batch Package 4: `src/main.py` の安全なモジュール分割 ＆ プロジェクトフォルダ直結 ＆ Ver.4.0.0 リリース（Micro-Step 7 〜 8）
 
-#### - [ ] **Micro-Step 7: スタジオ・エクスポート制御の `src/studio_controller.py` 分離と、録音・動画出力先の `projects/<曲名>/` 完全直結**
+#### - [x] **Micro-Step 7: スタジオ・エクスポート制御の `src/studio_controller.py` 分離と、録音・動画出力先の `projects/<曲名>/` 完全直結**
 - **対象ファイル**: `src/studio_controller.py` (新規作成), `src/main.py`
 - **背景・目的**:
   1. 約5,400行に肥大化した `src/main.py` から、録音・外部伴奏・YouTubeラウドネス解析・ミキサー・動画エクスポート制御ロジック（約700〜900行）を **`StudioExportMixin` (`src/studio_controller.py`)** として安全に分離し、循環インポートゼロで `src/main.py` をスリム化する。
