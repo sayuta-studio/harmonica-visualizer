@@ -1,38 +1,39 @@
 @echo off
-chcp 65001 > nul
+setlocal
+cd /d "%~dp0"
+
 echo ====================================================
-echo  00_template ã‹ã‚‰æœ€æ–°ã®ãƒ«ãƒ¼ãƒ«ã¨å…±é€šçŸ¥è¦‹ã‚’å–å¾—ã—ã¾ã™
+echo  00_template ‚©‚çÅV‚Ìƒ‹[ƒ‹‚Æ‹¤’Ê’mŒ©‚ðŽæ“¾‚µ‚Ü‚·
 echo ====================================================
 
 set TEMPLATE_DIR=..\00_template
 
 if not exist "%TEMPLATE_DIR%" (
-    echo [ã‚¨ãƒ©ãƒ¼] è¦ªéšŽå±¤ã« 00_template ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚
-    echo ãƒ•ã‚©ãƒ«ãƒ€ã®é…ç½®ã‚’ç¢ºèªã—ã¦ãã ã•ã„ã€‚
+    echo [ƒGƒ‰[] eŠK‘w‚É 00_template ‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñB
+    echo ƒtƒHƒ‹ƒ_‚Ì”z’u‚ðŠm”F‚µ‚Ä‚­‚¾‚³‚¢B
     pause
     exit /b
 )
 
 echo.
-echo [1/2] æœ€æ–°ã®ãƒ«ãƒ¼ãƒ« (.agent/rules/) ã‚’æ›´æ–°ä¸­...
+echo [1/2] ÅV‚Ìƒ‹[ƒ‹ (.agent/rules/) ‚ðXV’†...
 if exist "%TEMPLATE_DIR%\.agent\rules" (
     xcopy /Y /E /I "%TEMPLATE_DIR%\.agent\rules" ".\.agent\rules\" > nul
-    echo  - ãƒ«ãƒ¼ãƒ«ã®æ›´æ–°ãŒå®Œäº†ã—ã¾ã—ãŸã€‚
+    echo  - ƒ‹[ƒ‹‚ÌXV‚ªŠ®—¹‚µ‚Ü‚µ‚½B
 )
 
 echo.
-echo [2/2] æœ€æ–°ã®å…±é€šçŸ¥è¦‹ (_shared_knowledge/) ã‚’æ›´æ–°ä¸­...
+echo [2/2] ÅV‚Ì‹¤’Ê’mŒ© (_shared_knowledge/) ‚ðXV’†...
 if exist "%TEMPLATE_DIR%\_shared_knowledge" (
     for %%f in ("%TEMPLATE_DIR%\_shared_knowledge\*.md") do (
         copy /Y "%%f" ".\_shared_knowledge\" > nul
     )
-    echo  - å…±é€šçŸ¥è¦‹ã®æ›´æ–°ãŒå®Œäº†ã—ã¾ã—ãŸã€‚
+    echo  - ‹¤’Ê’mŒ©‚ÌXV‚ªŠ®—¹‚µ‚Ü‚µ‚½B
 )
 
 echo.
 echo ====================================================
-echo  æ›´æ–°ãŒæ­£å¸¸ã«å®Œäº†ã—ã¾ã—ãŸï¼
-echo  â€» ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆå›ºæœ‰ã® .context ã‚„ã‚³ãƒ¼ãƒ‰ã¯ä¿è­·ã•ã‚Œã¦ã„ã¾ã™ã€‚
+echo  XV‚ª³í‚ÉŠ®—¹‚µ‚Ü‚µ‚½I
+echo  ¦ ƒvƒƒWƒFƒNƒgŒÅ—L‚Ì .context ‚âƒR[ƒh‚Í•ÛŒì‚³‚ê‚Ä‚¢‚Ü‚·B
 echo ====================================================
 pause
-

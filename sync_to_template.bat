@@ -1,35 +1,36 @@
 @echo off
-chcp 65001 > nul
+setlocal
+cd /d "%~dp0"
+
 echo ====================================================
-echo  å…±æœ‰çŸ¥è¦‹ã‚’ 00_template ã¸åŒæœŸãƒ»é‚„å…ƒã—ã¾ã™
+echo  ‹¤—L’mŒ©‚ð 00_template ‚Ö“¯ŠúEŠÒŒ³‚µ‚Ü‚·
 echo ====================================================
 
 set TARGET_INBOX=..\00_template\_shared_knowledge\inbox
 set CURRENT_DIR=.\_shared_knowledge
 
 if not exist "%TARGET_INBOX%" (
-    echo [ã‚¨ãƒ©ãƒ¼] 00_template\_shared_knowledge\inbox ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚
-    echo ãƒ•ã‚©ãƒ«ãƒ€ã®éšŽå±¤æ§‹é€ ï¼ˆè¦ªãƒ•ã‚©ãƒ«ãƒ€ã« 00_template ãŒã‚ã‚‹ã‹ï¼‰ã‚’ç¢ºèªã—ã¦ãã ã•ã„ã€‚
+    echo [ƒGƒ‰[] 00_template\_shared_knowledge\inbox ‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñB
+    echo ƒtƒHƒ‹ƒ_‚ÌŠK‘w\‘¢ieƒtƒHƒ‹ƒ_‚É 00_template ‚ª‚ ‚é‚©j‚ðŠm”F‚µ‚Ä‚­‚¾‚³‚¢B
     pause
     exit /b
 )
 
-set /p PROJ_NAME="ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆè­˜åˆ¥åï¼ˆè‹±æ•°å­—ã€ä¾‹: p01_harmonicaï¼‰ã‚’å…¥åŠ›ã—ã¦ãã ã•ã„: "
+set /p PROJ_NAME="ƒvƒƒWƒFƒNƒgŽ¯•Ê–¼i‰p”ŽšA—á: p01_harmonicaj‚ð“ü—Í‚µ‚Ä‚­‚¾‚³‚¢: "
 
 if "%PROJ_NAME%"=="" (
-    echo [ã‚¨ãƒ©ãƒ¼] ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆåãŒå…¥åŠ›ã•ã‚Œã¾ã›ã‚“ã§ã—ãŸã€‚å‡¦ç†ã‚’ä¸­æ–­ã—ã¾ã™ã€‚
+    echo [ƒGƒ‰[] ƒvƒƒWƒFƒNƒg–¼‚ª“ü—Í‚³‚ê‚Ü‚¹‚ñ‚Å‚µ‚½Bˆ—‚ð’†’f‚µ‚Ü‚·B
     pause
     exit /b
 )
 
 for %%f in ("%CURRENT_DIR%\*.md") do (
     copy /Y "%%f" "%TARGET_INBOX%\from_%PROJ_NAME%_%%~nxf" > nul
-    echo ã‚³ãƒ”ãƒ¼å®Œäº†: %%~nxf -^> %TARGET_INBOX%\from_%PROJ_NAME%_%%~nxf
+    echo ƒRƒs[Š®—¹: %%~nxf -^> %TARGET_INBOX%\from_%PROJ_NAME%_%%~nxf
 )
 
 echo.
-echo ã™ã¹ã¦ã®å…±æœ‰çŸ¥è¦‹ã‚’ 00_template\_shared_knowledge\inbox ã«å®‰å…¨ã«è»¢é€ã—ã¾ã—ãŸã€‚
-echo â€» æ—¢å­˜ã® 00_template ã®ãƒ•ã‚¡ã‚¤ãƒ«ã¯ä¸Šæ›¸ãã•ã‚Œã¦ã„ã¾ã›ã‚“ã€‚
+echo ‚·‚×‚Ä‚Ì‹¤—L’mŒ©‚ð 00_template\_shared_knowledge\inbox ‚ÉˆÀ‘S‚É“]‘—‚µ‚Ü‚µ‚½B
+echo ¦ Šù‘¶‚Ì 00_template ‚Ìƒtƒ@ƒCƒ‹‚Íã‘‚«‚³‚ê‚Ä‚¢‚Ü‚¹‚ñB
 echo.
 pause
-
