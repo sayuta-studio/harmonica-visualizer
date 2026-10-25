@@ -1,5 +1,6 @@
-# 過去の手動バックアップフォルダ・アーカイブを除外
-archives/v0_v1_notepad_prototypes/
+# 過去履歴アーカイブ・配布アーカイブを除外
+_archives/
+releases/
 
 # Python キャッシュ・仮想環境
 __pycache__/

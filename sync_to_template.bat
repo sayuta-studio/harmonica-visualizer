@@ -4,11 +4,11 @@ echo ====================================================
 echo  共有知見を 00_template へ同期・還元します
 echo ====================================================
 
-set TARGET_INBOX=..\00_template\shared_knowledge\inbox
-set CURRENT_DIR=.\shared_knowledge
+set TARGET_INBOX=..\00_template\_shared_knowledge\inbox
+set CURRENT_DIR=.\_shared_knowledge
 
 if not exist "%TARGET_INBOX%" (
-    echo [エラー] 00_template\shared_knowledge\inbox が見つかりません。
+    echo [エラー] 00_template\_shared_knowledge\inbox が見つかりません。
     echo フォルダの階層構造（親フォルダに 00_template があるか）を確認してください。
     pause
     exit /b
@@ -28,8 +28,7 @@ for %%f in ("%CURRENT_DIR%\*.md") do (
 )
 
 echo.
-echo すべての共有知見を 00_template\shared_knowledge\inbox に安全に転送しました。
+echo すべての共有知見を 00_template\_shared_knowledge\inbox に安全に転送しました。
 echo ※ 既存の 00_template のファイルは上書きされていません。
 echo.
 pause
-

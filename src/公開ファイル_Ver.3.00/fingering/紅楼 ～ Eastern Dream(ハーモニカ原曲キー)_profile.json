@@ -1,0 +1,31 @@
+{
+  "preset": "スライド最小化",
+  "monophonic_mode": "すべて有効",
+  "hide_muted_notes": false,
+  "custom_fingering": {
+    "12480_77": 1,
+    "16800_77": 1,
+    "18240_77": 1,
+    "20640_77": 1
+  },
+  "muted_notes": {
+    "110.375_82": true,
+    "110.25_81": true,
+    "110.125_79": true,
+    "110.0_74": true
+  },
+  "main_track_indices": [
+    0
+  ],
+  "accomp_track_indices": [
+    1,
+    2
+  ],
+  "transpose": 0,
+  "transpose_accomp": true,
+  "inst_type": "16穴 (64音・C調)",
+  "ext_audio_path": "",
+  "ext_offset_ms": -5000,
+  "loop_a": 1,
+  "loop_b": 58
+}
