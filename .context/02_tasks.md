@@ -60,7 +60,7 @@
 
 ---
 
-#### - [ ] **Micro-Step 3: `src/settings_manager.py` のデータ層拡張（`practice_visual` ＆ `video_presets`）**
+#### - [x] **Micro-Step 3: `src/settings_manager.py` のデータ層拡張（`practice_visual` ＆ `video_presets`）**
 - **対象ファイル**: `src/settings_manager.py`
 - **実装内容**:
   1. `VISUAL_KEYS` タプルおよび `DEFAULT_PRACTICE_VISUAL` 辞書を定義する：
