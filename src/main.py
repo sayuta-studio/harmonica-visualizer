@@ -599,7 +599,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Harmonica Visualizer v4.0.0 [Harmonica Studio Edition]")
+        self.setWindowTitle("Harmonica Visualizer v4.1.0 [Harmonica Studio Edition]")
         self.resize(1380, 880)
         self.setMinimumSize(980, 680)
         self.setAcceptDrops(True)
@@ -5118,6 +5118,26 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
                 self.btn_rec_listen.setText("⏹ 停止")
                 self.lbl_status_msg.setText(f"▶ 試聴中: {os.path.basename(target_path)}")
 
+def create_startup_splash() -> QSplashScreen:
+    pix = QPixmap(500, 260)
+    pix.fill(QColor("#0F172A"))
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(QPen(QColor("#38BDF8"), 2))
+    p.drawRoundedRect(1, 1, 498, 258, 10, 10)
+    p.setPen(QColor("#38BDF8"))
+    p.setFont(QFont("Meiryo UI", 18, QFont.Weight.Bold))
+    p.drawText(QRectF(0, 55, 500, 45), Qt.AlignmentFlag.AlignCenter, "Harmonica Visualizer v4.1.0")
+    p.setPen(QColor("#94A3B8"))
+    p.setFont(QFont("Meiryo UI", 11, QFont.Weight.Bold))
+    p.drawText(QRectF(0, 100, 500, 30), Qt.AlignmentFlag.AlignCenter, "[ Harmonica Studio Edition ]")
+    p.setPen(QColor("#E2E8F0"))
+    p.setFont(QFont("Meiryo UI", 10))
+    p.drawText(QRectF(0, 175, 500, 30), Qt.AlignmentFlag.AlignCenter, "🚀 起動準備中... OpenGL ＆ オーディオエンジンを初期化しています")
+    p.end()
+    splash = QSplashScreen(pix, Qt.WindowType.WindowStaysOnTopHint)
+    return splash
+
 def main():
     """アプリケーション起動エントリーポイント"""
     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
@@ -5126,40 +5146,26 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(MODERN_DARK_STYLE)
 
-    # 多重起動防止 (QSharedMemory)
-    shared_mem = QSharedMemory("HarmonicaVisualizer_SingleInstanceLock_v4")
-    if not shared_mem.create(1):
-        print("[Warning] Harmonica Visualizer is already running. Exiting.")
-        return 0
+    # 多重起動防止ロック (オフスクリーンテスト時は除外)
+    shared_mem = None
+    if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+        shared_mem = QSharedMemory("HarmonicaVisualizerStudio_SingleInstance_v4")
+        if not shared_mem.create(1):
+            QMessageBox.information(None, "起動中", "Harmonica Visualizer は既に起動しています。\nしばらくお待ちいただくか、タスクバーをご確認ください。")
+            sys.exit(0)
 
-    # スプラッシュ画面表示 (QSplashScreen)
-    splash_pix = QPixmap(480, 260)
-    splash_pix.fill(QColor("#0F172A"))
-    sp_painter = QPainter(splash_pix)
-    sp_painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    sp_painter.setPen(QColor("#38BDF8"))
-    sp_painter.drawRect(0, 0, 479, 259)
-    sp_painter.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
-    sp_painter.drawText(QRectF(0, 50, 480, 40), Qt.AlignmentFlag.AlignCenter, "Harmonica Studio")
-    sp_painter.setFont(QFont("Meiryo UI", 12))
-    sp_painter.setPen(QColor("#94A3B8"))
-    sp_painter.drawText(QRectF(0, 100, 480, 30), Qt.AlignmentFlag.AlignCenter, "Professional Visualizer & Studio Workflow")
-    sp_painter.setPen(QColor("#34D399"))
-    sp_painter.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-    sp_painter.drawText(QRectF(0, 140, 480, 30), Qt.AlignmentFlag.AlignCenter, "Ver.4.1.0")
-    sp_painter.end()
-
-    splash = QSplashScreen(splash_pix, Qt.WindowType.WindowStaysOnTopHint)
+    splash = create_startup_splash()
     splash.show()
-    splash.showMessage("Harmonica Studio を起動中... (Ver.4.1.0)", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter, QColor("#38BDF8"))
     app.processEvents()
 
     window = HarmonicaMainWindow()
+    window._single_instance_lock = shared_mem
     window.show()
     splash.finish(window)
 
     ret = app.exec()
-    shared_mem.detach()
+    if shared_mem is not None:
+        shared_mem.detach()
     sys.exit(ret)
 
 
