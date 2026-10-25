@@ -21,7 +21,7 @@
 ## 完了 (Done)
 - [x] **【課題C】配布用パッケージ（PyInstaller EXE）のクリーンビルドとZIP化** (2026-10-25)
   - 最新の全改修（Step 1〜8）を完全内包した `Chromatic_Harmonica_Trainer.exe`（65.7MB）をクリーンビルド。
-  - `releases/` および `v3.0/公開ファイル_Ver.3.00/` に配置し、配布用クリーン設定（`settings.json`）を適用したZIPアーカイブ（`Chromatic_Harmonica_Trainer_Ver.3.00.zip`: 65.4MB）を生成完了。
+  - `releases/` および `src/公開ファイル_Ver.3.00/` に配置し、配布用クリーン設定（`settings.json`）を適用したZIPアーカイブ（`Chromatic_Harmonica_Trainer_Ver.3.00.zip`: 65.4MB）を生成完了。
 - [x] **Step 8: フェードイン・前余白・タイトルの完全タイムライン同期** (コミット: `8d77ced`)
   - `_draw_title_overlay` の基準時間を楽曲時間（`cur_sec`）から動画絶対時間（`t_in_video`）に刷新。
   - 前余白（例: 5秒）設定時、動画開始と同時に黒フェードインしてタイトルが浮かび上がり、演奏開始直前に綺麗にフェードアウトする完全同期を確立。
