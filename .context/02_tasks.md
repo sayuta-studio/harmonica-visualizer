@@ -133,13 +133,26 @@
 
 ---
 
-#### - [ ] **Micro-Step 7: 全体結合検証・引き継ぎドキュメント更新・Gitタグ `v3.1.0` 付与**
+#### - [x] **Micro-Step 7: 全体結合検証・引き継ぎドキュメント更新・Gitタグ `v3.1.0` 付与**
 - **対象ファイル**: `.context/00_handover.md`, `.context/02_tasks.md`
 - **実装内容**:
   1. 全ファイルの構文チェックとプリセット切替・マイグレーション動作の検証スクリプトを実行。
   2. `.context/02_tasks.md` の Micro-Step 1〜7 を完了（`[x]`）に更新し、`.context/00_handover.md` を `v3.1.0` 完了状態に更新してコミット。
   3. Gitタグ `v3.1.0`（Annotated Tag）を付与する。
 - **コミットメッセージ**: `docs(release): complete v3.1.0 preset architecture milestone and update handover`
+
+---
+
+## 完了 (Done)
+- [x] **【v3.1.0】練習環境と動画出力プリセットの分離・UI/UX抜本改修（Micro-Step 1〜7 完遂）** (2026-10-25)
+  - Micro-Step 1: `src/harmonica_map.py` へのカスタム運指判定ヘルパー追加 (`c6f6928`)
+  - Micro-Step 2: `src/main.py` の移調ロック制御 ＆ 残存インラインimport除去 (`a698ae9`)
+  - Micro-Step 3: `src/settings_manager.py` のデータ層拡張（`practice_visual` ＆ `video_presets` 自動マイグレーション） (`1c7f4ff`)
+  - Micro-Step 4: `src/main.py` へのビジュアル状態抽出・適用ヘルパー導入 ＆ render_settings ビルダー統合 (`886fe2d`)
+  - Micro-Step 5: `🎨 画面作り` タブの編集対象ターゲット切替（練習用 vs 動画プリセット）とタブ連動分離 (`4584b3b`)
+  - Micro-Step 6: `🎬 動画出力` タブへの動画プリセット管理UI ＆ 練習コピーブリッジ追加 (`c5ed34c`)
+  - Micro-Step 7: 全体結合検証（オフスクリーンQt自動テスト通過）、ドキュメント更新、Gitタグ `v3.1.0` 付与
+- [x] **タスク粒度の2層構造化知見（Gotcha #8: Micro Commit × Batch Package）の記録** (2026-10-25) (`22d031b`)
 
 ---
 

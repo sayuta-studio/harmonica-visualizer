@@ -549,7 +549,7 @@ class HarmonicaMainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Harmonica Visualizer v3.0 [PyQt6 64-bit OpenGL Edition]")
+        self.setWindowTitle("Harmonica Visualizer v3.1.0 [PyQt6 64-bit OpenGL Edition]")
         self.resize(1380, 880)
         self.setMinimumSize(980, 680)
         self.setAcceptDrops(True)
