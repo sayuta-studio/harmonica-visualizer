@@ -1174,11 +1174,22 @@ class HarmonicaGLWidget(QOpenGLWidget):
                             painter.setBrush(Qt.BrushStyle.NoBrush)
                             painter.drawPolygon(QPolygonF(poly_pts))
 
-                    # 運指変更モード時：編集可能ノーツの強調白枠表示 (除外ノーツは非表示)
+                    # 運指変更モード時：編集可能ノーツの明暗適応・二重コントラスト枠表示 (除外ノーツは非表示)
                     if not is_muted and getattr(self, "fingering_edit_mode", False) and nd.get("is_editable", False):
-                        painter.setPen(QPen(QColor(255, 255, 255, 230), max(1.8, 2.0 * scale)))
+                        lum = 0.299 * fill_color.red() + 0.587 * fill_color.green() + 0.114 * fill_color.blue()
                         painter.setBrush(Qt.BrushStyle.NoBrush)
-                        painter.drawPolygon(QPolygonF(poly_pts))
+                        if lum > 175:
+                            # 白や高輝度ノーツ（モノクロテーマ等）: 外側ダーク枠 ＋ 内側シアン強調枠
+                            painter.setPen(QPen(QColor(15, 23, 42, 250), max(3.0, 3.4 * scale)))
+                            painter.drawPolygon(QPolygonF(poly_pts))
+                            painter.setPen(QPen(QColor(0, 229, 255, 255), max(1.5, 1.8 * scale)))
+                            painter.drawPolygon(QPolygonF(poly_pts))
+                        else:
+                            # 通常・暗色ノーツ: 外側黒縁 ＋ 内側白枠
+                            painter.setPen(QPen(QColor(0, 0, 0, 200), max(2.8, 3.2 * scale)))
+                            painter.drawPolygon(QPolygonF(poly_pts))
+                            painter.setPen(QPen(QColor(255, 255, 255, 245), max(1.5, 1.8 * scale)))
+                            painter.drawPolygon(QPolygonF(poly_pts))
 
                     # 半音ノーツ装飾 (除外ノーツは装飾しない)
                     if not is_muted and is_lever_on:

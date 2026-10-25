@@ -193,17 +193,17 @@ CURRENT_SONG_PROFILE_EXTRA = {}
 
 
 def format_transpose_key_label(transpose_val: int) -> str:
-    """移調値を判読しやすいラベルに変換 (例: 0 -> '原曲キー(±0)', 2 -> 'Key+2(+2st)', -3 -> 'Key-3(-3st)')"""
+    """移調値を判読しやすいラベルに変換 (例: 0 -> '原曲キー', 2 -> 'Key +2', -3 -> 'Key -3')"""
     try:
         val = int(transpose_val)
-    except (ValueError, TypeError):
+    except Exception:
         val = 0
     if val == 0:
-        return "原曲キー(±0)"
+        return "原曲キー"
     elif val > 0:
-        return f"Key+{val}(+{val}st)"
+        return f"Key +{val}"
     else:
-        return f"Key{val}({val}st)"
+        return f"Key {val}"
 
 
 def build_current_pattern_snapshot(transpose: int = 0, transpose_accomp: bool = True) -> dict:

@@ -4079,9 +4079,12 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.gl_widget.set_timeline_data(self.timeline)
         self.audio_engine.set_transpose(val, trans_acc)
         self._save_current_song_profile()
-        sign = f"+{val}" if val > 0 else str(val)
         acc_str = " (伴奏含む)" if trans_acc else " (主旋律のみ)"
-        self.lbl_status_msg.setText(f"🎹 移調: {sign} st ({'原曲キー' if val == 0 else f'{sign}半音'}){acc_str}")
+        if val == 0:
+            self.lbl_status_msg.setText(f"🎹 原曲キー{acc_str}")
+        else:
+            sign = f"+{val}" if val > 0 else str(val)
+            self.lbl_status_msg.setText(f"🎹 Key {sign}{acc_str}")
         self._check_out_of_range_and_notify()
         self._save_current_settings()
 
