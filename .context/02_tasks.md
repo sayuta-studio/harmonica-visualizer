@@ -24,7 +24,7 @@
 
 ---
 
-#### - [ ] **Micro-Step 2: `src/main.py` の移調ロック制御 ＆ 残存インラインimport除去**
+#### - [x] **Micro-Step 2: `src/main.py` の移調ロック制御 ＆ 残存インラインimport除去**
 - **対象ファイル**: `src/main.py`
 - **実装内容**:
   1. **残存インライン `import` の除去（Gotcha #1 防衛）**:

@@ -2472,6 +2472,7 @@ class HarmonicaMainWindow(QMainWindow):
             lever_off_path=s.get("skin_lever_off_path", ""),
             lever_on_path=s.get("skin_lever_on_path", "")
         )
+        self._update_transpose_lock_state()
 
     def _save_current_settings(self):
         self.user_settings["inst_type"] = self.inst_combo.currentText()
@@ -2844,6 +2845,7 @@ class HarmonicaMainWindow(QMainWindow):
         note_name = nd.get("name_jp", "")
         cand_str = f"{cand['hole']}穴 {cand['action']} {cand['lever']}"
         self.lbl_status_msg.setText(f"🎯 運指切替: {note_name} → {cand_str}")
+        self._update_transpose_lock_state()
 
     def _on_open_fingering_dialog(self):
         from dialogs import FingeringEditorDialog
@@ -2855,7 +2857,6 @@ class HarmonicaMainWindow(QMainWindow):
             parent=self
         )
         if dlg.exec():
-            import harmonica_map
             if hasattr(self, "combo_fing_preset"):
                 self.combo_fing_preset.blockSignals(True)
                 self.combo_fing_preset.setCurrentText(harmonica_map.normalize_fingering_preset(harmonica_map.CURRENT_SONG_PRESET))
@@ -2865,6 +2866,7 @@ class HarmonicaMainWindow(QMainWindow):
                 self.combo_monophonic_mode.setCurrentText(harmonica_map.CURRENT_MONOPHONIC_MODE)
                 self.combo_monophonic_mode.blockSignals(False)
             self._update_song_info_labels()
+            self._update_transpose_lock_state()
             self.lbl_status_msg.setText("💾 変え指設定を保存・適用しました")
 
     def _on_reset_song_fingering(self):
@@ -2875,8 +2877,7 @@ class HarmonicaMainWindow(QMainWindow):
             f"曲「{self.timeline.filename}」の個別運指データをすべて初期化（リセット）し、\n運指プリセットの初期状態へ戻しますか？",
             default_yes=False
         ):
-            from harmonica_map import reset_song_fingering
-            reset_song_fingering(self.timeline.filepath)
+            harmonica_map.reset_song_fingering(self.timeline.filepath)
             self.timeline.rebind_fingerings(self.inst_combo.currentText())
             if self.audio_engine:
                 self.audio_engine.load_timeline(self.timeline)
@@ -2884,6 +2885,7 @@ class HarmonicaMainWindow(QMainWindow):
             self.gl_widget.invalidate_static_cache()
             self.gl_widget.update()
             self._check_out_of_range_and_notify()
+            self._update_transpose_lock_state()
             self.lbl_status_msg.setText("🔄 曲別の運指・除外データを初期状態にリセットしました")
 
     # =========================================================================
@@ -2974,6 +2976,24 @@ class HarmonicaMainWindow(QMainWindow):
         self.audio_engine.seek(sec)
         self._sync_ext_audio_playback(st == SharedClockBridge.STATE_PLAYING, sec)
         self.lbl_status_msg.setText(f"⏩ {m:03d} 小節の頭へジャンプしました")
+
+    def _update_transpose_lock_state(self):
+        """カスタム運指が1件以上存在する場合、音名ズレ防止のため移調コントロールをロック"""
+        locked = harmonica_map.has_custom_fingering()
+        for w_name in ("btn_trans_down_oct", "btn_trans_minus_1", "spin_transpose", "btn_trans_plus_1", "btn_trans_up_oct", "chk_transpose_accomp"):
+            w = getattr(self, w_name, None)
+            if w is not None:
+                w.setEnabled(not locked)
+        if hasattr(self, "spin_transpose"):
+            if locked:
+                self.spin_transpose.setStyleSheet("background-color: #2D1A10; border: 1px solid #D97706; color: #FBBF24; font-weight: bold;")
+                self.spin_transpose.setToolTip(
+                    "🔒 カスタム運指（変え指）が設定されているため、音名ズレ防止のため移調をロックしています。\n"
+                    "移調を変更したい場合は、練習タブの「🔄 初期化」から個別運指をリセットしてください。"
+                )
+            else:
+                self.spin_transpose.setStyleSheet("")
+                self.spin_transpose.setToolTip("半音単位の移調 (-24〜+24半音 / ±2オクターブ) [直接入力 / マウスホイールで変更]")
 
     def _on_transpose_changed(self, *args):
         val = self.spin_transpose.value()
@@ -3104,7 +3124,6 @@ class HarmonicaMainWindow(QMainWindow):
         if getattr(self, "_is_loading_midi", False):
             return
         if hasattr(self, "timeline") and self.timeline and self.timeline.filepath:
-            from harmonica_map import save_song_profile
             extra = {
                 "main_track_indices": getattr(self.timeline, "main_track_indices", [self.timeline.main_track_idx]),
                 "accomp_track_indices": getattr(self.timeline, "accomp_track_indices", []),
@@ -3118,7 +3137,7 @@ class HarmonicaMainWindow(QMainWindow):
                 "loop_a": self.spin_loop_a.value(),
                 "loop_b": self.spin_loop_b.value(),
             }
-            save_song_profile(self.timeline.filepath, extra)
+            harmonica_map.save_song_profile(self.timeline.filepath, extra)
 
     def _check_out_of_range_and_notify(self):
         """音域外ノーツの存在を検出してステータスバー等に通知 (A案スリム化＋詳細ツールチップ)"""
@@ -3240,7 +3259,6 @@ class HarmonicaMainWindow(QMainWindow):
                 self._on_record_toggle()
             self._is_loading_midi = True
             settings_manager.add_recent_file(filepath)
-            import harmonica_map
             prof = harmonica_map.load_song_profile(filepath)
 
             # 楽器復元 (プロファイル指定または現在のUI値)
@@ -3280,7 +3298,6 @@ class HarmonicaMainWindow(QMainWindow):
             # 単音化 & 除外ノーツ非表示復元（未設定ならデフォルトにリセット）
             mono_mode = prof.get("monophonic_mode", "すべて有効")
             hide_muted = bool(prof.get("hide_muted_notes", False))
-            import harmonica_map
             harmonica_map.CURRENT_MONOPHONIC_MODE = mono_mode
             if hasattr(self, "combo_monophonic_mode"):
                 self.combo_monophonic_mode.blockSignals(True)
@@ -3347,6 +3364,7 @@ class HarmonicaMainWindow(QMainWindow):
 
             self.btn_play.setText("▶ 再生")
             self._sync_ext_audio_playback(False, 0.0)
+            self._update_transpose_lock_state()
             self.lbl_status_msg.setText(f"📂 読込完了: {self.timeline.filename}")
             self._check_out_of_range_and_notify()
         except Exception as e:
