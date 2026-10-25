@@ -86,7 +86,7 @@
 
 ---
 
-#### - [ ] **Micro-Step 4: `src/main.py` へのビジュアル状態抽出・適用ヘルパー導入**
+#### - [x] **Micro-Step 4: `src/main.py` へのビジュアル状態抽出・適用ヘルパー導入**
 - **対象ファイル**: `src/main.py`
 - **実装内容**:
   1. `self._visual_edit_target = "practice"`（`"practice"` または `"video"`）属性を `__init__` に追加する。

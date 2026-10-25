@@ -642,7 +642,7 @@ class HarmonicaMainWindow(QMainWindow):
         self._update_song_info_labels()
         self._reset_loop_ranges_to_song()
         self.gl_widget.on_fingering_changed_callback = self._on_canvas_fingering_changed
-        import harmonica_map
+        self._visual_edit_target = "practice"
         self.combo_fing_preset.blockSignals(True)
         self.combo_fing_preset.setCurrentText(harmonica_map.CURRENT_SONG_PRESET)
         self.combo_fing_preset.blockSignals(False)
@@ -2369,6 +2369,163 @@ class HarmonicaMainWindow(QMainWindow):
     def _on_chroma_bg_changed(self, val: str):
         is_chroma = ("クロマキー" in self.combo_exp_style.currentText()) and (self.tab_widget.currentIndex() == 3)
         self.gl_widget.set_canvas_bg_color(val, is_chromakey=is_chroma)
+
+    # =========================================================================
+    # ビジュアル設定の抽出・適用ヘルパー (v3.1.0)
+    # =========================================================================
+    def _get_current_visual_dict_from_ui(self) -> dict:
+        """現在の 🎨 画面作り タブの各ウィジェットからビジュアル設定辞書を抽出"""
+        return {
+            "trajectory_mode": self.traj_combo.currentText() if hasattr(self, "traj_combo") else "3段階 (練習標準)",
+            "lang_mode": self.lang_combo.currentText() if hasattr(self, "lang_combo") else "ドレミ",
+            "color_theme": self.combo_theme.currentText() if hasattr(self, "combo_theme") else "ノーマル",
+            "color_blow": self.gl_widget.color_blow.name() if hasattr(self.gl_widget, "color_blow") else "#FF5500",
+            "color_draw": self.gl_widget.color_draw.name() if hasattr(self.gl_widget, "color_draw") else "#00BFFF",
+            "lever_deco_mode": self.combo_lever.currentText() if hasattr(self, "combo_lever") else "センターライン (芯線)",
+            "note_opacity": self.slider_op.value() if hasattr(self, "slider_op") else 100,
+            "show_notes": self.chk_notes.isChecked() if hasattr(self, "chk_notes") else True,
+            "show_lookahead": self.chk_lookahead.isChecked() if hasattr(self, "chk_lookahead") else True,
+            "show_grid": self.chk_grid.isChecked() if hasattr(self, "chk_grid") else True,
+            "show_bar_lines": self.chk_bar_lines.isChecked() if hasattr(self, "chk_bar_lines") else True,
+            "show_hole_num": self.chk_hole_num.isChecked() if hasattr(self, "chk_hole_num") else True,
+            "hole_num_style": self.combo_hole_num_style.currentText() if hasattr(self, "combo_hole_num_style") else "実機標準 (低音ドット付)",
+            "grid4_mode": self.combo_grid4.currentText() if hasattr(self, "combo_grid4") else "4音グリッド表示",
+            "show_ring": self.chk_ring.isChecked() if hasattr(self, "chk_ring") else True,
+            "show_glow": self.chk_glow.isChecked() if hasattr(self, "chk_glow") else True,
+            "show_legend": self.chk_legend.isChecked() if hasattr(self, "chk_legend") else True,
+            "bg_image_enabled": self.chk_bg_enable.isChecked() if hasattr(self, "chk_bg_enable") else True,
+            "bg_image_path": getattr(self.gl_widget, "bg_image_path", ""),
+            "bg_dim_ratio": self.slider_bg_dim.value() if hasattr(self, "slider_bg_dim") else 60,
+            "bg_fit_mode": self.combo_bg_fit.currentText() if hasattr(self, "combo_bg_fit") else "中央トリミング (画面いっぱい)",
+            "bg_rotation": getattr(self, "bg_rotation_deg", 0),
+            "skin_enabled": self.chk_skin.isChecked() if hasattr(self, "chk_skin") else True,
+            "skin_mouthpiece_path": getattr(self.gl_widget, "skin_mouthpiece_path", ""),
+            "skin_lever_off_path": getattr(self.gl_widget, "skin_lever_off_path", ""),
+            "skin_lever_on_path": getattr(self.gl_widget, "skin_lever_on_path", ""),
+        }
+
+    def _apply_visual_dict_to_ui_and_gl(self, vis: dict, aspect_ratio: str = "16:9", is_chromakey: bool = False, chroma_color: str = "ノーマル（黒）"):
+        """指定されたビジュアル設定辞書をUIウィジェットおよびGLキャンバスへ一括適用"""
+        if not vis or not isinstance(vis, dict):
+            return
+
+        # GLウィジェットへの反映
+        self.gl_widget.set_aspect_ratio(aspect_ratio)
+        self.gl_widget.set_canvas_bg_color(chroma_color, is_chromakey=is_chromakey)
+        self.gl_widget.set_theme_colors(vis.get("color_blow", "#FF5500"), vis.get("color_draw", "#00BFFF"))
+        self.gl_widget.set_lever_deco_mode(vis.get("lever_deco_mode", "センターライン (芯線)"))
+        self.gl_widget.set_note_opacity(vis.get("note_opacity", 100))
+        self.gl_widget.set_show_notes(vis.get("show_notes", True))
+        self.gl_widget.set_show_lookahead(vis.get("show_lookahead", True))
+        self.gl_widget.set_show_grid(vis.get("show_grid", True))
+        self.gl_widget.set_show_bar_lines(vis.get("show_bar_lines", True))
+        self.gl_widget.set_show_hole_num(vis.get("show_hole_num", True))
+        self.gl_widget.set_hole_num_style(vis.get("hole_num_style", "実機標準 (低音ドット付)"))
+        self.gl_widget.set_use_ring(vis.get("show_ring", True))
+        self.gl_widget.set_show_glow(vis.get("show_glow", True))
+        self.gl_widget.set_show_legend(vis.get("show_legend", True))
+        g4_mode = vis.get("grid4_mode", "4音グリッド表示")
+        self.gl_widget.set_show_grid4(g4_mode == "4音グリッド表示")
+        traj_m = vis.get("trajectory_mode", "3段階 (練習標準)")
+        self.gl_widget.set_trajectory_mode(traj_m)
+
+        self.gl_widget.set_background_image(
+            vis.get("bg_image_path", ""),
+            dim_ratio=int(vis.get("bg_dim_ratio", 60)),
+            fit_mode=str(vis.get("bg_fit_mode", "中央トリミング (画面いっぱい)")),
+            rotation=int(vis.get("bg_rotation", 0)),
+            enabled=bool(vis.get("bg_image_enabled", True))
+        )
+        self.gl_widget.set_skin_enabled(bool(vis.get("skin_enabled", True)))
+        self.gl_widget.set_custom_skins(
+            mouthpiece_path=vis.get("skin_mouthpiece_path", ""),
+            lever_off_path=vis.get("skin_lever_off_path", ""),
+            lever_on_path=vis.get("skin_lever_on_path", "")
+        )
+
+        # UIコントロールへの同期 (blockSignals 徹底)
+        for w_name, val, is_combo, is_slider, is_check in (
+            ("traj_combo", traj_m, True, False, False),
+            ("lang_combo", vis.get("lang_mode", "ドレミ"), True, False, False),
+            ("combo_theme", vis.get("color_theme", "ノーマル"), True, False, False),
+            ("combo_lever", vis.get("lever_deco_mode", "センターライン (芯線)"), True, False, False),
+            ("slider_op", int(vis.get("note_opacity", 100)), False, True, False),
+            ("chk_notes", bool(vis.get("show_notes", True)), False, False, True),
+            ("chk_lookahead", bool(vis.get("show_lookahead", True)), False, False, True),
+            ("chk_grid", bool(vis.get("show_grid", True)), False, False, True),
+            ("chk_bar_lines", bool(vis.get("show_bar_lines", True)), False, False, True),
+            ("chk_hole_num", bool(vis.get("show_hole_num", True)), False, False, True),
+            ("combo_hole_num_style", vis.get("hole_num_style", "実機標準 (低音ドット付)"), True, False, False),
+            ("combo_grid4", g4_mode, True, False, False),
+            ("chk_ring", bool(vis.get("show_ring", True)), False, False, True),
+            ("chk_glow", bool(vis.get("show_glow", True)), False, False, True),
+            ("chk_legend", bool(vis.get("show_legend", True)), False, False, True),
+            ("chk_bg_enable", bool(vis.get("bg_image_enabled", True)), False, False, True),
+            ("combo_bg_fit", vis.get("bg_fit_mode", "中央トリミング (画面いっぱい)"), True, False, False),
+            ("slider_bg_dim", int(vis.get("bg_dim_ratio", 60)), False, True, False),
+            ("chk_skin", bool(vis.get("skin_enabled", True)), False, False, True),
+        ):
+            w = getattr(self, w_name, None)
+            if w is not None:
+                w.blockSignals(True)
+                if is_combo:
+                    w.setCurrentText(str(val))
+                elif is_slider:
+                    w.setValue(int(val))
+                elif is_check:
+                    w.setChecked(bool(val))
+                w.blockSignals(False)
+
+        if hasattr(self, "lbl_op_val") and hasattr(self, "slider_op"):
+            self.lbl_op_val.setText(f"{self.slider_op.value()}%")
+        if hasattr(self, "lbl_bg_dim_val") and hasattr(self, "slider_bg_dim"):
+            self.lbl_bg_dim_val.setText(f"{self.slider_bg_dim.value()}%")
+        if hasattr(self, "btn_col_blow"):
+            self._update_color_btn(self.btn_col_blow, vis.get("color_blow", "#FF5500"))
+        if hasattr(self, "btn_col_draw"):
+            self._update_color_btn(self.btn_col_draw, vis.get("color_draw", "#00BFFF"))
+        self.gl_widget.update()
+
+    def _build_export_render_settings(self, preset: dict = None) -> dict:
+        """選択中の動画プリセット（または引数指定プリセット）から動画レンダラー向け設定辞書を統一生成"""
+        if preset is None:
+            preset = settings_manager.get_active_preset_dict(self.user_settings)
+
+        exp_style = preset.get("export_style", self.combo_exp_style.currentText() if hasattr(self, "combo_exp_style") else "完成動画 (背景・タイトル合成)")
+        bg_col = preset.get("export_bg_color", self.combo_exp_bg.currentText() if hasattr(self, "combo_exp_bg") else "ノーマル（黒）")
+
+        return {
+            "inst_type": self.inst_combo.currentText(),
+            "trajectory_mode": preset.get("trajectory_mode", "3段階 (練習標準)"),
+            "lang_mode": preset.get("lang_mode", "ドレミ"),
+            "lever_deco_mode": preset.get("lever_deco_mode", "センターライン (芯線)"),
+            "note_speed_ratio": self.gl_widget.note_speed_ratio,
+            "default_bpm": getattr(self.timeline, "default_bpm", 120.0),
+            "show_notes": preset.get("show_notes", True),
+            "show_grid": preset.get("show_grid", True),
+            "show_bar_lines": preset.get("show_bar_lines", True),
+            "show_grid4": preset.get("grid4_mode", "4音グリッド表示"),
+            "show_hole_num": preset.get("show_hole_num", True),
+            "hole_num_style": preset.get("hole_num_style", "実機標準 (低音ドット付)"),
+            "show_legend": preset.get("show_legend", False),
+            "show_lookahead": preset.get("show_lookahead", True),
+            "use_ring": preset.get("show_ring", True),
+            "show_glow": preset.get("show_glow", True),
+            "note_opacity": preset.get("note_opacity", 100),
+            "color_blow": preset.get("color_blow", "#FF5500"),
+            "color_draw": preset.get("color_draw", "#00BFFF"),
+            "canvas_bg_color": bg_col if "クロマキー" in exp_style else "#0d0d0d",
+            "export_style": exp_style,
+            "skin_enabled": preset.get("skin_enabled", True),
+            "skin_mouthpiece_path": preset.get("skin_mouthpiece_path", "") or getattr(self.gl_widget, "skin_mouthpiece_path", ""),
+            "skin_lever_off_path": preset.get("skin_lever_off_path", "") or getattr(self.gl_widget, "skin_lever_off_path", ""),
+            "skin_lever_on_path": preset.get("skin_lever_on_path", "") or getattr(self.gl_widget, "skin_lever_on_path", ""),
+            "bg_image_path": preset.get("bg_image_path", ""),
+            "bg_fit_mode": preset.get("bg_fit_mode", "中央トリミング (画面いっぱい)"),
+            "bg_rotation": preset.get("bg_rotation", 0),
+            "bg_dim_ratio": preset.get("bg_dim_ratio", 60),
+            "bg_image_enabled": preset.get("bg_image_enabled", True),
+        }
 
     # =========================================================================
     # 設定の反映と永続化
@@ -4273,38 +4430,7 @@ class HarmonicaMainWindow(QMainWindow):
         cur_sec = max(0.0, self.clock.get_current_base_sec())
         w, h = calc_export_resolution(self.combo_exp_res.currentText(), self.ratio_combo.currentText())
 
-        render_settings = {
-            "inst_type": self.inst_combo.currentText(),
-            "trajectory_mode": self.traj_combo.currentText(),
-            "lang_mode": self.lang_combo.currentText(),
-            "lever_deco_mode": self.combo_lever.currentText(),
-            "note_speed_ratio": self.gl_widget.note_speed_ratio,
-            "default_bpm": getattr(self.timeline, "default_bpm", 120.0),
-            "show_notes": self.gl_widget.show_notes,
-            "show_grid": self.gl_widget.show_grid,
-            "show_bar_lines": getattr(self.gl_widget, "show_bar_lines", True),
-            "show_grid4": self.combo_grid4.currentText(),
-            "show_hole_num": self.gl_widget.show_hole_num,
-            "hole_num_style": getattr(self.gl_widget, "hole_num_style", "実機標準 (低音ドット付)"),
-            "show_legend": self.gl_widget.show_legend,
-            "show_lookahead": self.gl_widget.show_lookahead,
-            "use_ring": self.gl_widget.use_ring,
-            "show_glow": self.gl_widget.is_glow_on,
-            "note_opacity": self.slider_op.value(),
-            "color_blow": self.gl_widget.color_blow.name() if hasattr(self.gl_widget, "color_blow") else "#FF9900",
-            "color_draw": self.gl_widget.color_draw.name() if hasattr(self.gl_widget, "color_draw") else "#00FFFF",
-            "canvas_bg_color": self.combo_exp_bg.currentText() if "クロマキー" in self.combo_exp_style.currentText() else "#0d0d0d",
-            "export_style": self.combo_exp_style.currentText(),
-            "skin_enabled": self.chk_skin.isChecked(),
-            "skin_mouthpiece_path": getattr(self.gl_widget, "skin_mouthpiece_path", "") or self.user_settings.get("skin_mouthpiece_path", ""),
-            "skin_lever_off_path": getattr(self.gl_widget, "skin_lever_off_path", "") or self.user_settings.get("skin_lever_off_path", ""),
-            "skin_lever_on_path": getattr(self.gl_widget, "skin_lever_on_path", "") or self.user_settings.get("skin_lever_on_path", ""),
-            "bg_image_path": self.user_settings.get("bg_image_path", ""),
-            "bg_fit_mode": self.combo_bg_fit.currentText(),
-            "bg_rotation": self.bg_rotation_deg,
-            "bg_dim_ratio": self.slider_bg_dim.value(),
-            "bg_image_enabled": self.chk_bg_enable.isChecked() if hasattr(self, "chk_bg_enable") else True,
-        }
+        render_settings = self._build_export_render_settings()
 
         title_overlay = {
             "enabled": self.chk_exp_title.isChecked() and ("クロマキー" not in self.combo_exp_style.currentText()) and ("完全背景透過" not in self.combo_exp_style.currentText()),
@@ -4409,39 +4535,8 @@ class HarmonicaMainWindow(QMainWindow):
             elif self.ext_audio_path and os.path.isfile(self.ext_audio_path):
                 audio_path = self.ext_audio_path
 
-        # レンダラー向け設定ディクト
-        render_settings = {
-            "inst_type": self.inst_combo.currentText(),
-            "trajectory_mode": self.traj_combo.currentText(),
-            "lang_mode": self.lang_combo.currentText(),
-            "lever_deco_mode": self.combo_lever.currentText(),
-            "note_speed_ratio": self.gl_widget.note_speed_ratio,
-            "default_bpm": getattr(self.timeline, "default_bpm", 120.0),
-            "show_notes": self.gl_widget.show_notes,
-            "show_grid": self.gl_widget.show_grid,
-            "show_bar_lines": getattr(self.gl_widget, "show_bar_lines", True),
-            "show_grid4": self.combo_grid4.currentText(),
-            "show_hole_num": self.gl_widget.show_hole_num,
-            "hole_num_style": getattr(self.gl_widget, "hole_num_style", "実機標準 (低音ドット付)"),
-            "show_legend": self.gl_widget.show_legend,
-            "show_lookahead": self.gl_widget.show_lookahead,
-            "use_ring": self.gl_widget.use_ring,
-            "show_glow": self.gl_widget.is_glow_on,
-            "note_opacity": self.slider_op.value(),
-            "color_blow": self.gl_widget.color_blow.name() if hasattr(self.gl_widget, "color_blow") else "#FF9900",
-            "color_draw": self.gl_widget.color_draw.name() if hasattr(self.gl_widget, "color_draw") else "#00FFFF",
-            "canvas_bg_color": self.combo_exp_bg.currentText() if "クロマキー" in self.combo_exp_style.currentText() else "#0d0d0d",
-            "export_style": self.combo_exp_style.currentText(),
-            "skin_enabled": self.chk_skin.isChecked(),
-            "skin_mouthpiece_path": getattr(self.gl_widget, "skin_mouthpiece_path", "") or self.user_settings.get("skin_mouthpiece_path", ""),
-            "skin_lever_off_path": getattr(self.gl_widget, "skin_lever_off_path", "") or self.user_settings.get("skin_lever_off_path", ""),
-            "skin_lever_on_path": getattr(self.gl_widget, "skin_lever_on_path", "") or self.user_settings.get("skin_lever_on_path", ""),
-            "bg_image_path": self.user_settings.get("bg_image_path", ""),
-            "bg_fit_mode": self.combo_bg_fit.currentText(),
-            "bg_rotation": self.bg_rotation_deg,
-            "bg_dim_ratio": self.slider_bg_dim.value(),
-            "bg_image_enabled": self.chk_bg_enable.isChecked() if hasattr(self, "chk_bg_enable") else True,
-        }
+        # レンダラー向け設定ディクト (v3.1.0 共通生成)
+        render_settings = self._build_export_render_settings()
 
         # タイトルカード情報
         title_text = self.txt_exp_title.text().strip() or (self.timeline.filename or "")
