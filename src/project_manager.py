@@ -85,10 +85,12 @@ def get_active_audio_dir() -> str:
         return audio_dir
     return get_portable_path("temp")
 
-def to_project_rel_path(abs_path: str, proj_dir: Optional[str] = None) -> str:
+def to_project_rel_path(abs_path: str, proj_dir: Any = None) -> str:
     """プロジェクトフォルダ内のファイルであれば相対パス（スラッシュ区切り）に変換"""
     if not abs_path:
         return ""
+    if isinstance(proj_dir, dict):
+        proj_dir = proj_dir.get("project_dir")
     p_dir = proj_dir or get_active_project_dir()
     if not p_dir:
         return abs_path
@@ -105,10 +107,12 @@ def to_project_rel_path(abs_path: str, proj_dir: Optional[str] = None) -> str:
         pass
     return abs_path
 
-def from_project_rel_path(stored_path: str, proj_dir: Optional[str] = None) -> str:
+def from_project_rel_path(stored_path: str, proj_dir: Any = None) -> str:
     """相対パスまたは旧絶対パスを、現在のプロジェクトフォルダ基準の絶対パスに解決"""
     if not stored_path:
         return ""
+    if isinstance(proj_dir, dict):
+        proj_dir = proj_dir.get("project_dir")
     p_dir = proj_dir or get_active_project_dir()
     if not p_dir:
         return stored_path

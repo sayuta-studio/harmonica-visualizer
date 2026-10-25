@@ -551,7 +551,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Harmonica Visualizer v3.2.0 [PyQt6 64-bit OpenGL Edition]")
+        self.setWindowTitle("Harmonica Visualizer v4.0.0 [Harmonica Studio Edition]")
         self.resize(1380, 880)
         self.setMinimumSize(980, 680)
         self.setAcceptDrops(True)
@@ -3079,6 +3079,16 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             if "practice_visual" not in self.user_settings:
                 self.user_settings["practice_visual"] = copy.deepcopy(settings_manager.DEFAULT_PRACTICE_VISUAL)
             self.user_settings["practice_visual"].update(vis_cur)
+            if hasattr(self, "combo_prac_traj"):
+                self.user_settings["practice_visual"].update({
+                    "trajectory_mode": self.combo_prac_traj.currentText(),
+                    "lang_mode": self.combo_prac_lang.currentText(),
+                    "grid4_mode": self.combo_prac_grid4.currentText(),
+                    "color_theme": self.combo_prac_theme.currentText(),
+                    "show_lookahead": self.chk_prac_lookahead.isChecked(),
+                    "show_bar_lines": self.chk_prac_bar_lines.isChecked(),
+                    "show_legend": self.chk_prac_legend.isChecked(),
+                })
 
         settings_manager.save_settings(self.user_settings)
 

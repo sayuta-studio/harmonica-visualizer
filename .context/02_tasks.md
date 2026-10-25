@@ -204,7 +204,7 @@
 
 ---
 
-#### - [ ] **Micro-Step 8: Ver.4.0.0 全体結合テスト (`tests/verify_v400_studio.py`) 実行・ドキュメント更新・Gitタグ `v4.0.0` 付与**
+#### - [x] **Micro-Step 8: Ver.4.0.0 全体結合テスト (`tests/verify_v400_studio.py`) 実行・ドキュメント更新・Gitタグ `v4.0.0` 付与**
 - **対象ファイル**: `src/main.py`, `tests/verify_v400_studio.py` (新規作成), `.context/00_handover.md`, `.context/01_architecture.md`, `.context/02_tasks.md`
 - **実装内容**:
   1. `src/main.py` のウィンドウタイトルを **`Harmonica Visualizer v4.0.0 [Harmonica Studio Edition]`** に更新。
