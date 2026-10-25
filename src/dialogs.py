@@ -985,6 +985,8 @@ class FingeringEditorDialog(QDialog):
         """運指パターンの切替"""
         import harmonica_map
         p_name = self.combo_patterns.currentText()
+        harmonica_map.CURRENT_ACTIVE_PATTERN_NAME = p_name
+
         if p_name == "標準パターン (基本)":
             harmonica_map.SONG_FINGERING_OVERRIDES.clear()
             harmonica_map.SONG_FINGERING_OVERRIDES.update(self._initial_overrides)
@@ -992,21 +994,19 @@ class FingeringEditorDialog(QDialog):
             harmonica_map.SONG_MUTED_NOTES.update(self._initial_muted)
             harmonica_map.CURRENT_SONG_PRESET = self._initial_preset
             harmonica_map.CURRENT_MONOPHONIC_MODE = self._initial_monophonic
+            pat_trans = getattr(self.timeline, "transpose", 0) if self.timeline else 0
+            pat_trans_acc = getattr(self.timeline, "transpose_accomp", True) if self.timeline else True
         elif p_name in self._patterns:
             pat_data = self._patterns[p_name]
-            harmonica_map.SONG_FINGERING_OVERRIDES.clear()
-            for k, v in pat_data.get("custom_fingering", {}).items():
-                try:
-                    t, n = k.split("_", 1)
-                    harmonica_map.SONG_FINGERING_OVERRIDES[(int(t), int(n))] = int(v)
-                except Exception:
-                    pass
-            harmonica_map.SONG_MUTED_NOTES.clear()
-            harmonica_map.SONG_MUTED_NOTES.update(pat_data.get("muted_notes", {}))
-            if "preset" in pat_data:
-                harmonica_map.CURRENT_SONG_PRESET = pat_data["preset"]
-            if "monophonic_mode" in pat_data:
-                harmonica_map.CURRENT_MONOPHONIC_MODE = pat_data["monophonic_mode"]
+            pat_trans, pat_trans_acc = harmonica_map.apply_pattern_snapshot(pat_data)
+        else:
+            pat_trans = getattr(self.timeline, "transpose", 0) if self.timeline else 0
+            pat_trans_acc = getattr(self.timeline, "transpose_accomp", True) if self.timeline else True
+
+        if self.timeline:
+            self.timeline.set_transpose(pat_trans, pat_trans_acc)
+            self.timeline.monophonic_mode = harmonica_map.CURRENT_MONOPHONIC_MODE
+            self.timeline.rebind_fingerings(self.timeline.inst_type)
 
         self.combo_preset.blockSignals(True)
         self.combo_preset.setCurrentText(harmonica_map.normalize_fingering_preset(harmonica_map.CURRENT_SONG_PRESET))
@@ -1017,10 +1017,8 @@ class FingeringEditorDialog(QDialog):
         self.combo_monophonic.blockSignals(False)
 
         harmonica_map.apply_fingering_preset(harmonica_map.CURRENT_SONG_PRESET)
-        if self.timeline:
-            self.timeline.monophonic_mode = harmonica_map.CURRENT_MONOPHONIC_MODE
-            self.timeline.rebind_fingerings(self.timeline.inst_type)
         if self.audio_engine and self.timeline:
+            self.audio_engine.set_transpose(pat_trans, pat_trans_acc)
             self.audio_engine.load_timeline(self.timeline)
             self.audio_engine.seek(self.clock.get_current_base_sec() if self.clock else 0.0)
         if self.gl_widget:
@@ -1030,10 +1028,16 @@ class FingeringEditorDialog(QDialog):
 
     def _on_save_new_pattern(self):
         """現在の運指設定を別名パターンとして保存"""
+        import harmonica_map
+        cur_trans = getattr(self.timeline, "transpose", 0) if self.timeline else 0
+        cur_trans_acc = getattr(self.timeline, "transpose_accomp", True) if self.timeline else True
+        key_lbl = harmonica_map.format_transpose_key_label(cur_trans)
+        default_name = f"{key_lbl} - パターン {len(self._patterns) + 1}"
+
         text, ok = QInputDialog.getText(
             self, "パターン別名保存",
-            "新しい運指パターン名を入力してください:\n(例: パターンB / スライド強化 / 簡易版)",
-            text=f"パターン {len(self._patterns) + 1}"
+            "新しい運指パターン名を入力してください:\n(例: Key+2 - ボーカル伴奏用 / スライド強化 / 簡易版)",
+            text=default_name
         )
         if not ok or not text.strip():
             return
@@ -1042,16 +1046,16 @@ class FingeringEditorDialog(QDialog):
             QMessageBox.warning(self, "保存不可", "「標準パターン (基本)」と同名では別名保存できません。別の名前を指定してください。")
             return
 
-        import harmonica_map
-        custom_fg_dict = {f"{tick}_{note}": idx for (tick, note), idx in harmonica_map.SONG_FINGERING_OVERRIDES.items()}
-        self._patterns[p_name] = {
-            "preset": harmonica_map.CURRENT_SONG_PRESET,
-            "monophonic_mode": harmonica_map.CURRENT_MONOPHONIC_MODE,
-            "custom_fingering": custom_fg_dict,
-            "muted_notes": dict(harmonica_map.SONG_MUTED_NOTES),
-        }
+        snapshot = harmonica_map.build_current_pattern_snapshot(transpose=cur_trans, transpose_accomp=cur_trans_acc)
+        self._patterns[p_name] = snapshot
+        harmonica_map.CURRENT_ACTIVE_PATTERN_NAME = p_name
         if self.timeline and self.timeline.filepath:
-            harmonica_map.save_song_profile(self.timeline.filepath, {"patterns": self._patterns})
+            harmonica_map.save_song_profile(self.timeline.filepath, {
+                "patterns": self._patterns,
+                "active_pattern_name": p_name,
+                "transpose": cur_trans,
+                "transpose_accomp": cur_trans_acc
+            })
 
         self._update_pattern_combo()
         self.combo_patterns.setCurrentText(p_name)
@@ -1240,7 +1244,16 @@ class FingeringEditorDialog(QDialog):
         """明示的に設定をファイルへ保存して閉じる"""
         import harmonica_map
         if self.timeline and self.timeline.filepath:
-            extra = {"patterns": self._patterns}
+            p_name = self.combo_patterns.currentText()
+            harmonica_map.CURRENT_ACTIVE_PATTERN_NAME = p_name
+            cur_trans = getattr(self.timeline, "transpose", 0) if self.timeline else 0
+            cur_trans_acc = getattr(self.timeline, "transpose_accomp", True) if self.timeline else True
+            extra = {
+                "patterns": self._patterns,
+                "active_pattern_name": p_name,
+                "transpose": cur_trans,
+                "transpose_accomp": cur_trans_acc
+            }
             harmonica_map.save_song_profile(self.timeline.filepath, extra)
             harmonica_map.save_song_fingering(self.timeline.filepath)
         if self.timeline:

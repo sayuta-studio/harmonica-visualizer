@@ -102,7 +102,7 @@
 
 ### 📦 Batch Package 2: キー（移調）別・用途別の運指パターン保存システム拡張（Micro-Step 3 〜 4）
 
-#### - [ ] **Micro-Step 3: 変え指エディタ (`FingeringEditorDialog`) と `harmonica_map.py` の運指パターンへの「移調（Key/Transpose）情報」統合**
+#### - [x] **Micro-Step 3: 変え指エディタ (`FingeringEditorDialog`) と `harmonica_map.py` の運指パターンへの「移調（Key/Transpose）情報」統合**
 - **対象ファイル**: `src/harmonica_map.py`, `src/dialogs.py`
 - **背景・目的**: 既存の変え指エディタにある「運指パターン別名保存（`patterns`）」を拡張し、「何調（移調±N）の何用」として移調値（`transpose`, `transpose_accomp`）ごとパターン保存・復元できるようにする。
 - **実装内容**:

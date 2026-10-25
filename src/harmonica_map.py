@@ -185,8 +185,69 @@ CURRENT_MONOPHONIC_MODE = "すべて有効"
 # 除外ノーツを非表示にするか (True=非表示 / False=半透明グレーアウト表示)
 HIDE_MUTED_NOTES = False
 
+# 現在選択中の運指パターン名
+CURRENT_ACTIVE_PATTERN_NAME = "標準パターン (基本)"
+
 # 曲ごとの付帯プロファイル（トラック選択、移調、外部音源、ABループ）
 CURRENT_SONG_PROFILE_EXTRA = {}
+
+
+def format_transpose_key_label(transpose_val: int) -> str:
+    """移調値を判読しやすいラベルに変換 (例: 0 -> '原曲キー(±0)', 2 -> 'Key+2(+2st)', -3 -> 'Key-3(-3st)')"""
+    try:
+        val = int(transpose_val)
+    except (ValueError, TypeError):
+        val = 0
+    if val == 0:
+        return "原曲キー(±0)"
+    elif val > 0:
+        return f"Key+{val}(+{val}st)"
+    else:
+        return f"Key{val}({val}st)"
+
+
+def build_current_pattern_snapshot(transpose: int = 0, transpose_accomp: bool = True) -> dict:
+    """現在の運指・除外・移調状態をスナップショット辞書として構築"""
+    custom_fg_dict = {f"{tick}_{note}": idx for (tick, note), idx in SONG_FINGERING_OVERRIDES.items()}
+    return {
+        "preset": CURRENT_SONG_PRESET,
+        "monophonic_mode": CURRENT_MONOPHONIC_MODE,
+        "hide_muted_notes": HIDE_MUTED_NOTES,
+        "custom_fingering": custom_fg_dict,
+        "muted_notes": dict(SONG_MUTED_NOTES),
+        "transpose": int(transpose),
+        "transpose_accomp": bool(transpose_accomp),
+    }
+
+
+def apply_pattern_snapshot(pat_data: dict) -> tuple[int, bool]:
+    """運指パターン辞書を展開・適用し、(transpose, transpose_accomp) を返す"""
+    global CURRENT_SONG_PRESET, CURRENT_MONOPHONIC_MODE, HIDE_MUTED_NOTES
+    global SONG_FINGERING_OVERRIDES, SONG_MUTED_NOTES
+
+    SONG_FINGERING_OVERRIDES.clear()
+    for k, v in pat_data.get("custom_fingering", {}).items():
+        try:
+            t, n = k.split("_", 1)
+            SONG_FINGERING_OVERRIDES[(int(t), int(n))] = int(v)
+        except Exception:
+            pass
+
+    SONG_MUTED_NOTES.clear()
+    SONG_MUTED_NOTES.update(pat_data.get("muted_notes", {}))
+
+    if "preset" in pat_data:
+        CURRENT_SONG_PRESET = pat_data["preset"]
+    if "monophonic_mode" in pat_data:
+        CURRENT_MONOPHONIC_MODE = pat_data["monophonic_mode"]
+    if "hide_muted_notes" in pat_data:
+        HIDE_MUTED_NOTES = bool(pat_data["hide_muted_notes"])
+
+    apply_fingering_preset(CURRENT_SONG_PRESET)
+
+    transpose = int(pat_data.get("transpose", CURRENT_SONG_PROFILE_EXTRA.get("transpose", 0)))
+    transpose_accomp = bool(pat_data.get("transpose_accomp", CURRENT_SONG_PROFILE_EXTRA.get("transpose_accomp", True)))
+    return transpose, transpose_accomp
 
 
 def get_song_profile_path(midi_path):
@@ -257,6 +318,11 @@ def load_song_profile(midi_path) -> dict:
                         val = project_manager.from_project_rel_path(val)
                     CURRENT_SONG_PROFILE_EXTRA[key] = val
 
+            if "active_pattern_name" in data and data["active_pattern_name"]:
+                CURRENT_ACTIVE_PATTERN_NAME = str(data["active_pattern_name"])
+            else:
+                CURRENT_ACTIVE_PATTERN_NAME = "標準パターン (基本)"
+
             print(f"[システム] 曲別プロファイル(JSON)を解決しました: {os.path.basename(json_path)} (Preset: {CURRENT_SONG_PRESET})")
             return data
         except Exception as e:
@@ -302,6 +368,7 @@ def save_song_profile(midi_path, extra_data: dict = None):
                 "hide_muted_notes": HIDE_MUTED_NOTES,
                 "custom_fingering": custom_fg_dict,
                 "muted_notes": dict(SONG_MUTED_NOTES),
+                "active_pattern_name": CURRENT_ACTIVE_PATTERN_NAME,
             }
             extra_copy = dict(CURRENT_SONG_PROFILE_EXTRA)
             for k in ("ext_audio_path", "active_take_path"):
