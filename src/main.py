@@ -12,6 +12,7 @@ Harmonica Visualizer v3.0 - メインエントリーポイント (PyQt6 64-bit O
 import os
 import sys
 import time
+import copy
 import numpy as np
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1243,6 +1244,35 @@ class HarmonicaMainWindow(QMainWindow):
         v_box.setContentsMargins(2, 4, 6, 4)
         v_box.setSpacing(8)
 
+        # 0. 🎯 編集対象ターゲットの切り替え (v3.1.0)
+        f_target = QFrame()
+        f_target.setObjectName("groupFrame")
+        f_target.setMaximumWidth(328)
+        f_target.setStyleSheet("QFrame#groupFrame { border: 1px solid #38BDF8; background-color: #0F172A; }")
+        l_target = QVBoxLayout(f_target)
+        l_target.setContentsMargins(6, 6, 6, 6)
+        l_target.setSpacing(4)
+        l_target.addWidget(QLabel("🎯 <b>編集対象のスタイルを選択:</b>"))
+
+        r_tgt = QHBoxLayout()
+        self.combo_visual_target = QComboBox(self)
+        self.combo_visual_target.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.combo_visual_target.addItems([
+            "🎯 練習用の画面スタイル (標準)",
+            "🎬 動画プリセットの画面スタイル"
+        ])
+        self.combo_visual_target.setToolTip("編集・カスタマイズする表示対象（日常の練習画面 vs 動画書き出しプリセット）を切り替え")
+        self._configure_sidebar_combo(self.combo_visual_target, max_width=310)
+        self.combo_visual_target.currentTextChanged.connect(self._on_visual_target_changed)
+        r_tgt.addWidget(self.combo_visual_target)
+        l_target.addLayout(r_tgt)
+
+        self.lbl_visual_target_hint = QLabel("現在: 練習用スタイルを編集中（常時16:9・日常の作業環境）", self)
+        self.lbl_visual_target_hint.setStyleSheet("color: #38BDF8; font-size: 10px;")
+        self.lbl_visual_target_hint.setWordWrap(True)
+        l_target.addWidget(self.lbl_visual_target_hint)
+        v_box.addWidget(f_target)
+
         # 1. 演奏・ノーツ表示（練習・動画共通）
         f_disp = QFrame()
         f_disp.setObjectName("groupFrame")
@@ -1279,14 +1309,15 @@ class HarmonicaMainWindow(QMainWindow):
         v_box.addWidget(f_disp)
 
         # 2. 画面比率（動画制作・構図プレビュー）
-        f_ratio = QFrame()
-        f_ratio.setObjectName("groupFrame")
-        f_ratio.setMaximumWidth(328)
-        l_ratio = QVBoxLayout(f_ratio)
+        self.f_ratio = QFrame()
+        self.f_ratio.setObjectName("groupFrame")
+        self.f_ratio.setMaximumWidth(328)
+        self.f_ratio.setEnabled(False)  # 初期状態（練習用スタイル編集時）は16:9固定
+        l_ratio = QVBoxLayout(self.f_ratio)
         l_ratio.setContentsMargins(6, 6, 6, 6)
         l_ratio.setSpacing(6)
 
-        l_ratio.addWidget(QLabel("📐 <b>画面比率（動画制作・構図確認用）:</b>"))
+        l_ratio.addWidget(QLabel("📐 <b>画面比率（動画プリセット編集時のみ有効）:</b>"))
 
         r_ratio = QHBoxLayout()
         r_ratio.addWidget(QLabel("比率:"))
@@ -1298,17 +1329,17 @@ class HarmonicaMainWindow(QMainWindow):
             if saved_ratio in self.ratio_combo.itemText(item_idx):
                 self.ratio_combo.setCurrentIndex(item_idx)
                 break
-        self.ratio_combo.setToolTip("書き出す動画の構図に合わせてフレームをプレビュー表示します（練習・録音タブでは自動的に16:9表示になります）")
+        self.ratio_combo.setToolTip("書き出す動画の構図に合わせてフレームをプレビュー表示します（練習スタイル編集時は16:9固定）")
         self.ratio_combo.currentTextChanged.connect(self._on_ratio_changed)
         self._configure_sidebar_combo(self.ratio_combo, max_width=230)
         r_ratio.addWidget(self.ratio_combo, stretch=1)
         l_ratio.addLayout(r_ratio)
 
-        lbl_ratio_note = QLabel("※動画書き出し時の縦横比に合わせて画面内に構図枠を表示します。（「練習」や「録音・音響」タブに戻ると自動的に広々とした16:9表示になります）")
+        lbl_ratio_note = QLabel("※「🎬 動画プリセットの画面スタイル」選択時のみ変更可能です。（「🎯 練習用」は常に広々とした16:9表示になります）")
         lbl_ratio_note.setStyleSheet("color: #94A3B8; font-size: 11px; line-height: 1.3;")
         lbl_ratio_note.setWordWrap(True)
         l_ratio.addWidget(lbl_ratio_note)
-        v_box.addWidget(f_ratio)
+        v_box.addWidget(self.f_ratio)
 
         # 2. カラーテーマ & 吹吸カラー選択
         f_col = QFrame()
@@ -2344,16 +2375,54 @@ class HarmonicaMainWindow(QMainWindow):
         self.spin_jump.setValue(new_m)
         self._on_jump_measure()
 
+    def _on_visual_target_changed(self, target_text: str):
+        """画面作りタブで編集する対象（練習用スタイル vs 動画プリセット）の切り替え"""
+        if "動画プリセット" in target_text:
+            self._visual_edit_target = "video"
+            active_p = settings_manager.get_active_preset_dict(self.user_settings)
+            p_name = self.user_settings.get("active_video_preset", "📱 YouTube Shorts (縦型・解説)")
+            ratio = active_p.get("aspect_ratio", "16:9")
+            is_chroma = "クロマキー" in active_p.get("export_style", "")
+            chroma_col = active_p.get("export_bg_color", "ノーマル（黒）")
+            self._apply_visual_dict_to_ui_and_gl(active_p, aspect_ratio=ratio, is_chromakey=is_chroma, chroma_color=chroma_col)
+            if hasattr(self, "lbl_visual_target_hint"):
+                self.lbl_visual_target_hint.setText(f"現在: 動画プリセット [{p_name}] を編集中（比率: {ratio}）")
+                self.lbl_visual_target_hint.setStyleSheet("color: #F43F5E; font-size: 10px; font-weight: bold;")
+            if hasattr(self, "f_ratio"):
+                self.f_ratio.setEnabled(True)
+        else:
+            self._visual_edit_target = "practice"
+            pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
+            self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
+            if hasattr(self, "lbl_visual_target_hint"):
+                self.lbl_visual_target_hint.setText("現在: 練習用スタイルを編集中（常時16:9・日常の作業環境）")
+                self.lbl_visual_target_hint.setStyleSheet("color: #38BDF8; font-size: 10px;")
+            if hasattr(self, "f_ratio"):
+                self.f_ratio.setEnabled(False)
+
     def _on_tab_changed(self, index: int):
         if index in (0, 2):
-            # 練習タブ / 録音音響タブ: 常に全画面 16:9 で広々と表示
-            self.gl_widget.set_aspect_ratio("16:9")
-            self.gl_widget.set_canvas_bg_color("ノーマル（黒）", is_chromakey=False)
-        elif index in (1, 3):
-            # 画面作り / 動画出力タブ: 設定された出力アスペクト比で忠実にプレビュー
-            self.gl_widget.set_aspect_ratio(self.ratio_combo.currentText())
-            is_chroma = ("クロマキー" in self.combo_exp_style.currentText()) and (index == 3)
-            self.gl_widget.set_canvas_bg_color(self.combo_exp_bg.currentText(), is_chromakey=is_chroma)
+            # 練習タブ / 録音音響タブ: 常に「練習用スタイル」・全画面 16:9 で表示
+            pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
+            self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
+        elif index == 3:
+            # 動画出力タブ: 選択中の動画プリセット（Shorts 9:16やMV設定等）を完全反映プレビュー
+            active_p = settings_manager.get_active_preset_dict(self.user_settings)
+            ratio = active_p.get("aspect_ratio", "16:9")
+            is_chroma = "クロマキー" in active_p.get("export_style", "")
+            chroma_col = active_p.get("export_bg_color", "ノーマル（黒）")
+            self._apply_visual_dict_to_ui_and_gl(active_p, aspect_ratio=ratio, is_chromakey=is_chroma, chroma_color=chroma_col)
+        elif index == 1:
+            # 画面作りタブ: 選択中のターゲット（練習用 or 動画プリセット）に応じた設定を反映
+            if getattr(self, "_visual_edit_target", "practice") == "video":
+                active_p = settings_manager.get_active_preset_dict(self.user_settings)
+                ratio = active_p.get("aspect_ratio", "16:9")
+                is_chroma = "クロマキー" in active_p.get("export_style", "")
+                chroma_col = active_p.get("export_bg_color", "ノーマル（黒）")
+                self._apply_visual_dict_to_ui_and_gl(active_p, aspect_ratio=ratio, is_chromakey=is_chroma, chroma_color=chroma_col)
+            else:
+                pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
+                self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
 
     def _handle_playback_finished(self):
         """非ループ再生の曲末到達ハンドラ"""
@@ -2707,6 +2776,21 @@ class HarmonicaMainWindow(QMainWindow):
             self.user_settings["bg_image_enabled"] = self.chk_bg_enable.isChecked()
         if hasattr(self, "combo_grid4"):
             self.user_settings["grid4_mode"] = self.combo_grid4.currentText()
+
+        # ビジュアル設定の二重保存分岐 (v3.1.0: 練習用スタイル vs 動画プリセット)
+        vis_cur = self._get_current_visual_dict_from_ui()
+        if getattr(self, "_visual_edit_target", "practice") == "video":
+            active_p_name = self.user_settings.get("active_video_preset", "📱 YouTube Shorts (縦型・解説)")
+            if "video_presets" not in self.user_settings:
+                self.user_settings["video_presets"] = copy.deepcopy(settings_manager.DEFAULT_VIDEO_PRESETS)
+            if active_p_name in self.user_settings["video_presets"]:
+                self.user_settings["video_presets"][active_p_name].update(vis_cur)
+                self.user_settings["video_presets"][active_p_name]["aspect_ratio"] = clean_ratio
+        else:
+            if "practice_visual" not in self.user_settings:
+                self.user_settings["practice_visual"] = copy.deepcopy(settings_manager.DEFAULT_PRACTICE_VISUAL)
+            self.user_settings["practice_visual"].update(vis_cur)
+
         settings_manager.save_settings(self.user_settings)
 
     def _get_count_in_duration(self) -> float:
