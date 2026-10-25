@@ -12,7 +12,7 @@
 
 ### 📦 Batch Package 1: 表示系の直交化 ＆ 上部ヘッダー伸縮復元（Micro-Step 1 〜 2）
 
-#### - [ ] **Micro-Step 1: 音名表記（`lang_mode` 2択化）と穴下ノート表示（`grid4_mode` 3択化）の完全直交化**
+#### - [x] **Micro-Step 1: 音名表記（`lang_mode` 2択化）と穴下ノート表示（`grid4_mode` 3択化）の完全直交化**
 - **対象ファイル**: `src/settings_manager.py`, `src/gl_visualizer.py`, `src/video_exporter.py`, `src/main.py`
 - **背景・目的**: `lang_mode` に `"なし"` があるため、ノーツ音名チェック（`show_lookahead`）や穴下グリッド（`grid4_mode`）と干渉し、「枠だけ残って文字が消える」「チェックを入れても文字が出ない」矛盾が発生していた。表記言語（`"ドレミ"` / `"CDE"`）と表示可否トグルを完全直交化する。
 - **実装内容**:

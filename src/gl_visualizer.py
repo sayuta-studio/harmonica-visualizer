@@ -814,9 +814,11 @@ class HarmonicaGLWidget(QOpenGLWidget):
                 num_str = format_hole_number(k, self.inst_type, getattr(self, "hole_num_style", "実機標準 (低音ドット付)"))
                 _draw_bordered_text_qt(p, num_rect, num_str, self.font_hole, self.color_white, self.color_black, border_w=1.5 * scale)
 
-        # 3. 穴下の音名表示 (田の字4音グリッド / 1音表示)
-        show_4grid = (self.show_grid4 is True or "4音" in str(self.show_grid4))
-        is_jp = (self.lang_mode == "ドレミ")
+        # 3. 穴下の音名表示 (田の字4音グリッド / 1音表示 / 非表示)
+        grid_str = str(self.show_grid4)
+        hide_hole_notes = (self.show_grid4 is False or "非表示" in grid_str or "なし" in grid_str)
+        show_4grid = (not hide_hole_notes) and (self.show_grid4 is True or "4音" in grid_str)
+        is_jp = (self.lang_mode != "CDE" and "英" not in str(self.lang_mode))
 
         if show_4grid:
             grid_top = y_center_s + 47.0 * scale
@@ -844,12 +846,11 @@ class HarmonicaGLWidget(QOpenGLWidget):
                     p.setBrush(c_fill)
                     p.drawRect(c_rect)
 
-                    if self.lang_mode != "なし":
-                        cell_midi = h4.get((act, lev))
-                        cell_txt = get_note_name(cell_midi, is_japanese=is_jp) if cell_midi is not None else ""
-                        p.setPen(t_col)
-                        p.drawText(c_rect, Qt.AlignmentFlag.AlignCenter, cell_txt)
-        elif self.lang_mode != "なし":
+                    cell_midi = h4.get((act, lev))
+                    cell_txt = get_note_name(cell_midi, is_japanese=is_jp) if cell_midi is not None else ""
+                    p.setPen(t_col)
+                    p.drawText(c_rect, Qt.AlignmentFlag.AlignCenter, cell_txt)
+        elif not hide_hole_notes:
             mode_key = "16穴" if "16穴" in self.inst_type else ("14穴" if "14穴" in self.inst_type else ("12穴 標準" if "標準" in self.inst_type else "12穴 バス"))
             blow_notes = BLOW_NOTES_MIDI.get(mode_key, BLOW_NOTES_MIDI["16穴"])
             self.font_note.setPointSizeF(max(6.0, 9.5 * scale))
@@ -1247,7 +1248,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
 
                 # 落下追従音名ラベル描画 (除外ノーツは通常非描画、非表示モード中は "✕ ド" 表示)
                 should_draw_label = (not is_muted) or (is_muted and getattr(self, "mute_edit_mode", False))
-                if should_draw_label and self.show_lookahead and self.lang_mode != "なし" and (not is_straight_mode or note_in_range) and (y_vis_bot - y_vis_top >= 8.0 * scale):
+                if should_draw_label and self.show_lookahead and (not is_straight_mode or note_in_range) and (y_vis_bot - y_vis_top >= 8.0 * scale):
                     label_y = y_vis_bot - 8.5 * scale if (y_vis_bot - y_vis_top >= 17.0 * scale) else (y_vis_top + y_vis_bot) * 0.5
                     label_x = x_m_func(label_y)
                     raw_name = nd["name_jp"] if self.lang_mode == "ドレミ" else nd["name_cde"]
@@ -1272,8 +1273,10 @@ class HarmonicaGLWidget(QOpenGLWidget):
             self._draw_procedural_lever(painter, lever_x, y_center_s, scale, lever_pressed)
 
         # 6. 発音中穴の丸穴LED・レバーリング連動・着地発光・穴下音名ハイライト
-        show_4grid = (self.show_grid4 is True or "4音" in str(self.show_grid4))
-        is_jp = (self.lang_mode == "ドレミ")
+        grid_str = str(self.show_grid4)
+        hide_hole_notes = (self.show_grid4 is False or "非表示" in grid_str or "なし" in grid_str)
+        show_4grid = (not hide_hole_notes) and (self.show_grid4 is True or "4音" in grid_str)
+        is_jp = (self.lang_mode != "CDE" and "英" not in str(self.lang_mode))
 
         for k, idx in enumerate(visible_indices):
             hole_num = idx + 1
@@ -1325,13 +1328,12 @@ class HarmonicaGLWidget(QOpenGLWidget):
                             painter.setBrush(c_bg)
                             painter.drawRect(c_rect)
 
-                            if self.lang_mode != "なし":
-                                cell_midi = h4.get((a_val, l_val))
-                                cell_txt = get_note_name(cell_midi, is_japanese=is_jp) if cell_midi is not None else ""
-                                painter.setFont(self.font_grid4)
-                                painter.setPen(QColor("#000000"))
-                                painter.drawText(c_rect, Qt.AlignmentFlag.AlignCenter, cell_txt)
-                elif self.lang_mode != "なし" and hole_num in active_hole_notes:
+                            cell_midi = h4.get((a_val, l_val))
+                            cell_txt = get_note_name(cell_midi, is_japanese=is_jp) if cell_midi is not None else ""
+                            painter.setFont(self.font_grid4)
+                            painter.setPen(QColor("#000000"))
+                            painter.drawText(c_rect, Qt.AlignmentFlag.AlignCenter, cell_txt)
+                elif (not hide_hole_notes) and hole_num in active_hole_notes:
                     # 1音表示モード：鳴っている実音を白文字・黒フチで強調表示
                     cur_note = active_hole_notes[hole_num]
                     note_text = get_note_name(cur_note, is_japanese=is_jp)

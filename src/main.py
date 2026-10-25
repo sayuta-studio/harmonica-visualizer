@@ -1299,9 +1299,9 @@ class HarmonicaMainWindow(QMainWindow):
         r_lang.addWidget(QLabel("音名表記:"))
         self.lang_combo = QComboBox(self)
         self.lang_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.lang_combo.addItems(["ドレミ", "CDE", "なし"])
+        self.lang_combo.addItems(["ドレミ", "CDE"])
         self.lang_combo.setCurrentText(self.user_settings.get("lang_mode", "ドレミ"))
-        self.lang_combo.setToolTip("画面上の音名表示（ドレミ / 英語音名 CDE / 非表示）")
+        self.lang_combo.setToolTip("画面上の音名表示（ドレミ / 英語音名 CDE）")
         self.lang_combo.currentTextChanged.connect(self._on_lang_changed)
         self._configure_sidebar_combo(self.lang_combo, max_width=230)
         r_lang.addWidget(self.lang_combo, stretch=1)
@@ -1484,9 +1484,9 @@ class HarmonicaMainWindow(QMainWindow):
         r_grid4.addWidget(QLabel("穴下ノート表示:"))
         self.combo_grid4 = QComboBox(self)
         self.combo_grid4.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.combo_grid4.addItems(["4音グリッド表示", "1音表示 (従来)"])
+        self.combo_grid4.addItems(["4音グリッド表示", "1音表示 (従来)", "非表示"])
         self.combo_grid4.setCurrentText(self.user_settings.get("grid4_mode", self.user_settings.get("show_grid4", "4音グリッド表示")))
-        self.combo_grid4.setToolTip("穴の下に配置する音名（田の字4音グリッド / 単一吹音表示）")
+        self.combo_grid4.setToolTip("穴の下に配置する音名（田の字4音グリッド / 単一吹音表示 / 非表示）")
         self.combo_grid4.currentTextChanged.connect(self._on_grid4_changed)
         self._configure_sidebar_combo(self.combo_grid4, max_width=230)
         r_grid4.addWidget(self.combo_grid4, stretch=1)
@@ -2546,7 +2546,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.gl_widget.set_show_glow(vis.get("show_glow", True))
         self.gl_widget.set_show_legend(vis.get("show_legend", True))
         g4_mode = vis.get("grid4_mode", "4音グリッド表示")
-        self.gl_widget.set_show_grid4(g4_mode == "4音グリッド表示")
+        self.gl_widget.set_show_grid4(g4_mode)
         traj_m = vis.get("trajectory_mode", "3段階 (練習標準)")
         self.gl_widget.set_trajectory_mode(traj_m)
 
@@ -2673,7 +2673,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.gl_widget.set_show_glow(s.get("show_glow", True))
         self.gl_widget.set_show_legend(s.get("show_legend", True))
         g4_mode = s.get("grid4_mode", s.get("show_grid4", "4音グリッド表示"))
-        self.gl_widget.set_show_grid4(g4_mode == "4音グリッド表示")
+        self.gl_widget.set_show_grid4(g4_mode)
 
         self.audio_engine.force_main_harmonica = bool(s.get("force_harmonica", True))
         self.audio_engine.set_metronome_mode(s.get("metronome_mode", "標準（頭拍強調）"))
@@ -2875,7 +2875,7 @@ class HarmonicaMainWindow(QMainWindow):
 
     def _on_grid4_changed(self, mode: str):
         self.user_settings["grid4_mode"] = str(mode)
-        self.gl_widget.set_show_grid4(mode == "4音グリッド表示")
+        self.gl_widget.set_show_grid4(mode)
         self._save_current_settings()
 
     def _refresh_video_preset_combo(self, select_name: str = None):

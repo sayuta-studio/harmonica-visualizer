@@ -172,7 +172,7 @@ DEFAULT_VIDEO_PRESETS = {
         "export_audio_volume": 100,
         # ビジュアル (映像美重視・文字/線なし)
         "trajectory_mode": "2段階 (ビジュアル)",
-        "lang_mode": "なし",
+        "lang_mode": "ドレミ",
         "color_theme": "ノーマル",
         "color_blow": "#FF5500",
         "color_draw": "#00BFFF",
@@ -184,7 +184,7 @@ DEFAULT_VIDEO_PRESETS = {
         "show_bar_lines": False,   # 小節線OFF
         "show_hole_num": False,    # 穴番号OFF
         "hole_num_style": "実機標準 (低音ドット付)",
-        "grid4_mode": "4音グリッド表示",
+        "grid4_mode": "非表示",
         "show_ring": True,
         "show_glow": True,
         "show_legend": False,     # 凡例OFF
@@ -388,6 +388,21 @@ def load_settings() -> dict:
     # 3. active_video_preset の整合性
     if settings.get("active_video_preset") not in settings["video_presets"]:
         settings["active_video_preset"] = "📱 YouTube Shorts (縦型・解説)"
+
+    # 4. v3.2.0 マイグレーション: lang_mode "なし" の撤廃と grid4_mode / show_lookahead の完全直交化
+    def _migrate_lang_mode(target_dict: dict):
+        if target_dict.get("lang_mode") == "なし":
+            target_dict["lang_mode"] = "ドレミ"
+            target_dict["show_lookahead"] = False
+            target_dict["grid4_mode"] = "非表示"
+
+    _migrate_lang_mode(settings)
+    if "practice_visual" in settings and isinstance(settings["practice_visual"], dict):
+        _migrate_lang_mode(settings["practice_visual"])
+    if "video_presets" in settings and isinstance(settings["video_presets"], dict):
+        for p_dict in settings["video_presets"].values():
+            if isinstance(p_dict, dict):
+                _migrate_lang_mode(p_dict)
 
     return settings
 
