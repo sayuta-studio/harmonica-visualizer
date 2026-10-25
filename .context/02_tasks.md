@@ -481,7 +481,7 @@
 
 ### 📦 Batch Package 5: YouTube Shorts 上下2分割レイアウト ＆ 起動スプラッシュ・多重起動防止・全体結合テスト（Micro-Step 9 〜 10）
 
-#### - [ ] **Micro-Step 9: YouTube Shorts (9:16) 上下2分割（スプリットスクリーン）構図配置の実装（課題8）**
+#### - [x] **Micro-Step 9: YouTube Shorts (9:16) 上下2分割（スプリットスクリーン）構図配置の実装（課題8）**
 - **対象ファイル**: `src/main.py`, `src/gl_visualizer.py`, `src/video_exporter.py`, `src/studio_controller.py`
 - **詳細実装仕様（コードスニペット付き）**:
   1. **`src/main.py` (`_build_tab_design` の `f_ratio` 内, L1510〜1530付近)**:
@@ -516,7 +516,7 @@
 
 ---
 
-#### - [ ] **Micro-Step 10: 起動時スプラッシュ画面（`QSplashScreen`）、多重起動防止ロック（課題19）および Ver.4.1.0 全体自動結合テスト (`tests/verify_v410_polish.py`)**
+#### - [x] **Micro-Step 10: 起動時スプラッシュ画面（`QSplashScreen`）、多重起動防止ロック（課題19）および Ver.4.1.0 全体自動結合テスト (`tests/verify_v410_polish.py`)**
 - **対象ファイル**: `src/main.py`, `tests/verify_v410_polish.py` (新規作成), `.context/00_handover.md`, `.context/01_architecture.md`, `.context/02_tasks.md`
 - **詳細実装仕様（コードスニペット付き）**:
   1. **`src/main.py` のスプラッシュスクリーン ＆ 多重起動防止ロック (L4875 `main()` 関数)**:

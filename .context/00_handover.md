@@ -7,10 +7,10 @@
 
 ## 1. プロジェクト現在地と最新ステータス
 
-- **現行リリースバージョン**: **`v4.0.0`**（Gitタグ `v4.0.0` 付与済み、全8項目自動結合テスト完全 PASS）
-- **次期マイルストーン**: **`v4.1.0`「Harmonica Studio UI/UX Polish & Workflow Perfection」**
-  - 実機動作確認フィードバックに基づく **全21課題の徹底分析・統合解消計画が策定完了**。
-  - 上位モデル（Architect）から下位モデル（Builder）への引き継ぎ精度を極大化するため、**正確な行番号・関数名・コピペ適用可能な完全なPythonコードスニペット** を全10 Micro-Stepに完備した詳細実装仕様書が `.context/02_tasks.md` に配備済み。
+- **現行リリースバージョン**: **`v4.1.0`**（Gitタグ `v4.1.0` 付与、全8項目自動結合テスト `verify_v410_polish.py` 完全 PASS）
+- **完了マイルストーン**: **`v4.1.0`「Harmonica Studio UI/UX Polish & Workflow Perfection」**
+  - 実機動作確認フィードバックに基づく **全21課題が完全解消（Batch Package 1〜5、Micro-Step 1〜10 すべて完遂）**。
+  - 1ステップ1コミット（Micro Commit）の原則を完徹し、すべての単体機能・統合テストが 100% PASS。
 - **リポジトリ状態**: `master` ブランチ、`working tree clean`（未コミット差分ゼロ）
 - **上流テンプレート連携**: `_shared_knowledge/`（Gotcha #10）および `.agent/rules/safety_limits.md`（Rule #7）が上流マスターテンプレート（`00_template`）と 100% 整合・同期完了。
 
@@ -94,8 +94,8 @@ harmonica-visualizer/
 | | **Step 6** | `main.py` | 全セクションを1行最小化できる `CollapsibleSection` 導入、画面デザインタブの順序改善（比率を最上部に配置） | **完了 (b89f49b)** |
 | **Package 4** | **Step 7** | `main.py` | 録音タブの不要音量枠撤去、動画出力タブの二重リバーブ撤去、フェードの余白直下配置、タイトル表示時間（`0.1s〜15.0s`）＆消え方UI新設 | **完了 (cd1dd38)** |
 | | **Step 8** | `studio_controller.py`<br>`video_exporter.py` | タイトル表示時間を前余白から独立させ、`0.1s〜15.0s` 維持＆フェード/カット消去レンダリング実装 | **完了 (65fdb31)** |
-| **Package 5** | **Step 9** | `main.py`<br>`gl_visualizer.py`<br>`video_exporter.py` | YouTube Shorts (9:16) 上下2分割レイアウト（上半分16:9 / 下半分16:9 / 中央16:9）の実装 | **次回最初に着手** |
-| | **Step 10** | `main.py`<br>`tests/verify_v410_polish.py` | 起動直後の `QSplashScreen` ＆ `QSharedMemory` 多重起動防止ロック実装、全自動結合テスト実行・全PASS確認、タグ `v4.1.0` 付与 | 未着手 |
+| **Package 5** | **Step 9** | `main.py`<br>`gl_visualizer.py`<br>`video_exporter.py` | YouTube Shorts (9:16) 上下2分割レイアウト（上半分16:9 / 下半分16:9 / 中央16:9）の実装 | **完了 (9ffb006)** |
+| | **Step 10** | `main.py`<br>`tests/verify_v410_polish.py` | 起動直後の `QSplashScreen` ＆ `QSharedMemory` 多重起動防止ロック実装、全自動結合テスト実行・全PASS確認、タグ `v4.1.0` 付与 | **完了 (c28ebd3, 27c829e)** |
 
 ---
 
