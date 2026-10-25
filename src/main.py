@@ -570,6 +570,10 @@ class HarmonicaMainWindow(QMainWindow):
         self._ext_pcm = None
         self._ext_channel = None
         self._ext_pending_start = False
+        self._rec_pcm = None
+        self._rec_channel = None
+        self._rec_pending_start = False
+        self._rec_sync_monitoring = False
         self.is_seeking = False
         self._is_loading_midi = False
         self.loop_playback = bool(self.user_settings.get("loop_enabled", False))
@@ -610,6 +614,12 @@ class HarmonicaMainWindow(QMainWindow):
         self._ext_resync_timer.setSingleShot(True)
         self._ext_resync_timer.setInterval(60)
         self._ext_resync_timer.timeout.connect(self._do_ext_audio_resync)
+
+        # 録音ズレ補正のデバウンスタイマー
+        self._rec_resync_timer = QTimer(self)
+        self._rec_resync_timer.setSingleShot(True)
+        self._rec_resync_timer.setInterval(60)
+        self._rec_resync_timer.timeout.connect(self._do_rec_audio_resync)
 
         self._ext_save_timer = QTimer(self)
         self._ext_save_timer.setSingleShot(True)
@@ -1841,19 +1851,46 @@ class HarmonicaMainWindow(QMainWindow):
         self.spin_rec_offset.setValue(int(self.user_settings.get("rec_offset_ms", 0)))
         self.spin_rec_offset.setSuffix(" ms")
         self.spin_rec_offset.setSingleStep(10)
-        self.spin_rec_offset.setFixedWidth(90)
+        self.spin_rec_offset.setFixedWidth(84)
         self.spin_rec_offset.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spin_rec_offset.setToolTip("マイクやオーディオインターフェースの録音遅延・タイミングを微調整 [直接入力 / マウスホイール]")
-        self.spin_rec_offset.valueChanged.connect(lambda v: (self.user_settings.update({"rec_offset_ms": int(v)}), self._save_current_settings()))
+        self.spin_rec_offset.valueChanged.connect(self._on_rec_offset_changed)
         r_rec_off.addWidget(self.spin_rec_offset)
 
         btn_rec_z = QPushButton("0ms", self)
-        btn_rec_z.setFixedWidth(42)
+        btn_rec_z.setFixedWidth(38)
         btn_rec_z.setStyleSheet("font-size: 11px; padding: 2px 4px;")
         btn_rec_z.setToolTip("録音ズレ補正を0msにリセット")
         btn_rec_z.clicked.connect(lambda: self.spin_rec_offset.setValue(0))
         r_rec_off.addWidget(btn_rec_z)
         l_rec.addLayout(r_rec_off)
+
+        # 録音同期試聴＆微調整行
+        r_rec_sync = QHBoxLayout()
+        r_rec_sync.setSpacing(4)
+        btn_rec_m10 = QPushButton("-10ms", self)
+        btn_rec_m10.setFixedWidth(54)
+        btn_rec_m10.setStyleSheet("font-size: 11px; padding: 2px 4px;")
+        btn_rec_m10.setToolTip("ズレ補正を10ms早める")
+        btn_rec_m10.clicked.connect(lambda: self._on_rec_offset_adjust(-10))
+        r_rec_sync.addWidget(btn_rec_m10)
+
+        btn_rec_p10 = QPushButton("+10ms", self)
+        btn_rec_p10.setFixedWidth(54)
+        btn_rec_p10.setStyleSheet("font-size: 11px; padding: 2px 4px;")
+        btn_rec_p10.setToolTip("ズレ補正を10ms遅らせる")
+        btn_rec_p10.clicked.connect(lambda: self._on_rec_offset_adjust(10))
+        r_rec_sync.addWidget(btn_rec_p10)
+
+        self.btn_rec_sync_audition = QPushButton("▶ 伴奏と同期試聴", self)
+        self.btn_rec_sync_audition.setCheckable(True)
+        self.btn_rec_sync_audition.setStyleSheet(
+            "QPushButton:checked { background-color: #0284C7; color: white; font-weight: bold; border: 1px solid #38BDF8; }"
+        )
+        self.btn_rec_sync_audition.setToolTip("タイムライン再生（伴奏/MIDI＋ノーツ落下）と録音テイクを同期再生してズレを確認")
+        self.btn_rec_sync_audition.clicked.connect(self._on_toggle_rec_sync_audition)
+        r_rec_sync.addWidget(self.btn_rec_sync_audition, stretch=1)
+        l_rec.addLayout(r_rec_sync)
 
         v_box.addWidget(f_rec)
 
@@ -3367,6 +3404,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.clock.set_anchor(target_sec, speed_ratio=self.speed_slider.value() / 100.0, state=st)
         self.audio_engine.seek(target_sec)
         self._sync_ext_audio_playback(st == SharedClockBridge.STATE_PLAYING, target_sec)
+        self._sync_rec_take_playback(st == SharedClockBridge.STATE_PLAYING, target_sec)
         self._update_time_label(target_sec)
 
     def _on_canvas_note_mute_changed(self):
@@ -3701,6 +3739,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.clock.set_anchor(sec, speed_ratio=self.speed_slider.value() / 100.0, state=st)
         self.audio_engine.seek(sec)
         self._sync_ext_audio_playback(st == SharedClockBridge.STATE_PLAYING, sec)
+        self._sync_rec_take_playback(st == SharedClockBridge.STATE_PLAYING, sec)
         self.lbl_status_msg.setText(f"⏩ {m:03d} 小節の頭へジャンプしました")
 
     def _update_transpose_lock_state(self):
@@ -3760,9 +3799,11 @@ class HarmonicaMainWindow(QMainWindow):
         if cur_sec < loop_start_sec:
             self._loop_waiting_for_a_sec = loop_start_sec
             self._sync_ext_audio_playback(False)
+            self._sync_rec_take_playback(False)
         else:
             self._loop_waiting_for_a_sec = None
             self._sync_ext_audio_playback(self.clock.get_state() == SharedClockBridge.STATE_PLAYING, loop_start_sec)
+            self._sync_rec_take_playback(self.clock.get_state() == SharedClockBridge.STATE_PLAYING, loop_start_sec)
 
         if self.chk_stepup.isChecked():
             start_pct = int(self.spin_sp_start.value())
@@ -4093,6 +4134,7 @@ class HarmonicaMainWindow(QMainWindow):
 
             self.btn_play.setText("▶ 再生")
             self._sync_ext_audio_playback(False, 0.0)
+            self._sync_rec_take_playback(False, 0.0)
             self._update_transpose_lock_state()
             self.lbl_status_msg.setText(f"📂 読込完了: {self.timeline.filename}")
             self._check_out_of_range_and_notify()
@@ -4189,6 +4231,7 @@ class HarmonicaMainWindow(QMainWindow):
             if hasattr(self, "btn_ext_audition"):
                 self.btn_ext_audition.setText("▶ 試聴")
             self._sync_ext_audio_playback(False)
+            self._sync_rec_take_playback(False)
         else:
             cur_sec = self.clock.get_current_base_sec()
             if st == SharedClockBridge.STATE_STOPPED:
@@ -4214,6 +4257,7 @@ class HarmonicaMainWindow(QMainWindow):
                 self.btn_ext_audition.setText("⏸ 一時停止")
             if cur_sec >= 0.0:
                 self._sync_ext_audio_playback(True, cur_sec)
+                self._sync_rec_take_playback(True, cur_sec)
 
     def _on_stop(self):
         start_sec = self.timeline.get_sec_for_measure(self.spin_loop_a.value()) if self.loop_playback else 0.0
@@ -4225,6 +4269,7 @@ class HarmonicaMainWindow(QMainWindow):
         if hasattr(self, "btn_ext_audition"):
             self.btn_ext_audition.setText("▶ 試聴")
         self._sync_ext_audio_playback(False, start_sec)
+        self._sync_rec_take_playback(False, start_sec)
         if self.is_recording:
             self._on_record_toggle()
         self._update_time_label(start_sec)
@@ -4235,6 +4280,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.clock.set_anchor(start_sec, speed_ratio=self.speed_slider.value() / 100.0, state=st)
         self.audio_engine.seek(start_sec)
         self._sync_ext_audio_playback(st == SharedClockBridge.STATE_PLAYING, start_sec)
+        self._sync_rec_take_playback(st == SharedClockBridge.STATE_PLAYING, start_sec)
         self._update_time_label(start_sec)
 
     def _seek_relative(self, offset_sec: float):
@@ -4244,6 +4290,7 @@ class HarmonicaMainWindow(QMainWindow):
         self.clock.set_anchor(target, speed_ratio=self.speed_slider.value() / 100.0, state=st)
         self.audio_engine.seek(target)
         self._sync_ext_audio_playback(st == SharedClockBridge.STATE_PLAYING, target)
+        self._sync_rec_take_playback(st == SharedClockBridge.STATE_PLAYING, target)
 
     def _on_seek_pressed(self):
         self.is_seeking = True
@@ -4263,6 +4310,7 @@ class HarmonicaMainWindow(QMainWindow):
             self.clock.set_anchor(target_sec, speed_ratio=self.speed_slider.value() / 100.0, state=st)
             self.audio_engine.seek(target_sec)
             self._sync_ext_audio_playback(st == SharedClockBridge.STATE_PLAYING, target_sec)
+        self._sync_rec_take_playback(st == SharedClockBridge.STATE_PLAYING, target_sec)
 
     def _on_loop_toggled(self, checked: bool):
         self.loop_playback = bool(checked)
@@ -4327,9 +4375,10 @@ class HarmonicaMainWindow(QMainWindow):
         total_sec = self.timeline.total_duration_sec
         state = self.clock.get_state()
 
-        # 前奏カウントダウンから本編への遷移検知、および外部音源の待機発音同期
+        # 前奏カウントダウンから本編への遷移検知、および外部音源/録音テイクの待機発音同期
         prev_s = getattr(self, "_prev_sec", 0.0)
         offset_sec = float(self.spin_ext_offset.value()) / 1000.0 if hasattr(self, "spin_ext_offset") else 0.0
+        rec_offset_sec = float(self.spin_rec_offset.value()) / 1000.0 if hasattr(self, "spin_rec_offset") else 0.0
         if state == SharedClockBridge.STATE_PLAYING:
             if getattr(self, "_ext_pending_start", False) and (cur_sec - offset_sec >= 0.0):
                 self._sync_ext_audio_playback(True, cur_sec)
@@ -4339,6 +4388,13 @@ class HarmonicaMainWindow(QMainWindow):
             if waiting_a is not None and prev_s < waiting_a <= cur_sec:
                 self._loop_waiting_for_a_sec = None
                 self._sync_ext_audio_playback(True, waiting_a)
+
+            if getattr(self, "_rec_pending_start", False) and (cur_sec - rec_offset_sec >= 0.0):
+                self._sync_rec_take_playback(True, cur_sec)
+            elif prev_s < 0.0 <= cur_sec:
+                self._sync_rec_take_playback(True, 0.0)
+            if waiting_a is not None and prev_s < waiting_a <= cur_sec:
+                self._sync_rec_take_playback(True, waiting_a)
         self._prev_sec = cur_sec
 
         # シークバーと現在時刻の更新
@@ -4480,6 +4536,7 @@ class HarmonicaMainWindow(QMainWindow):
 
             if saved_path and dur > 0:
                 self.last_recorded_path = saved_path
+                self._rec_pcm = None
                 trim_info = f" (前奏{trim_sec:.1f}秒自動カット済)" if trim_sec > 0.0 else ""
                 self._set_elided_label_text(self.lbl_rec_take, f"録音テイク: {os.path.basename(saved_path)} ({dur:.1f}秒)", saved_path, max_width=300)
                 self.lbl_rec_take.setStyleSheet("color: #34D399; font-weight: bold; font-size: 11px;")
@@ -4498,6 +4555,12 @@ class HarmonicaMainWindow(QMainWindow):
 
     def _on_rec_listen_toggle(self):
         """録音テイクの試聴再生/停止"""
+        if getattr(self, "_rec_sync_monitoring", False):
+            self._rec_sync_monitoring = False
+            if hasattr(self, "btn_rec_sync_audition"):
+                self.btn_rec_sync_audition.setChecked(False)
+            self._stop_rec_playback()
+
         if self.audition_player.is_playing():
             self.audition_player.stop()
             self.btn_rec_listen.setText("▶ 試聴")
@@ -4538,6 +4601,7 @@ class HarmonicaMainWindow(QMainWindow):
 
         file_path = os.path.normpath(file_path).replace("\\", "/")
         self.last_recorded_path = file_path
+        self._rec_pcm = None
         take_name = os.path.basename(file_path)
         self._set_elided_label_text(self.lbl_rec_take, f"採用テイク: {take_name}", file_path, max_width=310)
         self.lbl_rec_take.setStyleSheet("color: #34D399; font-weight: bold; font-size: 11px;")
@@ -5023,6 +5087,115 @@ class HarmonicaMainWindow(QMainWindow):
         if hasattr(self, "btn_ext_audition"):
             self.btn_ext_audition.setText("▶ 試聴")
             pass
+
+    def _ensure_rec_pcm_loaded(self):
+        """採用録音テイクのPCMデータをメモリにキャッシュロード"""
+        if getattr(self, "_rec_pcm", None) is not None:
+            return self._rec_pcm
+        rec_path = getattr(self, "last_recorded_path", None)
+        if rec_path and os.path.isfile(rec_path):
+            try:
+                from audio_engine import load_external_audio_pcm
+                self._rec_pcm = load_external_audio_pcm(rec_path, sample_rate=44100)
+                return self._rec_pcm
+            except Exception as e:
+                print(f"[RecAudio Load Error] {e}")
+                self._rec_pcm = None
+        return None
+
+    def _stop_rec_playback(self):
+        """録音テイクの再生を安全に停止"""
+        try:
+            if hasattr(self, "_rec_channel") and self._rec_channel is not None:
+                self._rec_channel.stop()
+            self._rec_pending_start = False
+        except Exception:
+            pass
+
+    def _sync_rec_take_playback(self, is_playing: bool, target_sec: float = None):
+        """録音テイクをタイムラインと完全同期再生/停止 (Channel 2・PCMスライス再生方式)"""
+        if not getattr(self, "_rec_sync_monitoring", False):
+            self._stop_rec_playback()
+            return
+
+        pcm = self._ensure_rec_pcm_loaded()
+        if pcm is None or len(pcm) == 0:
+            self._stop_rec_playback()
+            return
+
+        try:
+            import pygame
+            if not pygame.mixer.get_init():
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
+
+            if not hasattr(self, "_rec_channel") or self._rec_channel is None:
+                self._rec_channel = pygame.mixer.Channel(2)
+
+            cur_sec = self.clock.get_current_base_sec() if target_sec is None else target_sec
+            offset_sec = float(self.spin_rec_offset.value()) / 1000.0
+            # ズレ補正計算式: src_sec = cur_sec - offset_sec (+offsetで録音音声を遅らせる / -offsetで録音音声を早める)
+            src_sec = cur_sec - offset_sec
+            vol = max(0.0, min(1.0, self.vol_slider.value() / 100.0))
+
+            if is_playing:
+                if src_sec >= 0.0:
+                    start_sample = int(round(src_sec * 44100))
+                    if start_sample < len(pcm):
+                        sound_slice = np.ascontiguousarray(pcm[start_sample:])
+                        snd = pygame.sndarray.make_sound(sound_slice)
+                        self._rec_channel.set_volume(vol)
+                        self._rec_channel.play(snd)
+                        self._rec_pending_start = False
+                    else:
+                        self._rec_channel.stop()
+                        self._rec_pending_start = False
+                else:
+                    self._rec_channel.stop()
+                    self._rec_pending_start = True
+            else:
+                self._rec_channel.stop()
+                self._rec_pending_start = False
+        except Exception as e:
+            print(f"[RecAudio Sync Error] {e}")
+
+    def _on_rec_offset_changed(self, val: int):
+        self.user_settings["rec_offset_ms"] = int(val)
+        self._save_current_settings()
+        if getattr(self, "_rec_sync_monitoring", False) and self.clock.get_state() == SharedClockBridge.STATE_PLAYING:
+            self._rec_resync_timer.start()
+
+    def _do_rec_audio_resync(self):
+        try:
+            if self.clock.get_state() == SharedClockBridge.STATE_PLAYING:
+                cur_sec = self.clock.get_current_base_sec()
+                self._sync_rec_take_playback(True, cur_sec)
+        except Exception as e:
+            print(f"[RecAudio Resync Error] {e}")
+
+    def _on_rec_offset_adjust(self, delta_ms: int):
+        new_val = self.spin_rec_offset.value() + int(delta_ms)
+        self.spin_rec_offset.setValue(max(-2000, min(2000, new_val)))
+
+    def _on_toggle_rec_sync_audition(self, checked: bool):
+        self._rec_sync_monitoring = bool(checked)
+        if checked:
+            if not getattr(self, "last_recorded_path", None) or not os.path.exists(self.last_recorded_path):
+                QMessageBox.information(self, "同期試聴", "試聴する録音テイクがありません。[🔴録音] で録音するか、[📂テイク選択...] でWAVファイルを選択してください。")
+                self.btn_rec_sync_audition.setChecked(False)
+                self._rec_sync_monitoring = False
+                return
+            if hasattr(self, "audition_player") and self.audition_player.is_playing():
+                self.audition_player.stop()
+                self.btn_rec_listen.setText("▶ 試聴")
+            self._rec_pcm = None  # キャッシュ最新化
+            self.lbl_status_msg.setText("🎧 伴奏との同期試聴モード: ON（再生ボタンを押すと録音テイクも一緒に鳴ります）")
+            if self.clock.get_state() == SharedClockBridge.STATE_PLAYING:
+                self._sync_rec_take_playback(True, self.clock.get_current_base_sec())
+            else:
+                self._on_play_toggle()
+        else:
+            self._stop_rec_playback()
+            self.lbl_status_msg.setText("🎧 伴奏との同期試聴モード: OFF")
 
 
     def _on_open_output_folder(self):
