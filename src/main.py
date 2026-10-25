@@ -1036,26 +1036,80 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
         self.tab_widget = QTabWidget(self.sidebar_frame)
 
-        # 4つのタブを構築
+        # Tab 0: 🎹 練習
         self._build_tab_practice()
+
+        # Tab 1: 🎬 動画制作 (上部: プリセット共通ヘッダー ＋ 下部: 3つのサブタブ)
+        self.tab_video_production = QWidget(self)
+        v_prod_layout = QVBoxLayout(self.tab_video_production)
+        v_prod_layout.setContentsMargins(4, 6, 4, 4)
+        v_prod_layout.setSpacing(6)
+
+        # --- 動画制作 共通プリセットヘッダー (1箇所に完全一元化) ---
+        self.f_video_preset_master = QFrame(self)
+        self.f_video_preset_master.setObjectName("groupFrame")
+        self.f_video_preset_master.setStyleSheet("QFrame#groupFrame { border: 1px solid #38BDF8; background-color: #0F172A; }")
+        l_vpm = QVBoxLayout(self.f_video_preset_master)
+        l_vpm.setContentsMargins(6, 6, 6, 6)
+        l_vpm.setSpacing(4)
+
+        r_vpm_top = QHBoxLayout()
+        r_vpm_top.addWidget(QLabel("🎬 <b>プリセット:</b>"))
+        self.combo_video_preset = QComboBox(self)
+        self.combo_video_preset.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._configure_sidebar_combo(self.combo_video_preset, max_width=230)
+        self.combo_video_preset.currentTextChanged.connect(self._on_video_preset_changed)
+        r_vpm_top.addWidget(self.combo_video_preset, stretch=1)
+        l_vpm.addLayout(r_vpm_top)
+
+        r_vpm_btns = QHBoxLayout()
+        self.btn_preset_save = QPushButton("💾 保存", self)
+        self.btn_preset_save.setToolTip("現在の画面・音響・出力設定を選択中プリセットに上書き保存")
+        self.btn_preset_save.clicked.connect(self._on_save_video_preset)
+        r_vpm_btns.addWidget(self.btn_preset_save)
+
+        self.btn_preset_save_as = QPushButton("➕ 別名保存...", self)
+        self.btn_preset_save_as.setToolTip("現在の設定で新しい動画プリセットを作成")
+        self.btn_preset_save_as.clicked.connect(self._on_save_as_video_preset)
+        r_vpm_btns.addWidget(self.btn_preset_save_as)
+
+        self.btn_preset_reset = QPushButton("↺ 初期化", self)
+        self.btn_preset_reset.setToolTip("公式プリセットは初期値へ復元、自作プリセットは削除します")
+        self.btn_preset_reset.clicked.connect(self._on_reset_or_delete_video_preset)
+        r_vpm_btns.addWidget(self.btn_preset_reset)
+        l_vpm.addLayout(r_vpm_btns)
+
+        self.btn_copy_practice_visual = QPushButton("📥 現在の「練習画面」の見た目を反映 (コピー)", self)
+        self.btn_copy_practice_visual.setFixedHeight(24)
+        self.btn_copy_practice_visual.setToolTip("普段の練習画面の軌道・音名・配色・スキン設定をこの動画プリセットに一括コピーします")
+        self.btn_copy_practice_visual.clicked.connect(self._on_copy_practice_visual_to_preset)
+        l_vpm.addWidget(self.btn_copy_practice_visual)
+
+        v_prod_layout.addWidget(self.f_video_preset_master)
+
+        # --- 第2階層サブタブ (🎨 画面デザイン / 🎙️ 録音・伴奏 / 🎬 動画出力) ---
+        self.video_sub_tabs = QTabWidget(self.tab_video_production)
         self._build_tab_design()
         self._build_tab_audio()
         self._build_tab_export()
+        self.video_sub_tabs.currentChanged.connect(self._on_video_sub_tab_changed)
+        v_prod_layout.addWidget(self.video_sub_tabs, stretch=1)
+
+        self.tab_widget.addTab(self.tab_video_production, "🎬 動画制作")
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
 
         sidebar_layout.addWidget(self.tab_widget, stretch=1)
 
-        # サイドバー最下部: リアルタイム GPU レンダリング FPS バッジ
+        # サイドバー最下部: リアルタイム GPU レンダリング FPS バッジ & 自動保存表示
         sb_foot = QHBoxLayout()
         self.lbl_fps = QLabel("● GPU 60.0 FPS", self)
         self.lbl_fps.setObjectName("badgeLabel")
         sb_foot.addWidget(self.lbl_fps)
         sb_foot.addStretch()
 
-        btn_save_all = QPushButton("💾 設定を保存", self)
-        btn_save_all.setToolTip("現在の全設定を settings.json に保存")
-        btn_save_all.clicked.connect(lambda: (self._save_current_settings(), self.lbl_status_msg.setText("💾 設定を保存しました")))
-        sb_foot.addWidget(btn_save_all)
+        self.lbl_auto_save = QLabel("✓ 設定自動保存", self)
+        self.lbl_auto_save.setStyleSheet("color: #64748B; font-size: 11px;")
+        sb_foot.addWidget(self.lbl_auto_save)
 
         sidebar_layout.addLayout(sb_foot)
         lower_layout.addWidget(self.sidebar_frame)
@@ -1461,9 +1515,9 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         r_dpb_btns.addWidget(self.btn_design_preset_reset)
         l_dpb.addLayout(r_dpb_btns)
 
-        self.w_design_preset_bar.setVisible(True)
+        self.w_design_preset_bar.setVisible(False)
         l_target.addWidget(self.w_design_preset_bar)
-        v_box.addWidget(f_target)
+        f_target.setVisible(False)
 
         # 1. 演奏・ノーツ表示（練習・動画共通）
         f_disp = QFrame()
@@ -1804,7 +1858,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         v_box.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll)
-        self.tab_widget.addTab(tab, "🎨 動画画面")
+        self.video_sub_tabs.addTab(tab, "🎨 画面")
 
     # =========================================================================
     # タブ 3: 【🎙️ 録音・音響】
@@ -2176,7 +2230,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         v_box.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll)
-        self.tab_widget.addTab(tab, "🎙️ 録音・伴奏")
+        self.video_sub_tabs.addTab(tab, "🎙️ 録音・伴奏")
 
     # =========================================================================
     # タブ 4: 【🎬 動画出力】
@@ -2245,7 +2299,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.btn_jump_design_for_video.clicked.connect(self._on_jump_design_for_video)
         l_preset.addWidget(self.btn_jump_design_for_video)
 
-        v_box.addWidget(f_preset)
+        f_preset.setVisible(False)
 
         # 1. 動画レンダリング品質＆解像度
         f_exp = QFrame()
@@ -2592,7 +2646,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         v_box.addStretch()
         scroll.setWidget(content)
         layout.addWidget(scroll)
-        self.tab_widget.addTab(tab, "🎬 動画出力")
+        self.video_sub_tabs.addTab(tab, "🎬 動画出力")
 
     # =========================================================================
     # ショートカットキー設定
@@ -2682,20 +2736,32 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
                 self.w_design_preset_bar.setVisible(False)
 
     def _on_tab_changed(self, index: int):
-        if index in (0, 2):
-            # 練習タブ / 録音伴奏タブ: 常に「練習用スタイル」・全画面 16:9 で表示
+        if index == 0:
+            # 🎹 練習タブ: 常に「練習用スタイル」・全画面 16:9 で表示
             self._visual_edit_target = "practice"
             pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
             self._sync_practice_style_ui_values(pv)
             self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
-        elif index in (1, 3):
-            # 動画画面タブ / 動画出力タブ: 常に選択中の動画プリセット（Shorts 9:16やMV設定等）を完全反映プレビュー
+        elif index == 1:
+            # 🎬 動画制作タブ: サブタブの状態に合わせてプレビュー更新
+            sub_idx = self.video_sub_tabs.currentIndex() if hasattr(self, "video_sub_tabs") else 0
+            self._on_video_sub_tab_changed(sub_idx)
+
+    def _on_video_sub_tab_changed(self, sub_index: int):
+        if sub_index in (0, 2):
+            # 🎨 画面 (0) / 🎬 動画出力 (2): 常に選択中の動画プリセット（Shorts 9:16やMV設定等）を完全反映プレビュー
             self._visual_edit_target = "video"
             active_p = settings_manager.get_active_preset_dict(self.user_settings)
             ratio = active_p.get("aspect_ratio", "16:9")
             is_chroma = "クロマキー" in active_p.get("export_style", "")
             chroma_col = active_p.get("export_bg_color", "ノーマル（黒）")
             self._apply_visual_dict_to_ui_and_gl(active_p, aspect_ratio=ratio, is_chromakey=is_chroma, chroma_color=chroma_col)
+        elif sub_index == 1:
+            # 🎙️ 録音・伴奏 (1): 録音・練習しやすい練習用スタイルで表示
+            self._visual_edit_target = "practice"
+            pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
+            self._sync_practice_style_ui_values(pv)
+            self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
 
     def _sync_practice_style_ui_values(self, pv: dict = None):
         """練習タブ下部の表示スタイルUI要素を設定辞書と同期"""
@@ -3295,9 +3361,10 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
         self._update_preset_button_states(preset_name)
 
-        # 現在のタブが動画出力タブ(3)、または画面作りタブ(1)で動画プリセット編集中ならGLに即時反映
+        # 現在のタブが動画制作タブ(1)の画面(0)または動画出力(2)ならGLに即時反映
         cur_tab = self.tab_widget.currentIndex() if hasattr(self, "tab_widget") else 0
-        if cur_tab == 3 or (cur_tab == 1 and getattr(self, "_visual_edit_target", "practice") == "video"):
+        sub_tab = self.video_sub_tabs.currentIndex() if hasattr(self, "video_sub_tabs") else 0
+        if cur_tab == 1 and sub_tab in (0, 2):
             asp = str(p.get("aspect_ratio", "16:9"))
             is_chroma = ("クロマキー" in str(p.get("export_style", "")))
             bg_col = str(p.get("export_bg_color", "ノーマル（黒）"))
@@ -3452,7 +3519,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             )
             if reply == QMessageBox.StandardButton.Yes:
                 presets.pop(active, None)
-                fallback = "🎥 演奏解説・練習用 (横型・標準)"
+                fallback = "🎥 演奏解説・レッスン (16:9)"
                 if fallback not in presets and presets:
                     fallback = list(presets.keys())[0]
                 self.user_settings["active_video_preset"] = fallback
