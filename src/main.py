@@ -4473,9 +4473,19 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.timeline.main_track_idx,
             self,
             current_main_indices=m_indices,
-            current_accomp_indices=a_indices
+            current_accomp_indices=a_indices,
+            force_harmonica=self.user_settings.get("force_harmonica", True)
         )
         if dlg.exec():
+            fh = dlg.is_force_harmonica()
+            self.user_settings["force_harmonica"] = fh
+            self.audio_engine.force_main_harmonica = fh
+            if hasattr(self, "chk_force_harmonica"):
+                self.chk_force_harmonica.blockSignals(True)
+                self.chk_force_harmonica.setChecked(fh)
+                self.chk_force_harmonica.blockSignals(False)
+            settings_manager.save_settings(self.user_settings)
+
             sel_mains = dlg.get_selected_track_indices()
             sel_accomps = dlg.get_selected_accomp_indices()
             self.timeline.set_main_tracks(sel_mains, sel_accomps)

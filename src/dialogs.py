@@ -9,6 +9,7 @@ Chromatic Harmonica Visualizer v3.0 - モーダルダイアログ群
 import os
 import sys
 import copy
+import project_manager
 from PyQt6.QtCore import Qt, QRectF, QUrl
 from PyQt6.QtGui import QColor, QPixmap, QImage, QPainter, QPen, QBrush, QFont, QDesktopServices
 from PyQt6.QtWidgets import (
@@ -73,16 +74,10 @@ class HarmonicaSettingsDialog(QDialog):
         row_synth.addStretch()
         v_audio.addLayout(row_synth)
 
+        # 互換性保持のためインスタンス変数は生成するが、レイアウトには追加しない（パートダイアログ・練習タブに一本化）
         self.chk_force_harmonica = QCheckBox("主旋律をクロマチックハーモニカ音色 (GM Program 22) に固定", self)
-        v_audio.addWidget(self.chk_force_harmonica)
-
-        row_metro = QHBoxLayout()
-        row_metro.addWidget(QLabel("メトロノームクリック:"))
         self.combo_metro = QComboBox(self)
         self.combo_metro.addItems(["なし", "標準（頭拍強調）", "小節頭のみ", "全拍均一"])
-        row_metro.addWidget(self.combo_metro)
-        row_metro.addStretch()
-        v_audio.addLayout(row_metro)
 
         v_audio.addSpacing(10)
         v_audio.addWidget(QLabel("<b>【マイク録音・オーディオ設定】</b>"))
@@ -110,7 +105,7 @@ class HarmonicaSettingsDialog(QDialog):
         self.tabs.addTab(tab_audio, "🔊 音響・録音デバイス")
 
         # -----------------------------------------------------------------
-        # タブ 2: 🎨 本体スキン・練習支援
+        # タブ 2: 🎨 本体スキン・外観設定
         # -----------------------------------------------------------------
         tab_skin_practice = QWidget()
         v_sp = QVBoxLayout(tab_skin_practice)
@@ -136,32 +131,14 @@ class HarmonicaSettingsDialog(QDialog):
         row_skin_file.addWidget(self.btn_clear_skin)
         v_sp.addLayout(row_skin_file)
 
-        v_sp.addSpacing(10)
-        v_sp.addWidget(QLabel("<b>【ステップアップ練習設定】</b>"))
+        # 互換性保持のためインスタンス変数は生成するが、練習タブに一本化するためレイアウトからは外す
         self.chk_stepup = QCheckBox("A-Bループ折り返し時に再生速度を自動アップ", self)
-        v_sp.addWidget(self.chk_stepup)
-
-        row_sp = QHBoxLayout()
-        row_sp.addWidget(QLabel("開始速度:"))
         self.spin_sp_start = QSpinBox(self)
-        self.spin_sp_start.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.spin_sp_start.setRange(30, 200)
-        self.spin_sp_start.setSuffix("%")
-        row_sp.addWidget(self.spin_sp_start)
-
-        row_sp.addWidget(QLabel("目標速度:"))
         self.spin_sp_target = QSpinBox(self)
-        self.spin_sp_target.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.spin_sp_target.setRange(50, 250)
-        self.spin_sp_target.setSuffix("%")
-        row_sp.addWidget(self.spin_sp_target)
-
-        row_sp.addWidget(QLabel("1周増分:"))
         self.combo_sp_step = QComboBox(self)
         self.combo_sp_step.addItems(["+1%", "+2%", "+5%", "+10%"])
-        row_sp.addWidget(self.combo_sp_step)
-        row_sp.addStretch()
-        v_sp.addLayout(row_sp)
 
         v_sp.addSpacing(10)
         v_sp.addWidget(QLabel("<b>【詳細描画・装飾】</b>"))
@@ -185,7 +162,7 @@ class HarmonicaSettingsDialog(QDialog):
         v_sp.addLayout(row_opacity)
 
         v_sp.addStretch()
-        self.tabs.addTab(tab_skin_practice, "🎨 本体スキン・練習支援")
+        self.tabs.addTab(tab_skin_practice, "🎨 本体スキン・外観設定")
 
         # -----------------------------------------------------------------
         # タブ 3: 📁 プロジェクト・保存先管理
@@ -194,28 +171,37 @@ class HarmonicaSettingsDialog(QDialog):
         v_proj = QVBoxLayout(tab_project)
         v_proj.setSpacing(10)
 
-        v_proj.addWidget(QLabel("<b>【ポータブルデータ管理】</b>"))
-        v_proj.addWidget(QLabel("Harmonica Visualizer のプロジェクト、録音テイク、動画出力先："))
-
+        v_proj.addWidget(QLabel("<b>【1. プロジェクトフォルダーの作成先 (親フォルダー)】</b>"))
+        v_proj.addWidget(QLabel("読み込んだMIDI曲ごとに固有フォルダーが自動作成される親ディレクトリ："))
         self.edit_base_path = QLineEdit(self)
         self.edit_base_path.setReadOnly(True)
-        self.edit_base_path.setText(os.path.abspath(get_portable_path(".")))
+        self.edit_base_path.setText(os.path.abspath(get_portable_path("projects")))
         v_proj.addWidget(self.edit_base_path)
 
-        v_proj.addSpacing(10)
-        v_proj.addWidget(QLabel("<b>【フォルダを直接開く】</b>"))
-
-        btn_proj_dir = QPushButton("📂 projects フォルダを開く (楽曲プロジェクト)", self)
+        btn_proj_dir = QPushButton("📂 プロジェクト一覧フォルダー (projects/) を直接開く", self)
         btn_proj_dir.clicked.connect(lambda: self._open_dir(get_portable_path("projects")))
         v_proj.addWidget(btn_proj_dir)
 
-        btn_rec_dir = QPushButton("📂 recordings フォルダを開く (録音テイク)", self)
-        btn_rec_dir.clicked.connect(lambda: self._open_dir(get_portable_path("recordings")))
-        v_proj.addWidget(btn_rec_dir)
+        v_proj.addSpacing(8)
+        v_proj.addWidget(QLabel("<b>【2. プロジェクトフォルダー内の自動生成構造 (子フォルダー)】</b>"))
+        tree_frame = QFrame(self)
+        tree_frame.setStyleSheet("QFrame { background-color: #0F172A; border: 1px solid #334155; border-radius: 6px; padding: 8px; }")
+        l_tree = QVBoxLayout(tree_frame)
+        tree_label = QLabel(
+            "📁 <b>projects / &lt;各MIDI曲名フォルダー&gt; /</b><br>"
+            "&nbsp;&nbsp;├── 📂 <b>source/</b> &nbsp;&nbsp;<span style='color:#94A3B8;'>（読み込んだMIDI原本の自動バックアップ）</span><br>"
+            "&nbsp;&nbsp;├── 📂 <b>takes/</b> &nbsp;&nbsp;&nbsp;<span style='color:#94A3B8;'>（マイク録音した演奏テイク WAV）</span><br>"
+            "&nbsp;&nbsp;├── 📂 <b>audio/</b> &nbsp;&nbsp;&nbsp;<span style='color:#94A3B8;'>（外部伴奏音源 WAV/MP3）</span><br>"
+            "&nbsp;&nbsp;├── 📂 <b>exports/</b> &nbsp;<span style='color:#94A3B8;'>（書き出した完成動画 MP4/MOV）</span><br>"
+            "&nbsp;&nbsp;└── 📄 <b>project.json</b> <span style='color:#94A3B8;'>（曲別の運指パターン・移調・同期設定）</span>"
+        )
+        tree_label.setStyleSheet("font-size: 12px; line-height: 1.5;")
+        l_tree.addWidget(tree_label)
+        v_proj.addWidget(tree_frame)
 
-        btn_export_dir = QPushButton("📂 exports フォルダを開く (完成動画)", self)
-        btn_export_dir.clicked.connect(lambda: self._open_dir(get_portable_path("exports")))
-        v_proj.addWidget(btn_export_dir)
+        btn_cur_song_dir = QPushButton("📂 現在開いている楽曲の固有フォルダーを開く", self)
+        btn_cur_song_dir.clicked.connect(lambda: self._open_dir(project_manager.get_active_project_dir()))
+        v_proj.addWidget(btn_cur_song_dir)
 
         v_proj.addStretch()
         self.tabs.addTab(tab_project, "📁 プロジェクト・保存先管理")
@@ -349,12 +335,14 @@ class PartSelectDialog(QDialog):
     """MIDI全トラック一覧表示 ＆ 主旋律ハーモニカ対象トラック選定ダイアログ (複数トラック複合対応)"""
 
     def __init__(self, tracks_info: list, current_main_idx: int = 0, parent=None,
-                 current_main_indices: list = None, current_accomp_indices: list = None):
+                 current_main_indices: list = None, current_accomp_indices: list = None,
+                 force_harmonica: bool = True):
         super().__init__(parent)
         self.setWindowTitle("MIDIパート詳細・主旋律トラック選定 (複数複合対応)")
         self.resize(780, 420)
         self.setModal(True)
 
+        self.force_harmonica = force_harmonica
         self.tracks_info = tracks_info
         if current_main_indices:
             self.selected_main_indices = list(current_main_indices)
@@ -496,6 +484,9 @@ class PartSelectDialog(QDialog):
 
         # ボタン
         btn_layout = QHBoxLayout()
+        self.chk_force_harmonica = QCheckBox("主旋律パートをハーモニカ音色 (GM 22) に固定して再生", self)
+        self.chk_force_harmonica.setChecked(bool(self.force_harmonica))
+        btn_layout.addWidget(self.chk_force_harmonica)
         btn_layout.addStretch()
 
         btn_ok = QPushButton("決定", self)
@@ -526,6 +517,9 @@ class PartSelectDialog(QDialog):
 
     def get_selected_accomp_indices(self) -> list:
         return list(self.selected_accomp_indices)
+
+    def is_force_harmonica(self) -> bool:
+        return self.chk_force_harmonica.isChecked()
 
 
 
