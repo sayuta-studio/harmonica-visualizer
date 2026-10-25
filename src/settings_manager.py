@@ -72,12 +72,15 @@ DEFAULT_VIDEO_PRESETS = {
         "export_fade_title_mode": "フェード中もタイトル表示",
         "export_title_template": "イントロ中央＋左上常時",
         "export_title_enabled": True,
+        "export_title_duration": 3.5,
+        "export_title_exit_mode": "フェードアウトで消える",
+        "vertical_layout_mode": "全画面フル展開 (標準Shorts)",
         "audio_quick_mode": "伴奏音源 (外部音源優先)",
         "reverb_enabled": True,
         "yt_limiter": True,
         "export_audio_volume": 100,
         # ビジュアル
-        "trajectory_mode": "3段階 (練習標準)",
+        "trajectory_mode": "垂直落下 (穴直上)",
         "lang_mode": "ドレミ",
         "color_theme": "ノーマル",
         "color_blow": "#FF5500",
@@ -104,7 +107,7 @@ DEFAULT_VIDEO_PRESETS = {
         "skin_lever_off_path": "",
         "skin_lever_on_path": "",
     },
-    "🎥 演奏解説・練習用 (横型・標準)": {
+    "🎥 演奏解説・レッスン (16:9)": {
         "aspect_ratio": "16:9",
         "export_resolution": "Full HD (1920x1080・推奨)",
         "export_fps": "60 FPS (滑らか・推奨)",
@@ -119,12 +122,15 @@ DEFAULT_VIDEO_PRESETS = {
         "export_fade_title_mode": "フェード中もタイトル表示",
         "export_title_template": "イントロ中央＋右上常時",
         "export_title_enabled": True,
+        "export_title_duration": 3.5,
+        "export_title_exit_mode": "フェードアウトで消える",
+        "vertical_layout_mode": "全画面フル展開 (標準Shorts)",
         "audio_quick_mode": "伴奏音源 (外部音源優先)",
         "reverb_enabled": True,
         "yt_limiter": True,
         "export_audio_volume": 100,
         # ビジュアル
-        "trajectory_mode": "3段階 (練習標準)",
+        "trajectory_mode": "垂直落下 (穴直上)",
         "lang_mode": "ドレミ",
         "color_theme": "ノーマル",
         "color_blow": "#FF5500",
@@ -151,7 +157,57 @@ DEFAULT_VIDEO_PRESETS = {
         "skin_lever_off_path": "",
         "skin_lever_on_path": "",
     },
-    "✨ シネマティックMV (横型・演出重視)": {
+    "🎨 演奏作品・MV (16:9・背景画像)": {
+        "aspect_ratio": "16:9",
+        "export_resolution": "Full HD (1920x1080・推奨)",
+        "export_fps": "60 FPS (滑らか・推奨)",
+        "export_style": "完成動画 (背景・タイトル合成)",
+        "export_bg_color": "ノーマル（黒）",
+        "export_intro_sec": "2秒",
+        "export_outro_sec": "2秒",
+        "export_fade_in": True,
+        "export_fade_out": True,
+        "export_fade_in_sec": 1.5,
+        "export_fade_out_sec": 1.5,
+        "export_fade_title_mode": "フェード中もタイトル表示",
+        "export_title_template": "イントロ中央＋右上常時",
+        "export_title_enabled": True,
+        "export_title_duration": 3.5,
+        "export_title_exit_mode": "フェードアウトで消える",
+        "vertical_layout_mode": "全画面フル展開 (標準Shorts)",
+        "audio_quick_mode": "伴奏音源 (外部音源優先)",
+        "reverb_enabled": True,
+        "yt_limiter": True,
+        "export_audio_volume": 100,
+        # ビジュアル (MV向け・背景引き立て＆ノーツ透過)
+        "trajectory_mode": "3段階 (練習標準)",
+        "lang_mode": "ドレミ",
+        "color_theme": "ノーマル",
+        "color_blow": "#FF5500",
+        "color_draw": "#00BFFF",
+        "lever_deco_mode": "センターライン (芯線)",
+        "note_opacity": 85,
+        "show_notes": True,
+        "show_lookahead": False,
+        "show_grid": False,
+        "show_bar_lines": False,
+        "show_hole_num": True,
+        "hole_num_style": "実機標準 (低音ドット付)",
+        "grid4_mode": "非表示",
+        "show_ring": True,
+        "show_glow": True,
+        "show_legend": False,
+        "bg_image_enabled": True,
+        "bg_image_path": "",
+        "bg_dim_ratio": 40,
+        "bg_fit_mode": "中央トリミング (画面いっぱい)",
+        "bg_rotation": 0,
+        "skin_enabled": True,
+        "skin_mouthpiece_path": "",
+        "skin_lever_off_path": "",
+        "skin_lever_on_path": "",
+    },
+    "✨ ミニマル・シネマティック (16:9)": {
         "aspect_ratio": "16:9",
         "export_resolution": "Full HD (1920x1080・推奨)",
         "export_fps": "60 FPS (滑らか・推奨)",
@@ -166,6 +222,9 @@ DEFAULT_VIDEO_PRESETS = {
         "export_fade_title_mode": "フェード中もタイトル表示",
         "export_title_template": "イントロ中央のみ",
         "export_title_enabled": True,
+        "export_title_duration": 3.5,
+        "export_title_exit_mode": "フェードアウトで消える",
+        "vertical_layout_mode": "全画面フル展開 (標準Shorts)",
         "audio_quick_mode": "伴奏音源 (外部音源優先)",
         "reverb_enabled": True,
         "yt_limiter": True,
@@ -177,7 +236,7 @@ DEFAULT_VIDEO_PRESETS = {
         "color_blow": "#FF5500",
         "color_draw": "#00BFFF",
         "lever_deco_mode": "センターライン (芯線)",
-        "note_opacity": 100,
+        "note_opacity": 95,
         "show_notes": True,
         "show_lookahead": False,  # 音名OFF
         "show_grid": False,        # レーンガイドOFF
@@ -198,7 +257,7 @@ DEFAULT_VIDEO_PRESETS = {
         "skin_lever_off_path": "",
         "skin_lever_on_path": "",
     },
-    "🟩 クロマキー合成素材 (透過用)": {
+    "🟩 クロマキー透過素材 (外部編集用)": {
         "aspect_ratio": "16:9",
         "export_resolution": "Full HD (1920x1080・推奨)",
         "export_fps": "60 FPS (滑らか・推奨)",
@@ -213,12 +272,15 @@ DEFAULT_VIDEO_PRESETS = {
         "export_fade_title_mode": "フェード中もタイトル表示",
         "export_title_template": "なし",
         "export_title_enabled": False,
+        "export_title_duration": 3.5,
+        "export_title_exit_mode": "フェードアウトで消える",
+        "vertical_layout_mode": "全画面フル展開 (標準Shorts)",
         "audio_quick_mode": "無音 (映像のみ)",
         "reverb_enabled": False,
         "yt_limiter": True,
         "export_audio_volume": 100,
-        # ビジュアル (合成用)
-        "trajectory_mode": "3段階 (練習標準)",
+        # ビジュアル (合成用・垂直落下)
+        "trajectory_mode": "垂直落下 (穴直上)",
         "lang_mode": "ドレミ",
         "color_theme": "ノーマル",
         "color_blow": "#FF5500",
@@ -380,17 +442,30 @@ def load_settings() -> dict:
     if "video_presets" not in settings or not isinstance(settings["video_presets"], dict) or not settings["video_presets"]:
         settings["video_presets"] = copy.deepcopy(DEFAULT_VIDEO_PRESETS)
     else:
-        # 公式プリセット4種が存在しなければ追加、存在する場合は比率等の重要パラメータを自己修復
+        # 旧プリセット名からの自動マイグレーション
+        old_to_new = {
+            "🎥 演奏解説・練習用 (横型・標準)": "🎥 演奏解説・レッスン (16:9)",
+            "✨ シネマティックMV (横型・演出重視)": "✨ ミニマル・シネマティック (16:9)",
+            "🟩 クロマキー合成素材 (透過用)": "🟩 クロマキー透過素材 (外部編集用)",
+        }
+        for old_k, new_k in old_to_new.items():
+            if old_k in settings["video_presets"] and new_k not in settings["video_presets"]:
+                settings["video_presets"][new_k] = settings["video_presets"].pop(old_k)
+
+        # 公式5大プリセットの補完および自己修復
         for def_name, def_preset in DEFAULT_VIDEO_PRESETS.items():
             if def_name not in settings["video_presets"]:
                 settings["video_presets"][def_name] = copy.deepcopy(def_preset)
             else:
                 p_item = settings["video_presets"][def_name]
                 if isinstance(p_item, dict):
-                    # Shortsプリセット等の公式比率が過去のバグで4:3等に上書きされていたら修復
+                    # 各プリセットの最新共通キーを補完
+                    for dk, dv in def_preset.items():
+                        p_item.setdefault(dk, copy.deepcopy(dv))
+                    # Shortsプリセット等の公式比率修復
                     if "Shorts" in def_name or "縦型" in def_name:
                         p_item["aspect_ratio"] = "9:16"
-                    elif "横" in def_name or "16:9" in def_name or "MV" in def_name or "クロマキー" in def_name:
+                    elif "16:9" in def_name or "MV" in def_name or "クロマキー" in def_name:
                         p_item["aspect_ratio"] = "16:9"
 
     # 3. active_video_preset の整合性

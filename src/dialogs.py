@@ -43,7 +43,7 @@ class HarmonicaSettingsDialog(QDialog):
     def __init__(self, current_settings: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("システム環境設定 (System Preferences)")
-        self.resize(580, 520)
+        self.resize(720, 540)
         self.setModal(True)
 
         self.settings = dict(current_settings)
@@ -206,6 +206,34 @@ class HarmonicaSettingsDialog(QDialog):
         v_proj.addStretch()
         self.tabs.addTab(tab_project, "📁 プロジェクト・保存先管理")
 
+        # -----------------------------------------------------------------
+        # タブ 4: 🎬 初期プリセット一覧
+        # -----------------------------------------------------------------
+        tab_presets = QWidget()
+        v_presets = QVBoxLayout(tab_presets)
+        v_presets.setSpacing(10)
+
+        v_presets.addWidget(QLabel("<b>【公式5大動画プリセット比較マトリクス】</b>"))
+        v_presets.addWidget(QLabel("各プリセットの主要パラメータ一覧です。制作用途に合わせて最適なプリセットを選択できます。"))
+
+        self.table_presets = QTableWidget(5, 7, self)
+        self.table_presets.setHorizontalHeaderLabels(["初期プリセット名", "画面比率", "ノーツ軌道", "音名表記", "穴下表示", "不透明度", "背景減光"])
+        self.table_presets.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.table_presets.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table_presets.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table_presets.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        v_presets.addWidget(self.table_presets)
+
+        r_pre_btn = QHBoxLayout()
+        self.btn_restore_factory_presets = QPushButton("↺ 公式初期プリセットを工場出荷時の設定に一括復元", self)
+        self.btn_restore_factory_presets.setToolTip("5大プリセットの変更内容をリセットし、初期状態に復元します")
+        self.btn_restore_factory_presets.clicked.connect(self._on_restore_factory_presets)
+        r_pre_btn.addWidget(self.btn_restore_factory_presets)
+        r_pre_btn.addStretch()
+        v_presets.addLayout(r_pre_btn)
+
+        self.tabs.addTab(tab_presets, "🎬 初期プリセット一覧")
+
         main_layout.addWidget(self.tabs)
 
         # -----------------------------------------------------------------
@@ -294,6 +322,7 @@ class HarmonicaSettingsDialog(QDialog):
         op = int(s.get("note_opacity", 100))
         self.slider_opacity.setValue(op)
         self.lbl_opacity_val.setText(f"{op}%")
+        self._refresh_presets_table()
 
     def _on_reset_defaults(self):
         if confirm_dialog(self, "確認", "全設定を初期状態にリセットしますか？", default_yes=False):
@@ -326,6 +355,53 @@ class HarmonicaSettingsDialog(QDialog):
         s["note_opacity"] = self.slider_opacity.value()
 
         self.accept()
+
+    def _refresh_presets_table(self):
+        """公式5大プリセットの一覧テーブルを描画"""
+        import settings_manager
+        presets_dict = self.settings.get("video_presets", {})
+        official_names = list(settings_manager.DEFAULT_VIDEO_PRESETS.keys())
+        self.table_presets.setRowCount(len(official_names))
+
+        for row, name in enumerate(official_names):
+            p = presets_dict.get(name, settings_manager.DEFAULT_VIDEO_PRESETS[name])
+            item_name = QTableWidgetItem(name)
+            item_ratio = QTableWidgetItem(str(p.get("aspect_ratio", "16:9")))
+            item_traj = QTableWidgetItem(str(p.get("trajectory_mode", "3段階 (練習標準)")))
+            item_lang = QTableWidgetItem(str(p.get("lang_mode", "ドレミ")) if p.get("show_lookahead", True) else "非表示")
+            item_g4 = QTableWidgetItem(str(p.get("grid4_mode", "非表示")))
+            item_op = QTableWidgetItem(f"{p.get('note_opacity', 100)}%")
+            item_bg = QTableWidgetItem(f"{p.get('bg_dim_ratio', 60)}%" if p.get("bg_image_enabled", True) else "なし")
+
+            for item in (item_name, item_ratio, item_traj, item_lang, item_g4, item_op, item_bg):
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item_name.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+            self.table_presets.setItem(row, 0, item_name)
+            self.table_presets.setItem(row, 1, item_ratio)
+            self.table_presets.setItem(row, 2, item_traj)
+            self.table_presets.setItem(row, 3, item_lang)
+            self.table_presets.setItem(row, 4, item_g4)
+            self.table_presets.setItem(row, 5, item_op)
+            self.table_presets.setItem(row, 6, item_bg)
+
+    def _on_restore_factory_presets(self):
+        """公式プリセットを初期値にリセット"""
+        msg_text = "公式5大動画プリセットを工場出荷時の標準設定に戻しますか？\n（自作のプリセットはそのまま保持されます）"
+        if not confirm_dialog(
+            self,
+            "初期プリセットの復元",
+            msg_text,
+            default_yes=False
+        ):
+            return
+        import settings_manager
+        if "video_presets" not in self.settings:
+            self.settings["video_presets"] = {}
+        for k, v in settings_manager.DEFAULT_VIDEO_PRESETS.items():
+            self.settings["video_presets"][k] = copy.deepcopy(v)
+        self._refresh_presets_table()
+        QMessageBox.information(self, "復元完了", "公式初期プリセットを初期設定に戻しました。")
 
     def get_settings(self) -> dict:
         return self.settings
