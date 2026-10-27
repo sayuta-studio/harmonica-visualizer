@@ -6,12 +6,18 @@ import os
 
 block_cipher = None
 
+# Support running PyInstaller from either project root or packaging/ directory
+if 'SPECPATH' in globals():
+    base_dir = os.path.abspath(os.path.join(SPECPATH, '..'))
+else:
+    base_dir = os.path.abspath('.')
+
 a = Analysis(
-    ['src/main.py'],
-    pathex=['src'],
+    [os.path.join(base_dir, 'src', 'main.py')],
+    pathex=[os.path.join(base_dir, 'src')],
     binaries=[],
     datas=[
-        ('src/skins', 'skins'),
+        (os.path.join(base_dir, 'src', 'skins'), 'skins'),
     ],
     hiddenimports=[
         'PyQt6',
@@ -74,4 +80,3 @@ coll = COLLECT(
     upx_exclude=[],
     name='HarmonicaVisualizer',
 )
-

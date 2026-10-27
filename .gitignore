@@ -11,6 +11,7 @@ _shared_knowledge/
 _archives/
 _docs/
 AGENTS.md
+tools/
 *.bat
 scratch/
 **/scratch/
@@ -24,7 +25,7 @@ dist/
 **/build/
 **/dist/
 *.spec
-!HarmonicaVisualizer.spec
+!packaging/HarmonicaVisualizer.spec
 *.spec.bak
 
 # ------------------------------------------------------------------------------

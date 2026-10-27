@@ -120,7 +120,7 @@ python tests/verify_v420_studio_complete.py
 ### ポータブル配布パッケージのビルド
 ```powershell
 # PyInstaller によるディレクトリ型（--onedir）ビルド
-python -m PyInstaller --clean HarmonicaVisualizer.spec
+python -m PyInstaller --clean packaging/HarmonicaVisualizer.spec
 ```
 
 ---
@@ -136,7 +136,7 @@ Copyright (C) 2026 サユタ
 ```
 
 ### サードパーティ製ライブラリおよび外部ツール
-依存ライブラリおよび同梱バイナリの詳細な著作権表示・ライセンス条項・ソースコード入手先については、[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) をご参照ください。
+依存ライブラリおよび同梱バイナリの詳細な著作権表示・ライセンス条項・ソースコード入手先については、[`THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md) をご参照ください。
 
 * **[PyQt6](https://riverbankcomputing.com/software/pyqt/)** - GUIフレームワーク・OpenGL描画コンテキスト管理 (GNU GPL v3)
 * **[Qt 6](https://www.qt.io/)** - GUIランタイムライブラリ (GNU LGPL v3 / GPL v3、`_internal/PyQt6/Qt6/bin/` 配下の動的リンクライブラリ)
