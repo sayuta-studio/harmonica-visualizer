@@ -8,7 +8,7 @@ Copyright (C) 2026 サユタ
 利用規約および再配布条件の詳細については、同封の「LICENSE」ファイルをご確認ください。
 
 ソースコードリポジトリ:
-https://github.com/sayuta/harmonica-visualizer (公開予定)
+https://github.com/sayuta/harmonica-visualizer
 
 
 --------------------------------------------------------------------------------
@@ -16,40 +16,55 @@ https://github.com/sayuta/harmonica-visualizer (公開予定)
 --------------------------------------------------------------------------------
 
 本ソフトウェアは以下のサードパーティ製ライブラリおよび外部ツールを利用・同梱しています。
-それぞれの開発者・コミュニティに深く感謝申し上げます。
+詳細な通知およびライセンス全文の参照先は同封の「THIRD_PARTY_NOTICES.md」をご確認ください。
 
 1. PyQt6
    - ライセンス: GNU General Public License v3 (GPL v3)
    - 著作権: Copyright (c) 2024 Riverbank Computing Limited
 
-2. pygame-ce (Python Game Engine - Community Edition)
-   - ライセンス: GNU Lesser General Public License v2.1 (LGPL v2.1)
-   - 著作権: Copyright (c) 2023-2024 pygame-ce developers, (c) 2000-2022 Pete Shinners, et al.
+2. Qt 6 共有ライブラリ (QtCore, QtGui, QtWidgets, QtOpenGL, QtOpenGLWidgets 等)
+   - ライセンス: GNU Lesser General Public License v3 (LGPL v3) / GNU GPL v3
+   - 著作権: Copyright (C) 2024 The Qt Company Ltd. and other contributors.
+   - 本ポータブル版において、Qtライブラリ群は `_internal/PyQt6/Qt6/bin/` 配下の独立した
+     動的リンクライブラリ（DLL）として配置されており、LGPL v3 の規定に基づき利用者による
+     ライブラリの差し替えが可能です。
 
 3. FFmpeg (同梱バイナリ: ffmpeg.exe)
-   - ライセンス: GNU General Public License v3 (GPL v3) / LGPL v2.1
-   - 著作権: Copyright (c) 2000-2024 the FFmpeg developers
+   - ビルド版: Gyan.FFmpeg 8.1.1-full_build
+   - ライセンス: GNU General Public License v3 (GPL v3) (--enable-gpl --enable-version3 有効ビルド)
+   - 著作権: Copyright (c) 2000-2026 the FFmpeg developers / ビルド配布: Gyan Doshi
    - 本パッケージに同梱されている ffmpeg.exe は、動画エンコード・音声合成パイプラインのために
-     外部プロセスとして呼び出されます。ソースコードは公式（https://ffmpeg.org/）より入手可能です。
+     外部プロセスとしてコマンドライン起動されます。ソースコードは公式（https://ffmpeg.org/
+     および https://www.gyan.dev/ffmpeg/builds/）より入手可能です。
 
-4. NumPy
+4. pygame-ce (Python Game Engine - Community Edition)
+   - ライセンス: GNU Lesser General Public License v2.1 or later (LGPL v2.1+)
+   - 著作権: Copyright (c) 2023-2024 pygame-ce developers, (c) 2000-2022 Pete Shinners, et al.
+   - 同梱の SDL2, SDL2_mixer, SDL2_image, SDL2_ttf は zlib ライセンス等に基づきます。
+
+5. NumPy & OpenBLAS
    - ライセンス: BSD 3-Clause License
-   - 著作権: Copyright (c) 2005-2024, NumPy Developers
+   - 著作権: Copyright (c) 2005-2024, NumPy Developers / OpenBLAS Developers
 
-5. Mido (MIDI Objects for Python)
+6. Pillow (PIL)
+   - ライセンス: Historical Permission Notice and Disclaimer (HPND License)
+   - 著作権: Copyright (c) 2010-2024 Jeffrey A. Clark and contributors
+
+7. Mido (MIDI Objects for Python)
    - ライセンス: MIT License
    - 著作権: Copyright (c) 2013-2024 Ole Martin Bjørndalen
 
 
 --------------------------------------------------------------------------------
-Windows標準 DLS サウンドフォント (gm.dls) の利用に関する告知
+Windows標準サウンドフォント (gm.dls) の取り扱いについて
 --------------------------------------------------------------------------------
 
-本配布パッケージには、Microsoft Corporation および Roland Corporation が著作権を有する
-サウンドセットファイル「gm.dls」は **一切同梱されていません**。
+本ソフトウェアの内蔵サンプラー（GmDlsSampler）は、実行時に利用環境の Windows OS 上に
+存在する gm.dls ファイル（%SystemRoot%\System32\drivers\gm.dls 等）を参照して動作します。
 
-本ソフトウェアの内蔵サンプラー（GmDlsSampler）は、ユーザーの Windows OS 上に
-標準搭載されているシステムファイル（%SystemRoot%\System32\drivers\gm.dls 等）を
-実行時にローカル環境から動的に読み込んで利用します。
-これにより、著作権法および再配布規約を厳格に遵守しています。
+gm.dls ファイル自体は、本ソフトウェアのソースコードおよび配布パッケージに
+一切同梱・再配布していません。同ファイルの権利は各権利者に帰属し、本ソフトウェアの
+利用許諾によってその権利が移転または許諾されるものではありません。
 
+ファイルの存在や配置は利用環境によって異なる場合があります。そのため、ファイルを
+検出できない環境では、音源機能が利用できない、または制限される場合があります。

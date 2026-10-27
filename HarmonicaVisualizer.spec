@@ -23,6 +23,7 @@ a = Analysis(
         'pygame',
         'numpy',
         'mido',
+        'PIL',
     ],
     hookspath=[],
     hooksconfig={},
