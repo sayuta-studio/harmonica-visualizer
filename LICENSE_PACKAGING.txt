@@ -1,0 +1,54 @@
+================================================================================
+Harmonica Visualizer Ver.4.2.0 (Harmonica Studio Edition)
+Copyright (C) 2026 サユタ
+================================================================================
+
+本ソフトウェア「Harmonica Visualizer」は、GNU General Public License Version 3 (GPL v3)
+の下で公開・配布されているオープンソース・フリーソフトウェアです。
+利用規約および再配布条件の詳細については、同封の「LICENSE」ファイルをご確認ください。
+
+ソースコードリポジトリ:
+https://github.com/sayuta/harmonica-visualizer (公開予定)
+
+
+--------------------------------------------------------------------------------
+サードパーティ製コンポーネントおよび外部バイナリのライセンス表記
+--------------------------------------------------------------------------------
+
+本ソフトウェアは以下のサードパーティ製ライブラリおよび外部ツールを利用・同梱しています。
+それぞれの開発者・コミュニティに深く感謝申し上げます。
+
+1. PyQt6
+   - ライセンス: GNU General Public License v3 (GPL v3)
+   - 著作権: Copyright (c) 2024 Riverbank Computing Limited
+
+2. pygame-ce (Python Game Engine - Community Edition)
+   - ライセンス: GNU Lesser General Public License v2.1 (LGPL v2.1)
+   - 著作権: Copyright (c) 2023-2024 pygame-ce developers, (c) 2000-2022 Pete Shinners, et al.
+
+3. FFmpeg (同梱バイナリ: ffmpeg.exe)
+   - ライセンス: GNU General Public License v3 (GPL v3) / LGPL v2.1
+   - 著作権: Copyright (c) 2000-2024 the FFmpeg developers
+   - 本パッケージに同梱されている ffmpeg.exe は、動画エンコード・音声合成パイプラインのために
+     外部プロセスとして呼び出されます。ソースコードは公式（https://ffmpeg.org/）より入手可能です。
+
+4. NumPy
+   - ライセンス: BSD 3-Clause License
+   - 著作権: Copyright (c) 2005-2024, NumPy Developers
+
+5. Mido (MIDI Objects for Python)
+   - ライセンス: MIT License
+   - 著作権: Copyright (c) 2013-2024 Ole Martin Bjørndalen
+
+
+--------------------------------------------------------------------------------
+Windows標準 DLS サウンドフォント (gm.dls) の利用に関する告知
+--------------------------------------------------------------------------------
+
+本配布パッケージには、Microsoft Corporation および Roland Corporation が著作権を有する
+サウンドセットファイル「gm.dls」は **一切同梱されていません**。
+
+本ソフトウェアの内蔵サンプラー（GmDlsSampler）は、ユーザーの Windows OS 上に
+標準搭載されているシステムファイル（%SystemRoot%\System32\drivers\gm.dls 等）を
+実行時にローカル環境から動的に読み込んで利用します。
+これにより、著作権法および再配布規約を厳格に遵守しています。

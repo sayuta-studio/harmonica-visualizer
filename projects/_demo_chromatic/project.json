@@ -1,0 +1,41 @@
+{
+  "preset": "スライド優先",
+  "monophonic_mode": "すべて有効",
+  "hide_muted_notes": false,
+  "custom_fingering": {},
+  "muted_notes": {},
+  "active_pattern_name": "標準パターン (基本)",
+  "main_track_indices": [
+    0
+  ],
+  "accomp_track_indices": [],
+  "transpose": 0,
+  "transpose_accomp": true,
+  "inst_type": "16穴 (64音・C調)",
+  "ext_audio_path": "",
+  "ext_offset_ms": -1500,
+  "loop_a": 1,
+  "loop_b": 7,
+  "active_take_path": "",
+  "patterns": {
+    "標準パターン (基本)": {
+      "transpose": 0,
+      "transpose_accomp": true,
+      "custom_map": {}
+    },
+    "曲別_D調用": {
+      "transpose": 2,
+      "transpose_accomp": true,
+      "custom_map": {}
+    },
+    "原曲キー (保存済み)": {
+      "preset": "スライド優先",
+      "monophonic_mode": "すべて有効",
+      "hide_muted_notes": false,
+      "custom_fingering": {},
+      "muted_notes": {},
+      "transpose": 0,
+      "transpose_accomp": true
+    }
+  }
+}
