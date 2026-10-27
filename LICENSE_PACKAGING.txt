@@ -8,7 +8,7 @@ Copyright (C) 2026 サユタ
 利用規約および再配布条件の詳細については、同封の「LICENSE」ファイルをご確認ください。
 
 ソースコードリポジトリ:
-https://github.com/sayuta/harmonica-visualizer
+https://github.com/sayuta-studio/harmonica-visualizer
 
 
 --------------------------------------------------------------------------------

@@ -10,7 +10,7 @@
 
 **クロマチックハーモニカのための演奏練習支援 ＆ 演奏動画制作スタジオデスクトップアプリ**
 
-[**📥 ダウンロード (最新版ポータブルZIP)**](https://github.com/sayuta/harmonica-visualizer/releases/latest) • [**📖 機能一覧**](#-主な機能) • [**🛠️ 開発者向けガイド**](#-開発者向けソースコードからの実行方法) • [**⚖️ 利用上の注意**](#️-利用上の注意)
+[**📥 ダウンロード (最新版ポータブルZIP)**](https://github.com/sayuta-studio/harmonica-visualizer/releases/latest) • [**📖 機能一覧**](#-主な機能) • [**🛠️ 開発者向けガイド**](#-開発者向けソースコードからの実行方法) • [**⚖️ 利用上の注意**](#️-利用上の注意)
 
 </div>
 
@@ -28,7 +28,7 @@ MIDIファイルを読み込むだけで、吹き音・吸い音・スライド�
 
 Pythonのインストールや環境構築は不要です。解凍してすぐに利用できるポータブルZIPを配布しています。
 
-1. [**Releases ページ**](https://github.com/sayuta/harmonica-visualizer/releases/latest) から最新の `HarmonicaVisualizer-v4.2.0-windows-x64.zip` をダウンロードします。
+1. [**Releases ページ**](https://github.com/sayuta-studio/harmonica-visualizer/releases/latest) から最新の `HarmonicaVisualizer-v4.2.0-windows-x64.zip` をダウンロードします。
 2. ダウンロードした ZIP ファイルをお好きなフォルダ（「ドキュメント」や「デスクトップ」など）へ展開（すべて解凍）します。
 3. フォルダ内の `HarmonicaVisualizer.exe` をダブルクリックして起動します。
 
@@ -94,7 +94,7 @@ Python 環境をお持ちの方、または開発・改造に参加される方�
 ### セットアップと起動手順
 ```powershell
 # 1. リポジトリをクローン
-git clone https://github.com/sayuta/harmonica-visualizer.git
+git clone https://github.com/sayuta-studio/harmonica-visualizer.git
 cd harmonica-visualizer
 
 # 2. 仮想環境を作成して有効化
