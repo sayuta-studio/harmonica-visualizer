@@ -1,3 +1,4 @@
+from config import get_ffmpeg_path
 # -*- coding: utf-8 -*-
 """
 v3.0/video_exporter.py
@@ -70,9 +71,10 @@ def calc_export_resolution(res_text: str, ratio_text: str) -> tuple[int, int]:
 
 
 def check_ffmpeg_available() -> bool:
-    """システムで ffmpeg コマンドが実行可能か判定"""
+    """ffmpeg が実行可能か判定（実行ファイル同階層またはシステムPATH）"""
+    ffmpeg_bin = get_ffmpeg_path() or "ffmpeg"
     try:
-        res = subprocess.run(["ffmpeg", "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        res = subprocess.run([ffmpeg_bin, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return res.returncode == 0
     except Exception:
         return False
@@ -1212,8 +1214,9 @@ class VideoExportThread(QThread):
                 )
 
             # 3. FFmpeg コマンドライン構築
+            ffmpeg_bin = get_ffmpeg_path() or "ffmpeg"
             cmd = [
-                "ffmpeg", "-y",
+                ffmpeg_bin, "-y",
                 "-f", "rawvideo",
                 "-vcodec", "rawvideo",
                 "-s", f"{width}x{height}",

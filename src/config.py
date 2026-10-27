@@ -12,51 +12,77 @@ import os
 import sys
 import shutil
 
-def resource_path(relative_path):
+from pathlib import Path
+
+def get_app_and_resource_dirs():
     """
-    PyInstallerワンファイルEXE展開先の一時フォルダ（_MEIPASS）と、
-    通常開発時のカレントディレクトリを透過的に自動解決し、安全な絶対パスを返します。
+    実行時(frozen)と開発時のベースパスを厳密に取得します。
+    - app_dir: 実行ファイル (.exe) のある物理ディレクトリ、または開発時のリポジトリルート
+    - resource_dir: 内部リソース (_MEIPASS / _internal / src/) のディレクトリ
     """
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+    if getattr(sys, "frozen", False):
+        app_dir = Path(sys.executable).resolve().parent
+        resource_dir = Path(getattr(sys, "_MEIPASS", app_dir))
+    else:
+        app_dir = Path(__file__).resolve().parent.parent
+        resource_dir = Path(__file__).resolve().parent
+    return app_dir, resource_dir
+
+def resource_path(relative_path: str) -> str:
+    """
+    PyInstallerリソース展開先の一時フォルダ（_MEIPASS）または内部リソースディレクトリから解決
+    """
+    _, resource_dir = get_app_and_resource_dirs()
+    return str(resource_dir / relative_path)
 
 def get_portable_base_dir() -> str:
     """
-    EXE化時(frozen)は実行ファイルのある物理フォルダ、
+    EXE化時(frozen)は実行ファイルのある物理フォルダ(app_dir)、
     開発時(.py直接実行)は src/ の1階層上（リポジトリルート）を返します。
     """
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    app_dir, _ = get_app_and_resource_dirs()
+    return str(app_dir)
+
+def get_ffmpeg_path() -> str:
+    """
+    ffmpeg.exe の実行可能パスを取得します。
+    優先順位:
+    1. APP_DIR / ffmpeg.exe (実行ファイルと同階層)
+    2. システム PATH 環境変数 (shutil.which)
+    """
+    app_dir, _ = get_app_and_resource_dirs()
+    local_ffmpeg = app_dir / "ffmpeg.exe"
+    if local_ffmpeg.is_file():
+        return str(local_ffmpeg)
+    
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return sys_ffmpeg
+    return ""
 
 def get_portable_path(relative_path: str) -> str:
     """
     ユーザーデータ・動的フォルダはポータブル基底ディレクトリ直下に解決します。
-    ただし同梱静的アセット('skins')がルート直下に無い場合は src/skins へ自動フォールバックし、
-    'settings.json' がルート直下に無く src/settings.json にある場合は初回のみ自動コピーして引き継ぎます。
+    同梱静的アセット('skins')は、外部上書き -> resource_dir -> _internal の順で安全に探索します。
     """
-    base_dir = get_portable_base_dir()
-    target_path = os.path.join(base_dir, relative_path)
-    src_dir = os.path.dirname(os.path.abspath(__file__))
+    app_dir, resource_dir = get_app_and_resource_dirs()
+    target_path = app_dir / relative_path
 
     norm_rel = relative_path.replace("\\", "/").strip("/")
     if norm_rel == "skins" or norm_rel.startswith("skins/"):
-        if not os.path.exists(target_path):
-            src_fallback = os.path.join(src_dir, relative_path)
-            if os.path.exists(src_fallback):
-                return src_fallback
-    elif norm_rel == "settings.json":
-        if not os.path.exists(target_path):
-            src_settings = os.path.join(src_dir, "settings.json")
-            if os.path.isfile(src_settings):
-                try:
-                    shutil.copy2(src_settings, target_path)
-                except Exception:
-                    pass
-    return target_path
+        # 1. ユーザーカスタムスキン (app_dir/skins)
+        if target_path.exists():
+            return str(target_path)
+        # 2. 内部同梱スキン (resource_dir/skins または src/skins)
+        res_skin = resource_dir / relative_path
+        if res_skin.exists():
+            return str(res_skin)
+        # 3. PyInstaller onedir の _internal/skins
+        internal_skin = app_dir / "_internal" / relative_path
+        if internal_skin.exists():
+            return str(internal_skin)
+
+    return str(target_path)
 
 def get_canvas_height_by_ratio(ratio_str):
     """
