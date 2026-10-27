@@ -1,159 +1,137 @@
-# Harmonica Visualizer (Studio Edition)
+# Harmonica Visualizer (Ver.4.2.0 Harmonica Studio Edition)
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-v4.2.0-blue.svg?style=flat-square)
-![License](https://img.shields.io/badge/license-GNU%20GPL%20v3-green.svg?style=flat-square)
-![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(64--bit)-lightgrey.svg?style=flat-square)
-![Framework](https://img.shields.io/badge/GUI-PyQt6%20%26%20OpenGL-orange.svg?style=flat-square)
-![Audio](https://img.shields.io/badge/Sound-Windows%20gm.dls%20%7C%20Pure%20Python-red.svg?style=flat-square)
+![Version](https://img.shields.io/badge/バージョン-v4.2.0-blue.svg?style=flat-square)
+![License](https://img.shields.io/badge/ライセンス-GNU%20GPL%20v3-green.svg?style=flat-square)
+![Platform](https://img.shields.io/badge/対応OS-Windows%2010%20%7C%2011%20(64--bit)-lightgrey.svg?style=flat-square)
+![Framework](https://img.shields.io/badge/GUI-PyQt6%20%2F%20OpenGL-orange.svg?style=flat-square)
+![Audio](https://img.shields.io/badge/音源-Windows%20gm.dls%20(Pure%20Python)-red.svg?style=flat-square)
 
-**A Next-Generation Chromatic Harmonica Practice & Video Production Studio**  
-*クロマチックハーモニカのための演奏練習支援 ＆ 演奏動画制作スタジオデスクトップアプリ*
+**クロマチックハーモニカのための演奏練習支援 ＆ 演奏動画制作スタジオデスクトップアプリ**
 
-[**📥 Download Portable ZIP (v4.2.0)**](https://github.com/sayuta/harmonica-visualizer/releases/latest) • [**📖 日本語利用ガイド**](#日本語利用ガイド-japanese-guide) • [**🛠️ Developer Setup**](#for-developers)
+[**📥 ダウンロード (最新版ポータブルZIP)**](https://github.com/sayuta/harmonica-visualizer/releases/latest) • [**📖 機能一覧**](#-主な機能) • [**🛠️ 開発者向けガイド**](#-開発者向けソースコードからの実行方法)
 
 </div>
 
 ---
 
-## 🌟 Highlights
+## 📖 概要
 
-**Harmonica Visualizer** is a specialized desktop studio designed specifically for chromatic harmonica players, music learners, and content creators. It bridges the gap between structured practice and high-impact social media video production (YouTube Shorts, TikTok, Instagram Reels).
+**Harmonica Visualizer** は、クロマチックハーモニカ（12穴 / 14穴 / 16穴）の演奏者、音楽学習者、そして動画クリエイターのために開発されたWindows向けスタジオアプリケーションです。
 
-* **🎼 Multi-Hole Support**: Built-in interactive layouts for **12-hole, 14-hole, and 16-hole** chromatic harmonicas (C-tuning and custom keys).
-* **⚡ Real-Time OpenGL Visualizer**: Falling-notes trajectory lane with dynamic hole glow and lever-action synchronization at high framerates.
-* **🎬 Studio-Grade Video Production**: Render 16:9 widescreen or 9:16 vertical split-screen videos with background video/image overlays, title cards, and chromakey alpha channels powered by bundled FFmpeg.
-* **🎹 Pure-Python GM-DLS Sampling Synthesizer**: Directly parses and synthesizes Windows built-in Roland GS soundset (`gm.dls`) with zero external C++ dependencies or software installations.
-* **🎙️ Multi-Take Audio Recording**: Record your acoustic performance via microphone, sync with MIDI accompaniment, apply studio reverb, and manage multiple takes.
+MIDIファイルを読み込むだけで、吹き音・吸い音・スライドレバーの押し引きをリアルタイムに美しく可視化し、日々の練習を強力にサポートします。さらに、YouTube Shorts や TikTok 向けの **9:16 縦長動画** や、通常の **16:9 横長動画**、動画編集ソフト用の **クロマキー（透明背景）動画** の書き出しまで、本アプリ1台で完結します。
 
 ---
 
-## 🚀 Getting Started (For Users)
+## 📥 ダウンロード（ポータブル版）
 
-No Python installation or complex setup is required. The application is distributed as a self-contained portable package.
+Pythonのインストールや面倒な環境構築は一切不要です。解凍してすぐに遊べるポータブルZIPを配布しています。
 
-### 1. Download & Extract
-1. Go to the [**Latest Releases**](https://github.com/sayuta/harmonica-visualizer/releases/latest) page.
-2. Download `HarmonicaVisualizer-v4.2.0-windows-x64.zip`.
-3. Extract the ZIP archive to your preferred location (e.g., `Documents` or `Desktop`).
+1. [**Releases ページ**](https://github.com/sayuta/harmonica-visualizer/releases/latest) から最新の `HarmonicaVisualizer-v4.2.0-windows-x64.zip` をダウンロードします。
+2. ダウンロードした ZIP ファイルをお好きなフォルダ（「ドキュメント」や「デスクトップ」など）へ展開（すべて解凍）します。
+3. フォルダ内の `HarmonicaVisualizer.exe` をダブルクリックして起動します。
 
-### 2. Launch
-Double-click `HarmonicaVisualizer.exe` in the extracted folder to start playing!
-
-> [!NOTE]
-> ### 🛡️ Handling Windows SmartScreen Warning (First Launch)
-> Because this is a newly released open-source executable without an expensive commercial code-signing certificate, Windows SmartScreen may show a blue popup:  
-> **"Windows protected your PC" (Windows によって PC が保護されました)**.
+> [!TIP]
+> ### 🛡️ 初回起動時の「WindowsによってPCが保護されました」について
+> 本ソフトはオープンソースで個人開発された初版アプリであるため、初回起動時に Windows SmartScreen（青いポップアップ警告画面）が表示される場合があります。
 > 
-> **How to proceed safely:**
-> 1. Click **"More info" (詳細情報)** on the popup.
-> 2. Click the **"Run anyway" (実行)** button that appears.
+> **起動手順（安全に実行する方法）:**
+> 1. 警告画面内の **「詳細情報」** をクリックします。
+> 2. 右下に表示される **「実行」** ボタンを押します。
 > 
-> *(The entire source code is 100% open under GNU GPL v3, and you can audit every line right here on GitHub!)*
+> *(本ソフトウェアのソースコードはすべて GNU GPL v3 に基づき GitHub 上で 100% 公開されており、有害なプログラムは一切含まれていません。)*
 
 ---
 
-## 🎯 Key Features Overview
+## ✨ 主な機能
 
-| Feature | Description |
-| :--- | :--- |
-| **Interactive Fretboard** | Visualizes blow/draw notes, slide-in/out positions, and note pitch in real-time. |
-| **Practice Tools** | Tempo scaling (20%–200%), semitone transposition, A-B loop repeat, metronome, and count-in intro. |
-| **Video Production Tab** | Split-screen modes (top/bottom/center harmonica placement), background media overlay, fade-in/out titles, chromakey green-screen export. |
-| **Integrated Mixer** | 3-band audio mixer (Harmonica guide synth, accompaniment tracks, microphone recording) with DSP Echo Chamber and Room reverb. |
-| **Song Container Engine** | 1-folder 1-project architecture (`projects/<SongName>/`) encapsulating MIDI sources, takes, accompaniment audio, and render outputs. |
+### 1. 🎷 練習スタジオ（リアルタイム運指可視化）
+* **マルチモデル対応**: 12穴、14穴、16穴（C調・各種調子）のクロマチックハーモニカに対応。
+* **OpenGL リアルタイムレーン描画**: 等速で下落するノーツ軌道、穴のリアルタイム発光、スライドレバーの連動アニメーションを高フレームレートで描画。
+* **充実の練習サポートツール**:
+  * スロー再生・テンポ変更（20% 〜 200%）
+  * 半音単位の移調（キー変更）機能
+  * 苦手な小節を反復練習できる A-B 区間リピート
+  * メトロノーム機能 ＆ 前奏カウントイン機能
+* **マイク録音・多重テイク管理**:
+  * お手持ちのマイクで自身の演奏を録音し、伴奏と同期再生してチェック可能。
+  * スタジオ品質のルーム／ホール／エコーチェンバー・リバーブ（残響DSP）を搭載。
 
----
+### 2. 🎬 動画制作スタジオ（SNS・動画サイト向けエクスポート）
+* **YouTube Shorts / TikTok / Reels 特化（9:16 縦長動画）**:
+  * 画面の上半分または下半分に16:9比率のハーモニカ演奏画面を配置し、空いたスペースにPV映像やイラストを合成しやすいレイアウト設計。
+* **フルHD 16:9 横長動画 / クロマキー透過動画**:
+  * 背景画像や背景動画のオーバーレイ合成に対応。
+  * 背景をグリーンバック／ブルーバックにした透過素材動画（アルファチャンネル書き出し）を出力可能。
+* **タイトルテロップ演出**: 曲名や演奏者名のタイトル表示（表示秒数・カット／フェードアウト設定）。
+* **高速パイプライン処理**: 同梱の FFmpeg を内部で連携させ、高画質・高音質な MP4 を安定して書き出し。
 
-## 🇯🇵 日本語利用ガイド (Japanese Guide)
+### 3. 🎹 Pure-Python GM-DLS サンプリング音源エンジン
+* Windows 10 / 11 に標準搭載されている高品質な Roland GS サウンドフォント（`gm.dls`）を、外部DLLや追加ソフト不要で Pure Python（NumPy）のみで直接解析・再生。
+* ピアノ、ストリングス、ベース、ドラム等の本格的な伴奏音声をオフライン合成します。
 
-<details>
-<summary><b>クリックして日本語の利用説明を表示する</b></summary>
-
-### 主な機能
-1. **練習モード**:
-   - 12穴 / 14穴 / 16穴 クロマチックハーモニカに対応。
-   - MIDIファイルを読み込むと、吹音・吸音・スライドレバーの押し引きをリアルタイムに色分け表示。
-   - テンポ変更（スロー再生）、移調、A-B区間リピート、メトロノーム機能。
-   - マイク録音機能（多重テイク対応・リバーブDSP・伴奏同期試聴）。
-2. **動画制作スタジオモード**:
-   - YouTube Shorts や TikTok 向けの **9:16 縦型動画**（上半分または下半分にハーモニカを配置し、空き領域にPV映像を配置可能）。
-   - 通常の **16:9 横長動画**、動画編集ソフト用の **クロマキー（透明背景）動画** の書き出し。
-   - タイトルテロップ表示（表示時間・消え方フェード調整）、FFmpeg高速パイプライン処理。
-3. **高品位音源**:
-   - Windows標準のサウンドフォント（`gm.dls`）を独自エンジンで直接読み込み、ピアノやドラムなどの本格的な伴奏をオフライン合成します。
-
-### インストールと起動
-- リリースページから `HarmonicaVisualizer-v4.2.0-windows-x64.zip` をダウンロードし、右クリックで「すべて展開」してください。
-- フォルダ内の `HarmonicaVisualizer.exe` を実行すると起動します（インストール作業不要）。
-- 初回起動時に青い画面（Windows SmartScreen）が出た場合は、**「詳細情報」➔「実行」** をクリックしてください。
-
-</details>
+### 4. 📁 楽曲プロジェクト・自己完結コンテナ
+* 楽曲ごとに原本MIDI、録音テイクWAV、外部伴奏、書き出し動画、運指設定を1つのフォルダ（`projects/<曲名>/`）にカプセル化して管理。フォルダの移動やバックアップも簡単です。
 
 ---
 
-## 🛠️ For Developers
+## 🛠️ 開発者向け（ソースコードからの実行方法）
 
-To run or build Harmonica Visualizer from source code:
+Python 環境をお持ちの方、または開発・改造に参加される方向けのセットアップ手順です。
 
-### Prerequisites
+### 動作前提環境
 * Windows 10 / 11 (64-bit)
-* Python 3.12, 3.13, or 3.14
-* [FFmpeg](https://ffmpeg.org/) installed and available in PATH (or placed in the project root)
+* Python 3.12, 3.13, または 3.14
+* [FFmpeg](https://ffmpeg.org/)（動画書き出し機能を利用する場合。システムPATHまたはリポジトリルートに `ffmpeg.exe` を配置）
 
-### Clone & Run
+### セットアップと起動手順
 ```powershell
-# 1. Clone the repository
+# 1. リポジトリをクローン
 git clone https://github.com/sayuta/harmonica-visualizer.git
 cd harmonica-visualizer
 
-# 2. Create and activate a virtual environment
+# 2. 仮想環境を作成して有効化
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# 3. Install dependencies
+# 3. 依存ライブラリをインストール
 pip install -r requirements.txt
 
-# 4. Launch the application
+# 4. アプリケーションを起動
 python src/main.py
 ```
 
-### Running Automated Test Suite
+### 自動テストスイートの実行
 ```powershell
-# Run comprehensive regression and unit verification suites
+# 全機能・全回帰テスト（全項目PASSを確認）
 python tests/verify_v420_studio_complete.py
 ```
 
-### Building the Distribution Package
+### ポータブル配布パッケージのビルド
 ```powershell
-# Build onedir portable executable using PyInstaller
+# PyInstaller によるディレクトリ型（--onedir）ビルド
 python -m PyInstaller --clean HarmonicaVisualizer.spec
 ```
 
 ---
 
-## 🏛️ Architecture & Third-Party Credits
+## 📄 ライセンス & サードパーティ・クレジット
 
-Harmonica Visualizer is built upon open technologies:
-
-* **[PyQt6](https://riverbankcomputing.com/software/pyqt/)** - Modern GUI application framework and OpenGL rendering context. (Licensed under GNU GPL v3)
-* **[FFmpeg](https://ffmpeg.org/)** - High-performance multimedia streaming, audio mixing, and video encoding pipeline. (Licensed under GNU GPL v3 / LGPL v2.1)
-* **[pygame-ce](https://pyga.me/)** - Low-latency audio playback and SDL_mixer backend. (Licensed under GNU LGPL v2.1)
-* **[NumPy](https://numpy.org/)** - Vectorized DSP processing, audio buffer manipulation, and RIFF DLS waveform extraction. (Licensed under BSD-3-Clause)
-* **[Mido](https://mido.readthedocs.io/)** - MIDI parsing and timeline event compilation. (Licensed under MIT License)
-
-### 🎵 Legal Notice Regarding Windows Soundfont (`gm.dls`)
-This software incorporates an in-house RIFF DLS Level 1 parser (`GmDlsSampler`) that dynamically accesses the Microsoft / Roland General MIDI soundset file located in the user's local operating system directory (`%SystemRoot%\System32\drivers\gm.dls`). **The `gm.dls` soundfont file is NOT redistributed or bundled** with this project, in strict compliance with copyright laws and software distribution agreements.
-
----
-
-## 📄 License
-
-This project is licensed under the **GNU General Public License v3.0 (GPL v3)**.  
-See the [`LICENSE`](LICENSE) file for the full license text.
+本ソフトウェアは **GNU General Public License v3.0 (GPL v3)** のもとで公開されているオープンソース・ソフトウェアです。  
+詳細なライセンス条項は同封の [`LICENSE`](LICENSE) ファイルをご確認ください。
 
 ```text
-Harmonica Visualizer (Harmonica Studio Edition)
+Harmonica Visualizer (Ver.4.2.0 Harmonica Studio Edition)
 Copyright (C) 2026 サユタ
 ```
+
+### サードパーティ製ライブラリ
+* **[PyQt6](https://riverbankcomputing.com/software/pyqt/)** - GUIフレームワークおよびOpenGL描画コンテキスト (GNU GPL v3)
+* **[FFmpeg](https://ffmpeg.org/)** - 動画エンコード・音声合成パイプライン (GNU GPL v3 / LGPL v2.1)
+* **[pygame-ce](https://pyga.me/)** - 低遅延音声再生・SDL_mixerバックエンド (GNU LGPL v2.1)
+* **[NumPy](https://numpy.org/)** - DSP音声処理およびDLS波形解析 (BSD-3-Clause)
+* **[Mido](https://mido.readthedocs.io/)** - MIDIデータ解析 (MIT License)
+
+### 🎵 Windows標準サウンドフォント（gm.dls）に関する法的明記
+本ソフトウェアの内蔵サンプラー（`GmDlsSampler`）は、ユーザーの Windows OS 上に標準搭載されているシステムファイル（`%SystemRoot%\System32\drivers\gm.dls` 等）を実行時に動的に読み込んで利用します。**Microsoft Corporation および Roland Corporation が著作権を有する `gm.dls` ファイル自体は、再配布パッケージ内に一切同梱・含まれていません**。
