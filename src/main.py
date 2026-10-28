@@ -599,7 +599,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Harmonica Visualizer v4.2.0 [Harmonica Studio Edition]")
+        self.setWindowTitle("Harmonica Visualizer v4.2.1 [Harmonica Studio Edition]")
         self.resize(1380, 880)
         self.setMinimumSize(980, 680)
         self.setAcceptDrops(True)
@@ -5352,7 +5352,7 @@ def create_startup_splash() -> QSplashScreen:
     p.drawRoundedRect(1, 1, 498, 258, 10, 10)
     p.setPen(QColor("#38BDF8"))
     p.setFont(QFont("Meiryo UI", 18, QFont.Weight.Bold))
-    p.drawText(QRectF(0, 55, 500, 45), Qt.AlignmentFlag.AlignCenter, "Harmonica Visualizer v4.2.0")
+    p.drawText(QRectF(0, 55, 500, 45), Qt.AlignmentFlag.AlignCenter, "Harmonica Visualizer v4.2.1")
     p.setPen(QColor("#94A3B8"))
     p.setFont(QFont("Meiryo UI", 11, QFont.Weight.Bold))
     p.drawText(QRectF(0, 100, 500, 30), Qt.AlignmentFlag.AlignCenter, "[ Harmonica Studio Edition ]")

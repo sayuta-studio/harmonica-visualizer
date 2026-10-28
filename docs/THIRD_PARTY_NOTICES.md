@@ -1,6 +1,6 @@
 # Third-Party Software Notices and Information
 
-Harmonica Visualizer (Ver.4.2.0 Harmonica Studio Edition)
+Harmonica Visualizer (Ver.4.2.1 Harmonica Studio Edition)
 Copyright (C) 2026 サユタ
 License: GNU General Public License version 3 (GPL v3)
 
