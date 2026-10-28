@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QFrame, QMessageBox, QLineEdit, QGroupBox, QScrollArea, QProgressBar, QAbstractItemView, QInputDialog, QFileDialog, QSizePolicy
 )
 
-from settings_manager import THEME_PRESETS, DEFAULT_SETTINGS
+from settings_manager import THEME_PRESETS, DEFAULT_SETTINGS, get_fresh_default_settings, get_fresh_default_practice_visual
 from config import get_portable_path
 from midi_timeline import get_gm_instrument_name
 from audio_engine import AuditionPlayer, synthesize_midi_to_wav
@@ -48,8 +48,8 @@ class HarmonicaSettingsDialog(QDialog):
         self.resize(740, 680)
         self.setModal(True)
 
-        self.settings = dict(current_settings)
-        self.initial_settings = dict(current_settings)
+        self.settings = copy.deepcopy(current_settings)
+        self.initial_settings = copy.deepcopy(current_settings)
 
         self._init_ui()
         self._load_values()
@@ -570,7 +570,8 @@ class HarmonicaSettingsDialog(QDialog):
 
     def _on_reset_defaults(self):
         if confirm_dialog(self, "確認", "全設定を初期状態にリセットしますか？", default_yes=False):
-            self.settings.update(DEFAULT_SETTINGS)
+            self.settings = get_fresh_default_settings()
+            self._pv_bg_path = ""
             self._load_values()
 
     def _on_save_clicked(self):
@@ -635,6 +636,19 @@ class HarmonicaSettingsDialog(QDialog):
         # 後方互換用トップレベル同期
         s["lever_deco_mode"] = pv["lever_deco_mode"]
         s["note_opacity"] = pv["note_opacity"]
+        s["bg_image_path"] = self._pv_bg_path
+        s["bg_image_enabled"] = pv["bg_image_enabled"]
+        s["trajectory_mode"] = pv["trajectory_mode"]
+        s["lang_mode"] = pv["lang_mode"]
+        s["grid4_mode"] = pv["grid4_mode"]
+        s["show_bar_lines"] = pv["show_bar_lines"]
+        s["show_notes"] = pv["show_notes"]
+        s["show_lookahead"] = pv["show_lookahead"]
+        s["show_grid"] = pv["show_grid"]
+        s["show_hole_num"] = pv["show_hole_num"]
+        s["color_theme"] = pv["color_theme"]
+        s["color_blow"] = pv["color_blow"]
+        s["color_draw"] = pv["color_draw"]
 
         self.accept()
 

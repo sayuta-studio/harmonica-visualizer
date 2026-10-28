@@ -367,6 +367,8 @@ def test_11_audit_12_regressions():
         temp_dir = get_portable_path("temp")
         os.makedirs(temp_dir, exist_ok=True)
         test_mid_path = os.path.join(temp_dir, "audit_band_test.mid")
+        import shutil
+        shutil.rmtree(os.path.join(get_portable_path("projects"), "audit_band_test"), ignore_errors=True)
         mid = mido.MidiFile(ticks_per_beat=480)
         tr_mel = mido.MidiTrack()
         tr_mel.append(mido.Message("program_change", channel=0, program=22, time=0))
@@ -455,6 +457,73 @@ def test_11_audit_12_regressions():
         QMessageBox.critical = orig_crit
 
 
+
+
+def test_12_qa_issues_40_to_45():
+    print("[TEST 12] QA Issues 40-45 (Background fit combo, preset image persist, transpose arrows, video tab skin, & reset defaults)...")
+    app = QApplication.instance() or QApplication(sys.argv)
+    win = HarmonicaMainWindow()
+
+    # 1. 課題40: combo_bg_fit includes "非表示 (背景画像オフ)" and chk_bg_enable is removed
+    assert hasattr(win, "combo_bg_fit"), "combo_bg_fit missing"
+    assert win.combo_bg_fit.itemText(0).startswith("非表示"), "combo_bg_fit first item must be '非表示'"
+    assert win.chk_bg_enable is None, "chk_bg_enable must be removed"
+    win.combo_bg_fit.setCurrentText("非表示 (背景画像オフ)")
+    assert win.gl_widget.bg_image_enabled is False, "bg_image_enabled must be False when 非表示 selected"
+    win.combo_bg_fit.setCurrentText("中央トリミング (画面いっぱい)")
+    assert win.gl_widget.bg_image_enabled is True, "bg_image_enabled must be True when fit mode selected"
+
+    # 2. 課題41: Preset change preserves loaded background image
+    mock_bg = os.path.abspath("temp_test_bg.png")
+    with open(mock_bg, "wb") as f:
+        f.write(b"PNG_MOCK")
+    try:
+        win.tab_widget.setCurrentIndex(1) # Switch to video production tab
+        win.gl_widget.bg_image_path = mock_bg
+        win.user_settings["bg_image_path"] = mock_bg
+        # Switch video preset
+        win.combo_video_preset.setCurrentText("🎥 演奏解説・レッスン (16:9)")
+        assert win.gl_widget.bg_image_path == mock_bg, "Background image path must be preserved on preset change"
+        assert "temp_test_bg.png" in win.lbl_bg_info.text(), f"lbl_bg_info must reflect preserved image filename, got: {win.lbl_bg_info.text()}"
+    finally:
+        if os.path.exists(mock_bg):
+            os.remove(mock_bg)
+
+    # 3. 課題42: spin_transpose stylesheet and arrow buttons
+    assert hasattr(win, "spin_transpose"), "spin_transpose missing"
+    ss = win.spin_transpose.styleSheet()
+    assert "up-button" in ss and "down-button" in ss, "spin_transpose must have explicit arrow button stylesheet"
+
+    # 4. 課題43: Video sub tab 1 (録音・伴奏) keeps video working state and video skins
+    win.tab_widget.setCurrentIndex(1) # Switch to 動画制作 tab
+    win.video_sub_tabs.setCurrentIndex(1) # Switch to 🎙️ 録音・伴奏 sub-tab
+    assert win._visual_edit_target == "video", "_visual_edit_target must remain 'video' on all video sub-tabs"
+
+    # 5. 課題44 & 45: HarmonicaSettingsDialog reset defaults
+    dlg = HarmonicaSettingsDialog(win.user_settings, parent=win, initial_tab=1)
+    dlg._pv_bg_path = "mock_practice_bg.png"
+    dlg.pv_lbl_bg_path.setText("mock_practice_bg.png")
+    dlg.pv_combo_traj.setCurrentText("垂直落下 (クラシック)")
+    dlg.pv_chk_bar_lines.setChecked(False)
+
+    # Mock confirm dialog to return True
+    import dialogs
+    orig_confirm = dialogs.confirm_dialog
+    dialogs.confirm_dialog = lambda *args, **kwargs: True
+    try:
+        dlg._on_reset_defaults()
+        assert dlg._pv_bg_path == "", "Practice background path must be reset to empty"
+        assert dlg.pv_lbl_bg_path.text() == "未設定 (黒背景)", "Practice background label must be '未設定 (黒背景)'"
+        assert dlg.pv_combo_traj.currentText() == "3段階 (練習標準)", "Practice trajectory must reset to default"
+        assert dlg.pv_chk_bar_lines.isChecked() is True, "Bar lines must reset to True"
+        assert dlg.settings["skin_mouthpiece_path"] == "", "Skin mouthpiece must reset to default (empty)"
+    finally:
+        dialogs.confirm_dialog = orig_confirm
+        dlg.deleteLater()
+
+    win.deleteLater()
+    print("  -> PASS: All QA issues 40-45 thoroughly verified and working seamlessly!")
+
 def run_all_v420_tests():
     print("=" * 70)
     print("Harmonica Visualizer Ver.4.2.0 Studio Complete Verification Suite")
@@ -470,8 +539,9 @@ def run_all_v420_tests():
     test_9_export_ui_arrows_and_volume_audition()
     test_10_gmdls_sampler_and_hybrid_synthesis()
     test_11_audit_12_regressions()
+    test_12_qa_issues_40_to_45()
     print("=" * 70)
-    print("🌟 ALL 11 INTEGRATION TESTS (17 ISSUES + 12 AUDIT FIXES) PASSED PERFECTLY! Ver.4.2.0 IS 100% COMPLETE! 🌟")
+    print("🌟 ALL 12 INTEGRATION TESTS (17 ISSUES + 12 AUDITS + 6 QA FIXES) PASSED PERFECTLY! 🌟")
     print("=" * 70)
 
 

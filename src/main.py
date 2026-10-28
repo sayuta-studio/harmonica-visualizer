@@ -1003,7 +1003,16 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.btn_trans_down_oct.clicked.connect(lambda: self.spin_transpose.setValue(max(-24, self.spin_transpose.value() - 12)))
         row3.addWidget(self.btn_trans_down_oct)
 
-        # 課題28: [-1]/[+1] ボタンを撤去し、QSpinBox標準の上下矢印 (UpDownArrows) に統合
+        # 課題42: スピンボックス専用上下矢印ボタンスタイル定義 (QSSリセット対策)
+        self._spin_transpose_normal_style = (
+            "QSpinBox { padding-right: 14px; }"
+            "QSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 14px; height: 11px; border-left: 1px solid #343442; background: #2A2A38; }"
+            "QSpinBox::up-button:hover { background: #38BDF8; }"
+            "QSpinBox::up-arrow { width: 7px; height: 5px; image: none; border-left: 3px solid transparent; border-right: 3px solid transparent; border-bottom: 4px solid #F1F5F9; }"
+            "QSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 14px; height: 11px; border-left: 1px solid #343442; background: #2A2A38; }"
+            "QSpinBox::down-button:hover { background: #38BDF8; }"
+            "QSpinBox::down-arrow { width: 7px; height: 5px; image: none; border-left: 3px solid transparent; border-right: 3px solid transparent; border-top: 4px solid #F1F5F9; }"
+        )
         self.spin_transpose = QSpinBox(self)
         self.spin_transpose.setButtonSymbols(QSpinBox.ButtonSymbols.UpDownArrows)
         self.spin_transpose.setRange(-24, 24)
@@ -1011,6 +1020,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.spin_transpose.setSuffix("st")
         self.spin_transpose.setFixedWidth(58)
         self.spin_transpose.setFixedHeight(24)
+        self.spin_transpose.setStyleSheet(self._spin_transpose_normal_style)
         self.spin_transpose.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spin_transpose.setToolTip("半音単位の移調 (-24〜+24半音 / ±2オクターブ)\n[上下矢印クリック / 直接数値入力 / マウスホイールで変更可能]")
         self.spin_transpose.valueChanged.connect(self._on_transpose_changed)
@@ -1842,11 +1852,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         l_bg.setSpacing(6)
         l_bg.addWidget(QLabel("🖼️ <b>背景画像 & 減光 (コントラスト):</b>"))
 
-        self.chk_bg_enable = QCheckBox("背景画像の表示", self)
-        self.chk_bg_enable.setChecked(bool(self.user_settings.get("bg_image_enabled", True)))
-        self.chk_bg_enable.setToolTip("カスタム背景画像描画のON/OFF")
-        self.chk_bg_enable.toggled.connect(self._on_bg_enable_toggled)
-        l_bg.addWidget(self.chk_bg_enable)
+        # 課題40: 「背景画像の表示」チェックボックスを廃止し、「配置」コンボへ統合
+        self.chk_bg_enable = None
 
         cur_bg = self.user_settings.get("bg_image_path", "")
         self.lbl_bg_info = QLabel(self)
@@ -1878,14 +1885,18 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.combo_bg_fit = QComboBox(self)
         self.combo_bg_fit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_bg_fit.addItems([
+            "非表示 (背景画像オフ)",
             "中央トリミング (画面いっぱい)",
             "画面内に収める (全体表示)",
             "横幅に合わせる",
             "縦幅に合わせる",
             "画面に引き伸ばす (比率無視)"
         ])
+        bg_en = bool(self.user_settings.get("bg_image_enabled", True))
         cur_fit = self.user_settings.get("bg_fit_mode", "中央トリミング (画面いっぱい)")
-        if "引き伸ば" in cur_fit or "引き延ば" in cur_fit:
+        if not bg_en or str(cur_fit).startswith("非表示"):
+            self.combo_bg_fit.setCurrentText("非表示 (背景画像オフ)")
+        elif "引き伸ば" in cur_fit or "引き延ば" in cur_fit:
             self.combo_bg_fit.setCurrentText("画面に引き伸ばす (比率無視)")
         else:
             self.combo_bg_fit.setCurrentText(cur_fit)
@@ -2875,20 +2886,14 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self._on_video_sub_tab_changed(sub_idx)
 
     def _on_video_sub_tab_changed(self, sub_index: int):
-        if sub_index in (0, 2):
-            # 🎨 画面 (0) / 🎬 動画出力 (2): 現在の動画制作作業状態 (video_working_state) を反映プレビュー
-            self._visual_edit_target = "video"
-            active_p = settings_manager.get_working_video_state(self.user_settings)
-            ratio = active_p.get("aspect_ratio", "16:9")
-            is_chroma = "クロマキー" in active_p.get("export_style", "")
-            chroma_col = active_p.get("export_bg_color", "ノーマル（黒）")
-            self._apply_visual_dict_to_ui_and_gl(active_p, aspect_ratio=ratio, is_chromakey=is_chroma, chroma_color=chroma_col)
-        elif sub_index == 1:
-            # 🎙️ 録音・伴奏 (1): 録音・練習しやすい練習用スタイルで表示
-            self._visual_edit_target = "practice"
-            pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
-            self._sync_practice_style_ui_values(pv)
-            self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
+        # 課題43: 動画制作タブ配下の全サブタブ (0: 画面, 1: 録音・伴奏, 2: 出力) において
+        # 一貫して動画制作作業状態 (video_working_state) および動画制作プリセット・スキンを適用
+        self._visual_edit_target = "video"
+        active_p = settings_manager.get_working_video_state(self.user_settings)
+        ratio = active_p.get("aspect_ratio", "16:9")
+        is_chroma = "クロマキー" in active_p.get("export_style", "")
+        chroma_col = active_p.get("export_bg_color", "ノーマル（黒）")
+        self._apply_visual_dict_to_ui_and_gl(active_p, aspect_ratio=ratio, is_chromakey=is_chroma, chroma_color=chroma_col)
 
     def _sync_practice_style_ui_values(self, pv: dict = None):
         """練習タブ下部の表示スタイルUI要素を設定辞書と同期"""
@@ -2994,7 +2999,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             "show_ring": self.chk_ring.isChecked() if hasattr(self, "chk_ring") else True,
             "show_glow": self.chk_glow.isChecked() if hasattr(self, "chk_glow") else True,
             "show_legend": self.chk_legend.isChecked() if hasattr(self, "chk_legend") else True,
-            "bg_image_enabled": self.chk_bg_enable.isChecked() if hasattr(self, "chk_bg_enable") else True,
+            "bg_image_enabled": not self.combo_bg_fit.currentText().startswith("非表示") if hasattr(self, "combo_bg_fit") else True,
             "bg_image_path": getattr(self.gl_widget, "bg_image_path", ""),
             "bg_dim_ratio": self.slider_bg_dim.value() if hasattr(self, "slider_bg_dim") else 60,
             "bg_fit_mode": self.combo_bg_fit.currentText() if hasattr(self, "combo_bg_fit") else "中央トリミング (画面いっぱい)",
@@ -3033,13 +3038,37 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         traj_m = vis.get("trajectory_mode", "3段階 (練習標準)")
         self.gl_widget.set_trajectory_mode(traj_m)
 
+        # 課題41: プリセット切替時に既存の読み込み済み背景画像パスを維持
+        if getattr(self, "_visual_edit_target", "practice") == "video":
+            eff_bg = vis.get("bg_image_path", "") or getattr(self.gl_widget, "bg_image_path", "") or self.user_settings.get("bg_image_path", "")
+        else:
+            eff_bg = vis.get("bg_image_path", "")
+
+        eff_bg_en = bool(vis.get("bg_image_enabled", True))
+        eff_bg_fit = str(vis.get("bg_fit_mode", "中央トリミング (画面いっぱい)"))
+        if not eff_bg_en or eff_bg_fit.startswith("非表示"):
+            target_fit_text = "非表示 (背景画像オフ)"
+        elif "引き伸ば" in eff_bg_fit or "引き延ば" in eff_bg_fit:
+            target_fit_text = "画面に引き伸ばす (比率無視)"
+        else:
+            target_fit_text = eff_bg_fit
+
         self.gl_widget.set_background_image(
-            vis.get("bg_image_path", ""),
+            eff_bg,
             dim_ratio=int(vis.get("bg_dim_ratio", 60)),
-            fit_mode=str(vis.get("bg_fit_mode", "中央トリミング (画面いっぱい)")),
+            fit_mode=target_fit_text if not target_fit_text.startswith("非表示") else "中央トリミング (画面いっぱい)",
             rotation=int(vis.get("bg_rotation", 0)),
-            enabled=bool(vis.get("bg_image_enabled", True))
+            enabled=(eff_bg_en and not target_fit_text.startswith("非表示"))
         )
+
+        # 課題41: UIの背景画像ラベルも実際のGL表示状態と完全同期
+        if hasattr(self, "lbl_bg_info"):
+            if eff_bg and os.path.exists(eff_bg):
+                self._set_elided_label_text(self.lbl_bg_info, f"画像: {os.path.basename(eff_bg)}", eff_bg, max_width=270)
+            else:
+                self.lbl_bg_info.setText("画像: 未設定 (ダーク背景)")
+                self.lbl_bg_info.setToolTip("")
+
         self.gl_widget.set_skin_enabled(bool(vis.get("skin_enabled", True)))
         self.gl_widget.set_custom_skins(
             mouthpiece_path=vis.get("skin_mouthpiece_path", ""),
@@ -3066,8 +3095,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             ("chk_ring", bool(vis.get("show_ring", True)), False, False, True),
             ("chk_glow", bool(vis.get("show_glow", True)), False, False, True),
             ("chk_legend", bool(vis.get("show_legend", True)), False, False, True),
-            ("chk_bg_enable", bool(vis.get("bg_image_enabled", True)), False, False, True),
-            ("combo_bg_fit", vis.get("bg_fit_mode", "中央トリミング (画面いっぱい)"), True, False, False),
+            ("combo_bg_fit", target_fit_text, True, False, False),
             ("slider_bg_dim", int(vis.get("bg_dim_ratio", 60)), False, True, False),
             ("chk_skin", bool(vis.get("skin_enabled", True)), False, False, True),
             ("combo_vertical_layout", vert_lay, True, False, False),
@@ -3115,13 +3143,16 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         new_settings = dlg.get_settings() if res else None
         dlg.deleteLater()
         if res and new_settings:
-            self.user_settings.update(new_settings)
-            pv = self.user_settings.setdefault("practice_visual", copy.deepcopy(settings_manager.DEFAULT_PRACTICE_VISUAL))
-            if "practice_visual" in new_settings and isinstance(new_settings["practice_visual"], dict):
-                pv.update(new_settings["practice_visual"])
-            for sk in ("skin_enabled", "skin_mouthpiece_path", "skin_lever_off_path", "skin_lever_on_path", "lever_deco_mode", "note_opacity"):
+            self.user_settings.update(copy.deepcopy(new_settings))
+            pv = copy.deepcopy(new_settings.get("practice_visual", settings_manager.get_fresh_default_practice_visual()))
+            self.user_settings["practice_visual"] = pv
+            for sk in ("skin_enabled", "skin_mouthpiece_path", "skin_lever_off_path", "skin_lever_on_path", "lever_deco_mode", "note_opacity", "bg_image_path", "bg_image_enabled"):
                 if sk in new_settings:
                     pv[sk] = new_settings[sk]
+            # 課題44: 背景画像が空にリセットされた場合はユーザー設定およびGL描画も確実にクリア
+            if not pv.get("bg_image_path"):
+                self.user_settings["bg_image_path"] = ""
+                self.gl_widget.set_background_image("", enabled=False)
             settings_manager.save_settings(self.user_settings)
             self._apply_user_settings()
             self._sync_practice_style_ui_values(pv)
@@ -3334,8 +3365,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.user_settings["show_glow"] = self.chk_glow.isChecked()
         if hasattr(self, "chk_legend"):
             self.user_settings["show_legend"] = self.chk_legend.isChecked()
-        if hasattr(self, "chk_bg_enable"):
-            self.user_settings["bg_image_enabled"] = self.chk_bg_enable.isChecked()
+        if hasattr(self, "combo_bg_fit"):
+            self.user_settings["bg_image_enabled"] = not self.combo_bg_fit.currentText().startswith("非表示")
         if hasattr(self, "combo_grid4"):
             self.user_settings["grid4_mode"] = self.combo_grid4.currentText()
 
@@ -3590,9 +3621,25 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.combo_exp_audio.blockSignals(False)
 
         if hasattr(self, "chk_reverb") and "reverb_enabled" in p:
+            is_rev = bool(p.get("reverb_enabled", False))
             self.chk_reverb.blockSignals(True)
-            self.chk_reverb.setChecked(bool(p.get("reverb_enabled", False)))
+            self.chk_reverb.setChecked(is_rev)
             self.chk_reverb.blockSignals(False)
+            if hasattr(self, "combo_reverb_type"):
+                self.combo_reverb_type.blockSignals(True)
+                if not is_rev:
+                    self.combo_reverb_type.setCurrentText("なし (オフ)")
+                else:
+                    raw_r = p.get("reverb_type", "標準ルーム (自然な部屋鳴り)")
+                    matched = False
+                    for idx in range(1, self.combo_reverb_type.count()):
+                        if raw_r[:3] in self.combo_reverb_type.itemText(idx):
+                            self.combo_reverb_type.setCurrentIndex(idx)
+                            matched = True
+                            break
+                    if not matched:
+                        self.combo_reverb_type.setCurrentIndex(1)
+                self.combo_reverb_type.blockSignals(False)
 
         if hasattr(self, "chk_yt_limiter"):
             self.chk_yt_limiter.blockSignals(True)
@@ -3612,7 +3659,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         # 現在のタブが動画制作タブ(1)の画面(0)または動画出力(2)ならGLに即時反映
         cur_tab = self.tab_widget.currentIndex() if hasattr(self, "tab_widget") else 0
         sub_tab = self.video_sub_tabs.currentIndex() if hasattr(self, "video_sub_tabs") else 0
-        if cur_tab == 1 and sub_tab in (0, 2):
+        if cur_tab == 1 and sub_tab in (0, 1, 2):
             asp = str(p.get("aspect_ratio", "16:9"))
             is_chroma = ("クロマキー" in str(p.get("export_style", "")))
             bg_col = str(p.get("export_bg_color", "ノーマル（黒）"))
@@ -3982,11 +4029,18 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self._set_bg_image(path)
 
     def _set_bg_image(self, filepath: str):
+        if self.combo_bg_fit.currentText().startswith("非表示"):
+            self.combo_bg_fit.blockSignals(True)
+            self.combo_bg_fit.setCurrentText("中央トリミング (画面いっぱい)")
+            self.combo_bg_fit.blockSignals(False)
+        self.gl_widget.bg_image_enabled = True
+        self.user_settings["bg_image_enabled"] = True
         self.gl_widget.set_background_image(
             filepath,
             dim_ratio=self.slider_bg_dim.value(),
             fit_mode=self.combo_bg_fit.currentText(),
-            rotation=self.bg_rotation_deg
+            rotation=self.bg_rotation_deg,
+            enabled=True
         )
         self._set_elided_label_text(self.lbl_bg_info, f"画像: {os.path.basename(filepath)}", filepath, max_width=270)
         self.lbl_status_msg.setText(f"🖼️ 背景画像を設定しました: {os.path.basename(filepath)}")
@@ -3994,13 +4048,21 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
     def _on_clear_bg_image(self):
         self.gl_widget.clear_background_image()
+        self.user_settings["bg_image_path"] = ""
         self.lbl_bg_info.setText("画像: 未設定 (ダーク背景)")
         self.lbl_bg_info.setToolTip("")
         self.lbl_status_msg.setText("🗑️ 背景画像を解除しました")
         self._save_current_settings()
 
     def _on_bg_fit_changed(self, mode: str):
-        self.gl_widget.set_background_fit_mode(mode)
+        if str(mode).startswith("非表示"):
+            self.gl_widget.bg_image_enabled = False
+            self.user_settings["bg_image_enabled"] = False
+        else:
+            self.gl_widget.bg_image_enabled = True
+            self.user_settings["bg_image_enabled"] = True
+            self.gl_widget.set_background_fit_mode(mode)
+        self.gl_widget.update()
         self._save_current_settings()
 
     def _on_rotate_bg_image(self):
@@ -4243,14 +4305,15 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         if hasattr(self, "btn_unlock_for_new_key"):
             self.btn_unlock_for_new_key.setVisible(locked)
         if hasattr(self, "spin_transpose"):
+            norm_style = getattr(self, "_spin_transpose_normal_style", "")
             if locked:
-                self.spin_transpose.setStyleSheet("background-color: #2D1A10; border: 1px solid #D97706; color: #FBBF24; font-weight: bold;")
+                self.spin_transpose.setStyleSheet("background-color: #2D1A10; border: 1px solid #D97706; color: #FBBF24; font-weight: bold; " + norm_style)
                 self.spin_transpose.setToolTip(
                     "🔒 カスタム運指（変え指）が設定されているため、音名ズレ防止のため移調をロックしています。\n"
                     "別のキー用に運指を作成したい場合は、右隣の [🔓 別キー新規作成] または練習タブの「🔄 初期化」を使用してください。"
                 )
             else:
-                self.spin_transpose.setStyleSheet("")
+                self.spin_transpose.setStyleSheet(norm_style)
                 self.spin_transpose.setToolTip("半音単位の移調 (-24〜+24半音 / ±2オクターブ) [直接入力 / マウスホイールで変更]")
 
     def _refresh_main_fg_pattern_combo(self):

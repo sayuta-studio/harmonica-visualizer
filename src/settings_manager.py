@@ -421,9 +421,22 @@ THEME_PRESETS = {
 }
 
 
+def get_fresh_default_settings() -> dict:
+    """初期デフォルト設定の完全な独立ディープコピーを返却（グローバル定数汚染の防止）"""
+    s = copy.deepcopy(DEFAULT_SETTINGS)
+    s["practice_visual"] = copy.deepcopy(DEFAULT_PRACTICE_VISUAL)
+    s["video_presets"] = copy.deepcopy(DEFAULT_VIDEO_PRESETS)
+    return s
+
+
+def get_fresh_default_practice_visual() -> dict:
+    """練習画面用初期ビジュアル設定の完全な独立ディープコピーを返却"""
+    return copy.deepcopy(DEFAULT_PRACTICE_VISUAL)
+
+
 def load_settings() -> dict:
     """設定ファイルから辞書を読込。存在しない項目はデフォルト値で自動補完し、v3.1.0形式へ自動マイグレーション"""
-    settings = copy.deepcopy(DEFAULT_SETTINGS)
+    settings = get_fresh_default_settings()
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
