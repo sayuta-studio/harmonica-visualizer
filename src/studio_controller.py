@@ -331,6 +331,7 @@ class StudioExportMixin:
                 "track_midi_enabled": not has_ext and not has_rec,
                 "track_midi_mode": "全パート再生",
                 "track_midi_vol": int(self.vol_slider.value()) if hasattr(self, "vol_slider") else 100,
+                "track_midi_offset_ms": 0,
             }
         else:
             if ext_path:
@@ -896,7 +897,8 @@ class StudioExportMixin:
                 settings=render_settings
             )
             qimage = renderer.render_single_frame_qimage(cur_sec, title_overlay=title_overlay)
-            dlg = SingleFramePreviewDialog(qimage, f"再生位置: {cur_sec:.2f}s", parent=self)
+            show_sz = bool(self.chk_show_safe_zone.isChecked()) if hasattr(self, "chk_show_safe_zone") else False
+            dlg = SingleFramePreviewDialog(qimage, f"再生位置: {cur_sec:.2f}s", show_safe_zone=show_sz, parent=self)
             dlg.exec()
         except Exception as e:
             QMessageBox.warning(self, "プレビューエラー", f"プレビュー描画に失敗しました:\n{e}")

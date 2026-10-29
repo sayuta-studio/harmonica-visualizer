@@ -148,6 +148,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
         self.fingering_edit_mode = False
         self.mute_edit_mode = False
         self.hide_muted_notes = False
+        self.show_safe_zone = False
         self.on_fingering_changed_callback = None
         self.toast_msg = ""
         self.toast_expire = 0.0
@@ -187,6 +188,10 @@ class HarmonicaGLWidget(QOpenGLWidget):
     def set_vertical_layout_mode(self, mode: str):
         self.vertical_layout_mode = str(mode)
         self.invalidate_static_cache()
+        self.update()
+
+    def set_show_safe_zone(self, show: bool):
+        self.show_safe_zone = bool(show)
         self.update()
 
     def set_trajectory_mode(self, mode: str):
@@ -332,15 +337,22 @@ class HarmonicaGLWidget(QOpenGLWidget):
 
         disp_w = CANVAS_WIDTH * scale
         disp_h = base_h * scale
-        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
-            target_h = 540.0
-            band_h = target_h * scale
-            if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + int(disp_h * 0.04)
-            elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
-            else: # 中央
-                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+        if "9:16" in str(self.aspect_ratio):
+            if "Shorts安全" in str(self.vertical_layout_mode) or "セーフゾーン" in str(self.vertical_layout_mode):
+                target_h = base_h
+                eff_y_offset = y_offset - int(disp_h * 0.22)
+            elif "16:9" in str(self.vertical_layout_mode):
+                target_h = 540.0
+                band_h = target_h * scale
+                if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + int(disp_h * 0.04)
+                elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+                else: # 中央
+                    eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+            else:
+                target_h = base_h
+                eff_y_offset = y_offset
         else:
             target_h = base_h
             eff_y_offset = y_offset
@@ -737,15 +749,22 @@ class HarmonicaGLWidget(QOpenGLWidget):
             except Exception as ex:
                 print(f"[Warning] Background image draw error: {ex}")
 
-        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
-            target_h = 540.0
-            band_h = target_h * scale
-            if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + int(disp_h * 0.04)
-            elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
-            else: # 中央
-                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+        if "9:16" in str(self.aspect_ratio):
+            if "Shorts安全" in str(self.vertical_layout_mode) or "セーフゾーン" in str(self.vertical_layout_mode):
+                target_h = base_h
+                eff_y_offset = y_offset - int(disp_h * 0.22)
+            elif "16:9" in str(self.vertical_layout_mode):
+                target_h = 540.0
+                band_h = target_h * scale
+                if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + int(disp_h * 0.04)
+                elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+                else: # 中央
+                    eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+            else:
+                target_h = base_h
+                eff_y_offset = y_offset
         else:
             target_h = base_h
             eff_y_offset = y_offset
@@ -966,16 +985,25 @@ class HarmonicaGLWidget(QOpenGLWidget):
         cur_sec = self.clock.get_current_base_sec(lookahead_sec=0.008)
 
         # レイアウトパラメータ取得
-        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
-            target_h = 540.0
-            band_h = target_h * scale
-            if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + int(disp_h * 0.04)
-            elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
-            else: # 中央
-                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
-            clip_rect = QRectF(x_offset, eff_y_offset, disp_w, band_h)
+        if "9:16" in str(self.aspect_ratio):
+            if "Shorts安全" in str(self.vertical_layout_mode) or "セーフゾーン" in str(self.vertical_layout_mode):
+                target_h = base_h
+                eff_y_offset = y_offset - int(disp_h * 0.22)
+                clip_rect = None
+            elif "16:9" in str(self.vertical_layout_mode):
+                target_h = 540.0
+                band_h = target_h * scale
+                if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + int(disp_h * 0.04)
+                elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+                else: # 中央
+                    eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+                clip_rect = QRectF(x_offset, eff_y_offset, disp_w, band_h)
+            else:
+                target_h = base_h
+                eff_y_offset = y_offset
+                clip_rect = None
         else:
             target_h = base_h
             eff_y_offset = y_offset
@@ -1439,6 +1467,40 @@ class HarmonicaGLWidget(QOpenGLWidget):
             font_toast = QFont("Meiryo UI", max(9, int(11.0 * scale)), QFont.Weight.Bold)
             painter.setFont(font_toast)
             painter.drawText(toast_rect, Qt.AlignmentFlag.AlignCenter, self.toast_msg)
+
+        # 6.5. Shortsセーフゾーンガイド枠描画 (案C: 9:16かつshow_safe_zone有効時)
+        if getattr(self, "show_safe_zone", False) and "9:16" in str(self.aspect_ratio):
+            painter.save()
+            sz_top = y_offset + int(disp_h * 0.14)
+            sz_bot = y_offset + disp_h - int(disp_h * 0.22)
+            sz_left = x_offset + int(disp_w * 0.05)
+            sz_right = x_offset + disp_w - int(disp_w * 0.14)
+
+            # 上部危険エリア (ノッチ / 検索)
+            painter.fillRect(QRectF(x_offset, y_offset, disp_w, int(disp_h * 0.14)), QColor(239, 68, 68, 45))
+            # 下部危険エリア (チャンネル / タイトル)
+            painter.fillRect(QRectF(x_offset, sz_bot, disp_w, int(disp_h * 0.22)), QColor(239, 68, 68, 45))
+            # 右側危険エリア (いいね / コメント)
+            painter.fillRect(QRectF(sz_right, sz_top, int(disp_w * 0.14), sz_bot - sz_top), QColor(239, 68, 68, 35))
+
+            # セーフゾーン破線矩形
+            pen_sz = QPen(QColor("#F59E0B"), max(1.5, 2.0 * scale), Qt.PenStyle.DashLine)
+            painter.setPen(pen_sz)
+            painter.setBrush(QColor(245, 158, 11, 15))
+            safe_rect = QRectF(sz_left, sz_top, sz_right - sz_left, sz_bot - sz_top)
+            painter.drawRect(safe_rect)
+
+            font_sz = QFont("Meiryo UI", max(8, int(11.0 * scale)), QFont.Weight.Bold)
+            painter.setFont(font_sz)
+            painter.setPen(QColor("#F59E0B"))
+            painter.drawText(QRectF(sz_left + 8 * scale, sz_top + 6 * scale, sz_right - sz_left - 16 * scale, 24 * scale),
+                             Qt.AlignmentFlag.AlignLeft, "🛡️ Shorts / TikTok 推奨セーフゾーン")
+            painter.setPen(QColor("#FCA5A5"))
+            painter.drawText(QRectF(x_offset + 8 * scale, y_offset + 6 * scale, disp_w - 16 * scale, 24 * scale),
+                             Qt.AlignmentFlag.AlignCenter, "📱 上部UI・ノッチ被りエリア")
+            painter.drawText(QRectF(x_offset + 8 * scale, sz_bot + 6 * scale, disp_w - 16 * scale, 24 * scale),
+                             Qt.AlignmentFlag.AlignCenter, "📱 下部UI（タイトル・アカウント名）被りエリア")
+            painter.restore()
 
         painter.end()
 

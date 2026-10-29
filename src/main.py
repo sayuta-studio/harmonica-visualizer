@@ -1677,16 +1677,26 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.combo_vertical_layout = QComboBox(self)
         self.combo_vertical_layout.addItems([
             "全画面フル展開 (標準Shorts)",
+            "Shorts安全配置 (セーフゾーン準拠)",
             "上半分 16:9 ハーモニカ (下半分フリー)",
             "下半分 16:9 ハーモニカ (上半分フリー)",
             "中央 16:9 ハーモニカ"
         ])
         self.combo_vertical_layout.setCurrentText(str(self.user_settings.get("vertical_layout_mode", "全画面フル展開 (標準Shorts)")))
         self._configure_sidebar_combo(self.combo_vertical_layout, max_width=220)
-        self.combo_vertical_layout.setToolTip("9:16 縦型動画において、16:9比率のハーモニカ画面を上半分または下半分に配置し、残りの領域に別の動画やPVを合成しやすくします")
+        self.combo_vertical_layout.setToolTip("9:16 縦型動画において、ハーモニカの配置位置（全画面、Shorts安全ゾーン、16:9上半分/下半分/中央）を設定します")
         self.combo_vertical_layout.currentTextChanged.connect(self._on_vertical_layout_changed)
         r_vlay.addWidget(self.combo_vertical_layout, stretch=1)
         l_ratio.addLayout(r_vlay)
+
+        r_sz = QHBoxLayout()
+        self.chk_show_safe_zone = QCheckBox("📐 Shortsセーフゾーン枠を表示 (破線)", self)
+        self.chk_show_safe_zone.setChecked(bool(self.user_settings.get("show_safe_zone", False)))
+        self.chk_show_safe_zone.setStyleSheet("color: #F59E0B; font-size: 11px; font-weight: bold;")
+        self.chk_show_safe_zone.setToolTip("YouTube Shorts / TikTok / Reels のUI被りエリア（破線枠・警告ゾーン）をプレビューに重畳表示します")
+        self.chk_show_safe_zone.toggled.connect(self._on_safe_zone_toggle)
+        r_sz.addWidget(self.chk_show_safe_zone)
+        l_ratio.addLayout(r_sz)
 
         lbl_ratio_note = QLabel("※動画プリセットの書き出し構図（YouTube Shorts 縦型・横型MV等）に合わせてキャンバスを自動プレビューします。")
         lbl_ratio_note.setStyleSheet("color: #94A3B8; font-size: 11px; line-height: 1.3;")
@@ -3077,6 +3087,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         )
         vert_lay = vis.get("vertical_layout_mode", "全画面フル展開 (標準Shorts)")
         self.gl_widget.set_vertical_layout_mode(vert_lay)
+        self.gl_widget.set_show_safe_zone(bool(self.user_settings.get("show_safe_zone", False)))
 
         # UIコントロールへの同期 (blockSignals 徹底)
         for w_name, val, is_combo, is_slider, is_check in (
@@ -3099,6 +3110,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             ("slider_bg_dim", int(vis.get("bg_dim_ratio", 60)), False, True, False),
             ("chk_skin", bool(vis.get("skin_enabled", True)), False, False, True),
             ("combo_vertical_layout", vert_lay, True, False, False),
+            ("chk_show_safe_zone", bool(self.user_settings.get("show_safe_zone", False)), False, False, True),
         ):
             w = getattr(self, w_name, None)
             if w is not None:
@@ -5139,6 +5151,12 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
     def _on_vertical_layout_changed(self, text: str):
         self.user_settings["vertical_layout_mode"] = str(text)
         self.gl_widget.set_vertical_layout_mode(str(text))
+        self._save_current_settings()
+
+    def _on_safe_zone_toggle(self, checked: bool):
+        self.user_settings["show_safe_zone"] = bool(checked)
+        if hasattr(self, "gl_widget"):
+            self.gl_widget.set_show_safe_zone(bool(checked))
         self._save_current_settings()
 
     def _on_hole_num_style_changed(self, style: str):

@@ -1684,6 +1684,10 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
         max_music_sec = intro_sec + count_in_duration + max_duration
         max_music_sample = int(max_music_sec * sample_rate)
 
+        midi_offset_sec = 0.0
+        if mixer_settings is not None and isinstance(mixer_settings, dict):
+            midi_offset_sec = float(mixer_settings.get("track_midi_offset_ms", 0)) / 1000.0
+
         use_dls = ("内蔵" not in str(synth_engine) and GmDlsSampler.is_available())
         dls_sampler = GmDlsSampler.get_instance() if use_dls else None
 
@@ -1697,9 +1701,11 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
 
                 if (start - sec_a_in_song) >= max_duration:
                     continue
+                if (start + dur) <= sec_a_in_song:
+                    continue
 
-                start_in_video = intro_sec + count_in_duration + (start - sec_a_in_song)
-                if start_in_video < 0:
+                start_in_video = intro_sec + count_in_duration + (start - sec_a_in_song) + midi_offset_sec
+                if (start_in_video + dur) <= 0:
                     continue
                 start_sample = max(0, int(start_in_video * sample_rate))
                 end_sample = min(int((start_in_video + dur) * sample_rate), max_music_sample, num_samples)
@@ -1734,9 +1740,11 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
 
                 if (start - sec_a_in_song) >= max_duration:
                     continue
+                if (start + dur) <= sec_a_in_song:
+                    continue
 
-                start_in_video = intro_sec + count_in_duration + (start - sec_a_in_song)
-                if start_in_video < 0:
+                start_in_video = intro_sec + count_in_duration + (start - sec_a_in_song) + midi_offset_sec
+                if (start_in_video + dur) <= 0:
                     continue
                 start_sample = max(0, int(start_in_video * sample_rate))
                 end_sample = min(int((start_in_video + dur) * sample_rate), max_music_sample, num_samples)

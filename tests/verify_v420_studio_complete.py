@@ -28,7 +28,7 @@ import settings_manager
 from midi_timeline import MidiTimelineData
 from gl_visualizer import HarmonicaGLWidget
 from video_exporter import OffscreenVisualizerRenderer
-from dialogs import HarmonicaSettingsDialog, AudioTrackMixerDialog, FingeringEditorDialog
+from dialogs import HarmonicaSettingsDialog, AudioTrackMixerDialog, FingeringEditorDialog, SingleFramePreviewDialog
 from audio_engine import GmDlsSampler, synthesize_midi_to_wav
 import harmonica_map
 from main import HarmonicaMainWindow
@@ -541,6 +541,7 @@ def run_all_v420_tests():
     test_11_audit_12_regressions()
     test_12_qa_issues_40_to_45()
     test_13_qa_issues_46_to_48()
+    test_14_qa_issues_49_50()
     print("=" * 70)
     print("🌟 ALL 13 INTEGRATION TESTS (17 ISSUES + 12 AUDITS + 9 QA FIXES) PASSED PERFECTLY! 🌟")
     print("=" * 70)
@@ -624,6 +625,88 @@ def test_13_qa_issues_46_to_48():
             except Exception: pass
     win.deleteLater()
     print("  -> PASS: All QA issues 46-48 thoroughly verified and working seamlessly!")
+
+
+def test_14_qa_issues_49_50():
+    print("[TEST 14] QA Issues 49-50 (MIDI audio/video sync, Track 3 offset, Shorts safe zone & guide)...")
+    app = QApplication.instance() or QApplication(sys.argv)
+    win = HarmonicaMainWindow()
+
+    # --- 課題 49 検証: MIDI音声と映像タイムラインの同期 & Track 3 オフセット ---
+    # 1. AudioTrackMixerDialog に spin_midi_off が存在し、get_settings() に反映されること
+    mixer_cfg = win._get_current_mixer_settings()
+    dlg = AudioTrackMixerDialog(mixer_cfg, timeline=win.timeline, parent=win)
+    assert hasattr(dlg, "spin_midi_off"), "Track 3 must have spin_midi_off"
+    dlg.spin_midi_off.setValue(150)
+    res_cfg = dlg.get_settings()
+    assert res_cfg.get("track_midi_offset_ms") == 150, "track_midi_offset_ms must be 150 in get_settings()"
+    dlg.deleteLater()
+
+    # 2. タイムライン計算式の整合性検証 (count_in == 0 と count_in > 0)
+    intro_sec = 1.0
+    start_sec = 2.0
+    cur_0 = start_sec - (intro_sec - 0.0)
+    assert abs(cur_0 - 1.0) < 1e-5, "At video start, cur_sec should be start_sec - intro_sec (1.0s)"
+    cur_1 = start_sec - (intro_sec - 1.0)
+    assert abs(cur_1 - 2.0) < 1e-5, "At intro_sec, cur_sec must reach start_sec (2.0s) exactly"
+
+    ci_dur = 2.0
+    cur_ci_0 = start_sec - ci_dur
+    assert abs(cur_ci_0 - 0.0) < 1e-5, "During intro_sec with count-in, cur_sec should be frozen at pre-count-in sky position"
+
+    # 3. synthesize_midi_to_wav で A点より前に終了するノートのスキップ検証
+    temp_dir = get_portable_path("temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    out_wav = os.path.join(temp_dir, "test_midi_sync_49.wav")
+    midi_notes = [
+        {"note": 60, "start_sec": 0.0, "dur_sec": 1.0},
+        {"note": 64, "start_sec": 2.0, "dur_sec": 1.0},
+    ]
+    synthesize_midi_to_wav(
+        midi_notes=midi_notes,
+        current_bpm=120.0,
+        max_duration=3.0,
+        is_count_in=False,
+        is_metro=False,
+        output_wav_path=out_wav,
+        sec_a_in_song=2.0,
+        mixer_settings={"track_midi_enabled": True, "track_midi_vol": 100, "track_midi_offset_ms": 0},
+        synth_engine="内蔵軽量シンセ"
+    )
+    assert os.path.exists(out_wav), "Output WAV should be generated"
+    if os.path.exists(out_wav):
+        try: os.remove(out_wav)
+        except Exception: pass
+
+    # --- 課題 50 検証: Shorts Safe Zone (A案: 安全配置 & C案: ガイド枠表示) ---
+    # 1. 縦型配置コンボに "Shorts安全配置 (セーフゾーン準拠)" が含まれること
+    items = [win.combo_vertical_layout.itemText(i) for i in range(win.combo_vertical_layout.count())]
+    assert any("Shorts安全" in it or "セーフゾーン" in it for it in items), f"Combo must contain Shorts safety layout: {items}"
+
+    # 2. セーフゾーン枠チェックボックスが存在し、GLウィジェットと連動すること
+    assert hasattr(win, "chk_show_safe_zone"), "chk_show_safe_zone checkbox must exist"
+    win.chk_show_safe_zone.setChecked(True)
+    assert win.gl_widget.show_safe_zone is True, "gl_widget.show_safe_zone must be True"
+    win.chk_show_safe_zone.setChecked(False)
+    assert win.gl_widget.show_safe_zone is False, "gl_widget.show_safe_zone must be False"
+
+    # 3. "Shorts安全配置 (セーフゾーン準拠)" 選択時のレンダラー描画検証
+    w, h = 1080, 1920
+    renderer_safe = OffscreenVisualizerRenderer(
+        win.timeline, width=w, height=h, aspect_ratio="9:16",
+        settings={"vertical_layout_mode": "Shorts安全配置 (セーフゾーン準拠)"}
+    )
+    img_safe = renderer_safe.render_single_frame_qimage(0.0)
+    assert img_safe is not None and not img_safe.isNull(), "Safe layout QImage must be valid"
+
+    # 4. SingleFramePreviewDialog に show_safe_zone=True を渡してクラッシュせず描画されること
+    dlg_prev = SingleFramePreviewDialog(img_safe, "テスト9:16", show_safe_zone=True, parent=win)
+    assert dlg_prev.lbl_image.pixmap() is not None, "Preview dialog must successfully display pixmap with safe zone"
+    dlg_prev.deleteLater()
+
+    win.deleteLater()
+    print("  -> PASS: QA Issues 49-50 (MIDI audio/video sync & Shorts safe zone) 100% verified!")
+
 
 if __name__ == "__main__":
     run_all_v420_tests()

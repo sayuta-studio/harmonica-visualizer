@@ -312,18 +312,29 @@ class OffscreenVisualizerRenderer:
             except Exception as e:
                 print(f"[VideoExporter] 背景描画例外: {e}")
 
-        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
-            target_h = 540.0
-            band_h = target_h * scale
-            if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + int(disp_h * 0.04)
-            elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
-            else: # 中央
-                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+        if "9:16" in str(self.aspect_ratio):
+            if "Shorts安全" in str(self.vertical_layout_mode) or "セーフゾーン" in str(self.vertical_layout_mode):
+                target_h = base_h
+                eff_y_offset = y_offset - int(disp_h * 0.22)
+                clip_rect = None
+            elif "16:9" in str(self.vertical_layout_mode):
+                target_h = 540.0
+                band_h = target_h * scale
+                if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + int(disp_h * 0.04)
+                elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+                else: # 中央
+                    eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+                clip_rect = QRectF(x_offset, eff_y_offset, disp_w, band_h)
+            else:
+                target_h = base_h
+                eff_y_offset = y_offset
+                clip_rect = None
         else:
             target_h = base_h
             eff_y_offset = y_offset
+            clip_rect = None
 
         y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(int(target_h), self.trajectory_mode)
         visible_indices, x_start_base, x_shift, x_shift_notes = get_layout_params(self.inst_type, 1.0)
@@ -518,16 +529,25 @@ class OffscreenVisualizerRenderer:
         disp_w = CANVAS_WIDTH * scale
         disp_h = base_h * scale
 
-        if "9:16" in str(self.aspect_ratio) and "16:9" in str(self.vertical_layout_mode):
-            target_h = 540.0
-            band_h = target_h * scale
-            if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + int(disp_h * 0.04)
-            elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
-                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
-            else: # 中央
-                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
-            clip_rect = QRectF(x_offset, eff_y_offset, disp_w, band_h)
+        if "9:16" in str(self.aspect_ratio):
+            if "Shorts安全" in str(self.vertical_layout_mode) or "セーフゾーン" in str(self.vertical_layout_mode):
+                target_h = base_h
+                eff_y_offset = y_offset - int(disp_h * 0.22)
+                clip_rect = None
+            elif "16:9" in str(self.vertical_layout_mode):
+                target_h = 540.0
+                band_h = target_h * scale
+                if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + int(disp_h * 0.04)
+                elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
+                    eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+                else: # 中央
+                    eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+                clip_rect = QRectF(x_offset, eff_y_offset, disp_w, band_h)
+            else:
+                target_h = base_h
+                eff_y_offset = y_offset
+                clip_rect = None
         else:
             target_h = base_h
             eff_y_offset = y_offset
@@ -1030,10 +1050,10 @@ class OffscreenVisualizerRenderer:
             ideal_card_w = max(120.0 * scale, max_text_w + 36.0 * scale)
             card_w = min(max_card_w, ideal_card_w)
             card_h = (52.0 if (title_text and credit_text) else 34.0) * scale
-            margin_x = 16.0 * scale
+            margin_x = max(16.0 * scale, (w * 0.14 if (show_right and is_vertical) else 16.0 * scale))
             cx0 = (w - card_w - margin_x) if show_right else margin_x
             cx0 = max(margin_x, min(w - card_w - margin_x, cx0))
-            cy0 = 16.0 * scale
+            cy0 = max(16.0 * scale, (h * 0.14 if is_vertical else 16.0 * scale))
             card_rect = QRectF(cx0, cy0, card_w, card_h)
 
             painter.setPen(QPen(QColor(80, 130, 170, 180), max(1.0, 1.2 * scale)))
@@ -1327,14 +1347,22 @@ class VideoExportThread(QThread):
                     return
 
                 t_in_video = f_idx / fps
-                if t_in_video < intro_sec:
-                    cur_sec = start_sec
-                elif t_in_video < intro_sec + count_in_dur:
-                    cur_sec = start_sec - (intro_sec + count_in_dur - t_in_video)
-                elif t_in_video < intro_sec + count_in_dur + duration_sec:
-                    cur_sec = start_sec + (t_in_video - (intro_sec + count_in_dur))
+                if count_in_dur > 0:
+                    if t_in_video < intro_sec:
+                        cur_sec = start_sec - count_in_dur
+                    elif t_in_video < intro_sec + count_in_dur:
+                        cur_sec = (start_sec - count_in_dur) + (t_in_video - intro_sec)
+                    elif t_in_video < intro_sec + count_in_dur + duration_sec:
+                        cur_sec = start_sec + (t_in_video - (intro_sec + count_in_dur))
+                    else:
+                        cur_sec = end_sec
                 else:
-                    cur_sec = end_sec
+                    if t_in_video < intro_sec:
+                        cur_sec = start_sec - (intro_sec - t_in_video)
+                    elif t_in_video < intro_sec + duration_sec:
+                        cur_sec = start_sec + (t_in_video - intro_sec)
+                    else:
+                        cur_sec = end_sec
 
                 raw_bytes = renderer.render_frame_bytes(
                     cur_sec,

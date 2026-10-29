@@ -1917,7 +1917,7 @@ class ExportProgressDialog(QDialog):
 class SingleFramePreviewDialog(QDialog):
     """1フレーム静止画プレビュー確認ダイアログ (Full HD等の解像度確認用)"""
 
-    def __init__(self, qimage: QImage, info_text: str = "", parent=None):
+    def __init__(self, qimage: QImage, info_text: str = "", show_safe_zone: bool = False, parent=None):
         super().__init__(parent)
         self.setWindowTitle("📸 レンダリング静止画プレビュー")
         self.resize(1000, 620)
@@ -1941,8 +1941,42 @@ class SingleFramePreviewDialog(QDialog):
         self.lbl_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_image.setStyleSheet("background-color: #0A0A0C; border: 1px solid #27272A; border-radius: 6px;")
 
-        # アスペクト比を維持して最大表示
-        pixmap = QPixmap.fromImage(qimage)
+        # セーフゾーン枠重畳描画 (案C)
+        preview_img = qimage.copy()
+        if show_safe_zone and preview_img.width() < preview_img.height():
+            p = QPainter(preview_img)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            w, h = preview_img.width(), preview_img.height()
+            scale = w / 960.0
+            sz_top = int(h * 0.14)
+            sz_bot = h - int(h * 0.22)
+            sz_left = int(w * 0.05)
+            sz_right = w - int(w * 0.14)
+
+            p.fillRect(QRectF(0, 0, w, sz_top), QColor(239, 68, 68, 50))
+            p.fillRect(QRectF(0, sz_bot, w, int(h * 0.22)), QColor(239, 68, 68, 50))
+            p.fillRect(QRectF(sz_right, sz_top, int(w * 0.14), sz_bot - sz_top), QColor(239, 68, 68, 40))
+
+            pen_sz = QPen(QColor("#F59E0B"), max(2.0, 3.0 * scale), Qt.PenStyle.DashLine)
+            p.setPen(pen_sz)
+            p.setBrush(QColor(245, 158, 11, 20))
+            p.drawRect(QRectF(sz_left, sz_top, sz_right - sz_left, sz_bot - sz_top))
+
+            font_sz = QFont("Meiryo UI", max(10, int(18.0 * scale)), QFont.Weight.Bold)
+            p.setFont(font_sz)
+            p.setPen(QColor("#F59E0B"))
+            p.drawText(QRectF(sz_left + 12 * scale, sz_top + 8 * scale, sz_right - sz_left - 24 * scale, 36 * scale),
+                       Qt.AlignmentFlag.AlignLeft, "🛡️ Shorts / TikTok 推奨セーフゾーン")
+            p.setPen(QColor("#FCA5A5"))
+            p.drawText(QRectF(12 * scale, 8 * scale, w - 24 * scale, 36 * scale),
+                       Qt.AlignmentFlag.AlignCenter, "📱 上部UI・ノッチ被りエリア")
+            p.drawText(QRectF(12 * scale, sz_bot + 8 * scale, w - 24 * scale, 36 * scale),
+                       Qt.AlignmentFlag.AlignCenter, "📱 下部UI（タイトル・アカウント名）被りエリア")
+            p.end()
+            pixmap = QPixmap.fromImage(preview_img)
+        else:
+            pixmap = QPixmap.fromImage(qimage)
+
         scaled_pix = pixmap.scaled(960, 500, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         self.lbl_image.setPixmap(scaled_pix)
         layout.addWidget(self.lbl_image, stretch=1)
@@ -2426,6 +2460,19 @@ class AudioTrackMixerDialog(QDialog):
         r_midi_v.addWidget(self.lbl_midi_vol)
         l_midi.addLayout(r_midi_v)
 
+        r_midi_opts = QHBoxLayout()
+        r_midi_opts.addWidget(QLabel("MIDIズレ補正:"))
+        self.spin_midi_off = QSpinBox(self)
+        self.spin_midi_off.setRange(-2000, 2000)
+        self.spin_midi_off.setSuffix(" ms")
+        self.spin_midi_off.setSingleStep(10)
+        self.spin_midi_off.setFixedWidth(90)
+        self.spin_midi_off.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spin_midi_off.setValue(int(self.settings.get("track_midi_offset_ms", 0)))
+        r_midi_opts.addWidget(self.spin_midi_off)
+        r_midi_opts.addStretch()
+        l_midi.addLayout(r_midi_opts)
+
         main_layout.addWidget(grp_midi)
 
         # === プレビュー試聴 & ボタンバー ===
@@ -2524,9 +2571,10 @@ class AudioTrackMixerDialog(QDialog):
                     start_sec = max(0.0, min(earliest_notes) - 0.2)
 
             synth_eng = getattr(self.parent(), "user_settings", {}).get("synth_engine", "Windows標準MIDI (推奨)") if self.parent() else "Windows標準MIDI (推奨)"
+            bpm_val = float(getattr(self.timeline, "default_bpm", 120.0)) if self.timeline else 120.0
             synthesize_midi_to_wav(
                 midi_notes=midi_notes,
-                current_bpm=120.0,
+                current_bpm=bpm_val,
                 max_duration=5.0,
                 is_count_in=False,
                 is_metro=False,
@@ -2574,6 +2622,7 @@ class AudioTrackMixerDialog(QDialog):
             "track_midi_enabled": bool(self.chk_midi.isChecked()),
             "track_midi_mode": self.combo_midi_mode.currentText(),
             "track_midi_vol": int(self.slider_midi_vol.value()),
+            "track_midi_offset_ms": int(self.spin_midi_off.value()) if hasattr(self, "spin_midi_off") else 0,
         }
 
     def closeEvent(self, event):

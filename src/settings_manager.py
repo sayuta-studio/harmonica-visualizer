@@ -78,6 +78,7 @@ DEFAULT_VIDEO_PRESETS = {
         "audio_quick_mode": "伴奏音源 (外部音源優先)",
         "reverb_enabled": True,
         "yt_limiter": True,
+    "show_safe_zone": False,
         "export_audio_volume": 100,
         # ビジュアル
         "trajectory_mode": "垂直落下 (穴直上)",
@@ -128,6 +129,7 @@ DEFAULT_VIDEO_PRESETS = {
         "audio_quick_mode": "伴奏音源 (外部音源優先)",
         "reverb_enabled": True,
         "yt_limiter": True,
+    "show_safe_zone": False,
         "export_audio_volume": 100,
         # ビジュアル
         "trajectory_mode": "垂直落下 (穴直上)",
@@ -178,6 +180,7 @@ DEFAULT_VIDEO_PRESETS = {
         "audio_quick_mode": "伴奏音源 (外部音源優先)",
         "reverb_enabled": True,
         "yt_limiter": True,
+    "show_safe_zone": False,
         "export_audio_volume": 100,
         # ビジュアル (MV向け・背景引き立て＆ノーツ透過)
         "trajectory_mode": "3段階 (練習標準)",
@@ -228,6 +231,7 @@ DEFAULT_VIDEO_PRESETS = {
         "audio_quick_mode": "伴奏音源 (外部音源優先)",
         "reverb_enabled": True,
         "yt_limiter": True,
+    "show_safe_zone": False,
         "export_audio_volume": 100,
         # ビジュアル (映像美重視・文字/線なし)
         "trajectory_mode": "2段階 (ビジュアル)",
@@ -278,6 +282,7 @@ DEFAULT_VIDEO_PRESETS = {
         "audio_quick_mode": "無音 (映像のみ)",
         "reverb_enabled": False,
         "yt_limiter": True,
+    "show_safe_zone": False,
         "export_audio_volume": 100,
         # ビジュアル (合成用・垂直落下)
         "trajectory_mode": "垂直落下 (穴直上)",
@@ -355,6 +360,7 @@ DEFAULT_SETTINGS = {
     "ext_audio_offset_ms": 0,
     "ext_audio_volume": 100,
     "yt_limiter": True,
+    "show_safe_zone": False,
 
     # 🌟 練習用ビジュアル設定 (v3.1.0)
     "practice_visual": copy.deepcopy(DEFAULT_PRACTICE_VISUAL),
