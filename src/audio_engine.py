@@ -81,6 +81,7 @@ class AudioEngine:
 
         # A-Bループパラメータ
         self.loop_enabled = False
+        self.single_pass_range = False
         self.loop_a_sec = 0.0
         self.loop_b_sec = None
         self.on_loop_wrapped_callback = None
@@ -701,6 +702,16 @@ class AudioEngine:
             # A-Bループ自動折り返し判定 (1ms高分解能タイマーによる音響・描画の完全同時ラップ)
             end_sec = self.loop_b_sec if (self.loop_b_sec is not None and self.loop_b_sec > 0) else self.total_duration_sec
             if self.loop_enabled and end_sec > 0 and cur_sec >= end_sec:
+                if getattr(self, "single_pass_range", False):
+                    self.all_notes_off()
+                    self.clock.stop()
+                    if callable(self.on_playback_finished_callback):
+                        try:
+                            self.on_playback_finished_callback()
+                        except Exception:
+                            pass
+                    time.sleep(0.015)
+                    continue
                 wrap_to = self.loop_a_sec if self.loop_a_sec is not None else 0.0
                 speed = self.clock.get_speed_ratio()
                 self.all_notes_off()

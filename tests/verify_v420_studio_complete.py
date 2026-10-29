@@ -540,10 +540,90 @@ def run_all_v420_tests():
     test_10_gmdls_sampler_and_hybrid_synthesis()
     test_11_audit_12_regressions()
     test_12_qa_issues_40_to_45()
+    test_13_qa_issues_46_to_48()
     print("=" * 70)
-    print("🌟 ALL 12 INTEGRATION TESTS (17 ISSUES + 12 AUDITS + 6 QA FIXES) PASSED PERFECTLY! 🌟")
+    print("🌟 ALL 13 INTEGRATION TESTS (17 ISSUES + 12 AUDITS + 9 QA FIXES) PASSED PERFECTLY! 🌟")
     print("=" * 70)
 
+
+
+def test_13_qa_issues_46_to_48():
+    print("[TEST 13] QA Issues 46-48 (Sync audition reverb, stop sync, & loop range record mode)...")
+    app = QApplication.instance() or QApplication(sys.argv)
+    import wave
+    import struct
+    import math
+    from ipc_state import SharedClockBridge
+
+    win = HarmonicaMainWindow()
+
+    # --- 課題 46 検証: 同期試聴のリバーブ反映＆キャッシュ更新 ---
+    temp_dir = get_portable_path("temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    dummy_wav = os.path.join(temp_dir, "test_take_46.wav")
+    with wave.open(dummy_wav, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(44100)
+        # 0.5秒のサイン波
+        samples = [int(10000 * math.sin(2 * math.pi * 440 * i / 44100)) for i in range(22050)]
+        wf.writeframes(struct.pack(f"<{len(samples)}h", *samples))
+
+    win.last_recorded_path = dummy_wav
+    win._rec_pcm = None
+
+    # リバーブON時
+    win.chk_reverb.setChecked(True)
+    pcm = win._ensure_rec_pcm_loaded()
+    assert pcm is not None and len(pcm) > 0, "PCM must be loaded"
+    rev_wav = os.path.join(temp_dir, "test_take_46_reverb.wav")
+    assert os.path.exists(rev_wav), "Reverb WAV must be automatically generated for sync audition"
+
+    # リバーブ設定変更時のキャッシュクリア検証
+    assert win._rec_pcm is not None, "Cache should be present"
+    win._on_reverb_type_changed("ホール (豊かな残響)")
+    assert win._rec_pcm is None, "_rec_pcm must be cleared on reverb type change"
+
+    # --- 課題 47 検証: 伴奏と同期試聴の停止ボタン連動 ---
+    win.clock.set_anchor(2.0, speed_ratio=1.0, state=SharedClockBridge.STATE_PLAYING)
+    assert win.clock.get_state() == SharedClockBridge.STATE_PLAYING
+    win._rec_sync_monitoring = True
+    win._on_toggle_rec_sync_audition(False)
+    assert win._rec_sync_monitoring is False, "Monitoring must be False"
+    assert win.clock.get_state() == SharedClockBridge.STATE_STOPPED, "Timeline playback must stop when sync audition stops"
+
+    # --- 課題 48 検証: 録音時のループ「範囲」モード切替と停止復元 ---
+    win.chk_loop.setChecked(True)
+    assert win.chk_loop.text() == "ループ", "Initial text must be 'ループ'"
+    assert win.audio_engine.single_pass_range is False
+
+    # 録音開始
+    orig_start = win.audio_recorder.start_recording
+    orig_stop = win.audio_recorder.stop_recording
+    win.audio_recorder.start_recording = lambda *args, **kwargs: True
+    win.audio_recorder.stop_recording = lambda *args, **kwargs: (dummy_wav, 0.5)
+    try:
+        win._on_record_toggle()
+        assert win.is_recording is True, "Must be recording"
+        assert win.chk_loop.text() == "範囲", "chk_loop text must switch to '範囲' during recording with loop enabled"
+        assert win.audio_engine.single_pass_range is True, "single_pass_range must be True in audio_engine"
+
+        # 停止時（手動またはB点コールバックによる_on_stop）
+        win._on_stop()
+        assert win.is_recording is False, "Recording must stop on _on_stop"
+        assert win.chk_loop.text() == "ループ", "chk_loop text must revert to 'ループ'"
+        assert win.audio_engine.single_pass_range is False, "single_pass_range must reset to False"
+    finally:
+        win.audio_recorder.start_recording = orig_start
+        win.audio_recorder.stop_recording = orig_stop
+
+    # クリーンアップ
+    for p in (dummy_wav, rev_wav):
+        if os.path.exists(p):
+            try: os.remove(p)
+            except Exception: pass
+    win.deleteLater()
+    print("  -> PASS: All QA issues 46-48 thoroughly verified and working seamlessly!")
 
 if __name__ == "__main__":
     run_all_v420_tests()

@@ -5017,6 +5017,10 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self._sync_rec_take_playback(False, start_sec)
         if self.is_recording:
             self._on_record_toggle()
+        if hasattr(self, "chk_loop") and self.chk_loop.text() != "ループ":
+            self.chk_loop.setText("ループ")
+        if hasattr(self, "audio_engine"):
+            self.audio_engine.single_pass_range = False
         if hasattr(self, "btn_rec_sync_audition") and getattr(self, "_rec_sync_monitoring", False):
             self._rec_sync_monitoring = False
             self.btn_rec_sync_audition.setChecked(False)
@@ -5070,6 +5074,18 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
     def _on_loop_toggled(self, checked: bool):
         self.loop_playback = bool(checked)
+        if getattr(self, "is_recording", False):
+            if checked:
+                self.chk_loop.setText("範囲")
+                self.audio_engine.single_pass_range = True
+            else:
+                self.chk_loop.setText("ループ")
+                self.audio_engine.single_pass_range = False
+        else:
+            if self.chk_loop.text() != "ループ":
+                self.chk_loop.setText("ループ")
+            if hasattr(self, "audio_engine"):
+                self.audio_engine.single_pass_range = False
         self._update_loop_range()
         self._save_current_settings()
 
@@ -5267,6 +5283,9 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             ok = self.audio_recorder.start_recording(device_name=dev_name, sample_rate=44100, channels=ch_count)
             if ok:
                 self.is_recording = True
+                if hasattr(self, "chk_loop") and self.chk_loop.isChecked():
+                    self.chk_loop.setText("範囲")
+                    self.audio_engine.single_pass_range = True
                 self.btn_rec.setText("⏹ 停止")
                 self.btn_rec.setStyleSheet("background-color: #DC2626; color: white; font-weight: bold; border-radius: 4px;")
                 self.lbl_rec_status.setText("🔴 録音中... [00:00]")
@@ -5292,6 +5311,10 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
                 trim_start_sec=trim_sec
             )
             self.is_recording = False
+            if hasattr(self, "chk_loop") and self.chk_loop.text() != "ループ":
+                self.chk_loop.setText("ループ")
+            if hasattr(self, "audio_engine"):
+                self.audio_engine.single_pass_range = False
             self.btn_rec.setText("🔴 録音")
             self.btn_rec.setStyleSheet("")
             self.lbl_rec_status.setText("● 待機中 (上部 [🔴録音] で開始)")

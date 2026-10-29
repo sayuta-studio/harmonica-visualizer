@@ -22,7 +22,7 @@ import settings_manager
 import project_manager
 from config import get_portable_path
 from ipc_state import SharedClockBridge
-from audio_engine import load_external_audio_pcm, synthesize_midi_to_wav
+from audio_engine import load_external_audio_pcm, synthesize_midi_to_wav, apply_harmonica_reverb_numpy
 from video_exporter import (
     check_ffmpeg_available,
     VideoExportThread,
@@ -154,12 +154,15 @@ class StudioExportMixin:
     def _on_reverb_toggled(self, checked: bool):
         self.reverb_enabled = bool(checked)
         self.user_settings["reverb_enabled"] = self.reverb_enabled
+        self._rec_pcm = None  # キャッシュ破棄
         if hasattr(self, "audition_player") and self.audition_player.is_playing():
             self.audition_player.stop()
             self.btn_rec_listen.setText("▶ 試聴")
             self.lbl_status_msg.setText("✨ リバーブ有効状態を変更しました ([▶ 試聴] で確認)")
         else:
             self.lbl_status_msg.setText(f"✨ リバーブ: {'有効' if checked else '無効'} ([▶ 試聴] で確認)")
+        if getattr(self, "_rec_sync_monitoring", False) and hasattr(self, "_rec_resync_timer"):
+            self._rec_resync_timer.start()
         self._save_current_settings()
 
     def _on_reverb_type_changed(self, r_type: str):
@@ -175,6 +178,7 @@ class StudioExportMixin:
         if is_on:
             self.reverb_type = str(r_type)
             self.user_settings["reverb_type"] = self.reverb_type
+        self._rec_pcm = None  # キャッシュ破棄
         if hasattr(self, "audition_player") and self.audition_player.is_playing():
             self.audition_player.stop()
             if hasattr(self, "btn_rec_listen"):
@@ -182,16 +186,21 @@ class StudioExportMixin:
             self.lbl_status_msg.setText("✨ リバーブ設定を変更しました ([▶ 試聴] で確認)")
         else:
             self.lbl_status_msg.setText(f"✨ リバーブ: {r_type} ([▶ 試聴] で確認)")
+        if getattr(self, "_rec_sync_monitoring", False) and hasattr(self, "_rec_resync_timer"):
+            self._rec_resync_timer.start()
         self._save_current_settings()
 
     def _on_reverb_slider_changed(self, val: int):
         self.reverb_wet_pct = int(val)
         self.lbl_reverb_wet.setText(f"深さ: {val}%")
         self.user_settings["reverb_wet_pct"] = self.reverb_wet_pct
+        self._rec_pcm = None  # キャッシュ破棄
         if hasattr(self, "audition_player") and self.audition_player.is_playing():
             self.audition_player.stop()
             self.btn_rec_listen.setText("▶ 試聴")
             self.lbl_status_msg.setText("✨ リバーブ深さを変更しました ([▶ 試聴] で確認)")
+        if getattr(self, "_rec_sync_monitoring", False) and hasattr(self, "_rec_resync_timer"):
+            self._rec_resync_timer.start()
         self._save_current_settings()
 
     def _on_select_ext_audio(self):
@@ -727,13 +736,21 @@ class StudioExportMixin:
             pass
 
     def _ensure_rec_pcm_loaded(self):
-        """採用録音テイクのPCMデータをメモリにキャッシュロード"""
+        """採用録音テイクのPCMデータをメモリにキャッシュロード（リバーブ有効時はリバーブWAV優先）"""
         if getattr(self, "_rec_pcm", None) is not None:
             return self._rec_pcm
         rec_path = getattr(self, "last_recorded_path", None)
         if rec_path and os.path.isfile(rec_path):
             try:
-                self._rec_pcm = load_external_audio_pcm(rec_path, sample_rate=44100)
+                target_path = rec_path
+                if hasattr(self, "chk_reverb") and self.chk_reverb.isChecked():
+                    rev_path = os.path.splitext(rec_path)[0] + "_reverb.wav"
+                    rev_type = self.combo_reverb_type.currentText() if hasattr(self, "combo_reverb_type") else "ルーム (自然な部屋鳴り)"
+                    wet = self.slider_reverb_wet.value() if hasattr(self, "slider_reverb_wet") else 35
+                    apply_harmonica_reverb_numpy(rec_path, rev_path, rev_type, wet)
+                    if os.path.exists(rev_path):
+                        target_path = rev_path
+                self._rec_pcm = load_external_audio_pcm(target_path, sample_rate=44100)
                 return self._rec_pcm
             except Exception as e:
                 print(f"[RecAudio Load Error] {e}")
@@ -837,8 +854,11 @@ class StudioExportMixin:
             else:
                 self._on_play_toggle()
         else:
+            self._rec_sync_monitoring = False
             self._stop_rec_playback()
-            if hasattr(self, "btn_rec_sync_audition"):
+            if self.clock.get_state() != SharedClockBridge.STATE_STOPPED:
+                self._on_stop()
+            elif hasattr(self, "btn_rec_sync_audition"):
                 self.btn_rec_sync_audition.setText("▶ 伴奏と同期試聴")
                 self.btn_rec_sync_audition.setStyleSheet(
                     "QPushButton:checked { background-color: #0284C7; color: white; font-weight: bold; border: 1px solid #38BDF8; }"
