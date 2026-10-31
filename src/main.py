@@ -1265,11 +1265,19 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         l_sp.setContentsMargins(6, 6, 6, 6)
         l_sp.setSpacing(6)
 
+        r_sp0 = QHBoxLayout()
         self.chk_stepup = QCheckBox("ループ毎にテンポ自動UP", self)
         self.chk_stepup.setChecked(bool(self.user_settings.get("stepup_enabled", False)))
         self.chk_stepup.setToolTip("A-Bループが1周するごとに再生速度を自動的に引き上げて反復練習します")
         self.chk_stepup.toggled.connect(self._on_stepup_toggled)
-        l_sp.addWidget(self.chk_stepup)
+        r_sp0.addWidget(self.chk_stepup, stretch=1)
+
+        self.btn_stepup_apply = QPushButton("⚡ 適用", self)
+        self.btn_stepup_apply.setFixedWidth(54)
+        self.btn_stepup_apply.setToolTip("現在の開始速度設定を即座に反映し、A点から再スタートします")
+        self.btn_stepup_apply.clicked.connect(self._on_stepup_apply)
+        r_sp0.addWidget(self.btn_stepup_apply)
+        l_sp.addLayout(r_sp0)
 
         r_sp1 = QHBoxLayout()
         r_sp1.addWidget(QLabel("開始:"))
@@ -3444,6 +3452,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         if hasattr(self, "slider_exp_audio_vol"):
             ws["export_audio_volume"] = self.slider_exp_audio_vol.value()
 
+        if not self.user_settings.get("recent_files"):
+            self.user_settings["recent_files"] = settings_manager.get_recent_files()
         settings_manager.save_settings(self.user_settings)
 
     def _get_count_in_duration(self) -> float:
@@ -4301,10 +4311,18 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         m = self.spin_jump.value()
         sec = self.timeline.get_sec_for_measure(m)
         st = self.clock.get_state()
-        self.clock.set_anchor(sec, speed_ratio=self.speed_slider.value() / 100.0, state=st)
-        self.audio_engine.seek(sec)
-        self._sync_ext_audio_playback(st == SharedClockBridge.STATE_PLAYING, sec)
-        self._sync_rec_take_playback(st == SharedClockBridge.STATE_PLAYING, sec)
+        ci_dur = self._get_count_in_duration()
+        if ci_dur > 0 and st == SharedClockBridge.STATE_PLAYING:
+            self.audio_engine.seek_with_count_in(sec)
+            self._sync_ext_audio_playback(True, sec)
+            self._sync_rec_take_playback(True, sec)
+            self._jump_measure_target_sec = None
+        else:
+            self.clock.set_anchor(sec, speed_ratio=self.speed_slider.value() / 100.0, state=st)
+            self.audio_engine.seek(sec)
+            self._sync_ext_audio_playback(st == SharedClockBridge.STATE_PLAYING, sec)
+            self._sync_rec_take_playback(st == SharedClockBridge.STATE_PLAYING, sec)
+            self._jump_measure_target_sec = sec if ci_dur > 0 else None
         self.lbl_status_msg.setText(f"⏩ {m:03d} 小節の頭へジャンプしました")
 
     def _update_transpose_lock_state(self):
@@ -4508,6 +4526,30 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
     def _on_metro_changed(self, val: str):
         self.audio_engine.set_metronome_mode(val)
         self.lbl_status_msg.setText(f"⏱ メトロノーム: {val}")
+        self._save_current_settings()
+
+    def _on_stepup_apply(self):
+        """現在のステップアップ練習設定を即座に反映し、A点から再スタート"""
+        self.chk_stepup.setChecked(True)
+        start_pct = int(self.spin_sp_start.value())
+        self._is_stepup_auto_adjusting = True
+        try:
+            self.speed_slider.setValue(start_pct)
+        finally:
+            self._is_stepup_auto_adjusting = False
+        self._stepup_running = True
+
+        a_sec = self.audio_engine.loop_a_sec if (self.loop_playback and self.audio_engine.loop_a_sec is not None) else 0.0
+        ci_dur = self._get_count_in_duration()
+        if ci_dur > 0:
+            self.audio_engine.seek_with_count_in(a_sec)
+        else:
+            self.clock.set_anchor(a_sec, speed_ratio=start_pct / 100.0, state=SharedClockBridge.STATE_PLAYING)
+            self.audio_engine.seek(a_sec)
+        self.btn_play.setText("⏸ 一時停止")
+        self._sync_ext_audio_playback(True, a_sec)
+        self._sync_rec_take_playback(True, a_sec)
+        self.lbl_status_msg.setText(f"⚡ ステップアップ練習を適用しました: {start_pct}% から再スタート")
         self._save_current_settings()
 
     def _on_stepup_toggled(self, checked: bool):
@@ -4762,6 +4804,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             # 楽曲プロジェクトコンテナの自動解決 / 準備 (v4.0)
             project_manager.resolve_song_project(filepath, interactive_parent=self)
             settings_manager.add_recent_file(filepath)
+            self.user_settings["recent_files"] = settings_manager.get_recent_files()
             prof = harmonica_map.load_song_profile(filepath)
 
             # 楽器復元 (プロファイル指定または現在のUI値)
@@ -4990,22 +5033,37 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self._sync_ext_audio_playback(False)
             self._sync_rec_take_playback(False)
         else:
-            cur_sec = self.clock.get_current_base_sec()
-            if st == SharedClockBridge.STATE_STOPPED:
-                if hasattr(self, "chk_stepup") and self.chk_stepup.isChecked():
-                    if not getattr(self, "_stepup_running", False):
-                        self._is_stepup_auto_adjusting = True
-                        try:
-                            self.speed_slider.setValue(self.spin_sp_start.value())
-                        finally:
-                            self._is_stepup_auto_adjusting = False
-                        self._stepup_running = True
-                if 0.0 <= cur_sec <= 0.05:
+            if getattr(self, "_jump_measure_target_sec", None) is not None:
+                target_sec = self._jump_measure_target_sec
+                self._jump_measure_target_sec = None
+                ci_dur = self._get_count_in_duration()
+                if ci_dur > 0:
+                    self.audio_engine.seek_with_count_in(target_sec)
+                    self.btn_play.setText("⏸ 一時停止")
+                    if hasattr(self, "btn_ext_audition"):
+                        self.btn_ext_audition.setText("⏹ 停止")
+                    self._sync_ext_audio_playback(True, target_sec)
+                    self._sync_rec_take_playback(True, target_sec)
+                    return
+                else:
+                    cur_sec = target_sec
+            else:
+                cur_sec = self.clock.get_current_base_sec()
+                if st == SharedClockBridge.STATE_STOPPED:
+                    if hasattr(self, "chk_stepup") and self.chk_stepup.isChecked():
+                        if not getattr(self, "_stepup_running", False):
+                            self._is_stepup_auto_adjusting = True
+                            try:
+                                self.speed_slider.setValue(self.spin_sp_start.value())
+                            finally:
+                                self._is_stepup_auto_adjusting = False
+                            self._stepup_running = True
+                    if 0.0 <= cur_sec <= 0.05:
+                        ci_dur = self._get_count_in_duration()
+                        cur_sec = -ci_dur if ci_dur > 0 else 0.0
+                elif 0.0 <= cur_sec <= 0.05 or cur_sec >= self.timeline.total_duration_sec:
                     ci_dur = self._get_count_in_duration()
                     cur_sec = -ci_dur if ci_dur > 0 else 0.0
-            elif 0.0 <= cur_sec <= 0.05 or cur_sec >= self.timeline.total_duration_sec:
-                ci_dur = self._get_count_in_duration()
-                cur_sec = -ci_dur if ci_dur > 0 else 0.0
 
             self.clock.set_anchor(cur_sec, speed_ratio=self.speed_slider.value() / 100.0, state=SharedClockBridge.STATE_PLAYING)
             self.audio_engine.seek(cur_sec)

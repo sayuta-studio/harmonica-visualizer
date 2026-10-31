@@ -542,8 +542,9 @@ def run_all_v420_tests():
     test_12_qa_issues_40_to_45()
     test_13_qa_issues_46_to_48()
     test_14_qa_issues_49_50()
+    test_15_qa_issues_51_to_53()
     print("=" * 70)
-    print("🌟 ALL 13 INTEGRATION TESTS (17 ISSUES + 12 AUDITS + 9 QA FIXES) PASSED PERFECTLY! 🌟")
+    print("🌟 ALL 15 INTEGRATION TESTS (17 ISSUES + 12 AUDITS + 12 QA FIXES) PASSED PERFECTLY! 🌟")
     print("=" * 70)
 
 
@@ -706,6 +707,83 @@ def test_14_qa_issues_49_50():
 
     win.deleteLater()
     print("  -> PASS: QA Issues 49-50 (MIDI audio/video sync & Shorts safe zone) 100% verified!")
+
+
+def test_15_qa_issues_51_to_53():
+    print("[TEST 15] QA Issues 51-53 (Recent files persist, Step-up Apply button, & Measure jump count-in)...")
+    app = QApplication.instance() or QApplication(sys.argv)
+    from ipc_state import SharedClockBridge
+
+    win = HarmonicaMainWindow()
+
+    # --- 課題 51 検証: 最近開いたファイル履歴の永続化・同期 ---
+    dummy_midi = get_portable_path("temp/test_recent_51.mid")
+    os.makedirs(os.path.dirname(dummy_midi), exist_ok=True)
+    with open(dummy_midi, "wb") as f:
+        f.write(bytes([77, 84, 104, 100, 0, 0, 0, 6, 0, 1, 0, 1, 1, 224, 77, 84, 114, 107, 0, 0, 0, 4, 0, 255, 47, 0]))
+
+    settings_manager.add_recent_file(dummy_midi)
+    norm_dummy = os.path.abspath(os.path.normpath(dummy_midi))
+    recents = settings_manager.get_recent_files()
+    assert norm_dummy in recents, "dummy_midi should be in recent_files after add_recent_file"
+
+    win._load_midi_file(dummy_midi)
+    assert norm_dummy in win.user_settings.get("recent_files", []), "user_settings['recent_files'] must be synchronized in _load_midi_file"
+
+    # _save_current_settings が実行されても履歴が蒸発しないこと
+    win._save_current_settings()
+    recents_after_save = settings_manager.get_recent_files()
+    assert norm_dummy in recents_after_save, "recent files must NOT evaporate after _save_current_settings"
+
+    # --- 課題 52 検証: ステップアップ練習「⚡ 適用」ボタン ---
+    assert hasattr(win, "btn_stepup_apply"), "btn_stepup_apply must exist"
+    assert win.btn_stepup_apply.text() == "⚡ 適用", "Button text must be '⚡ 適用'"
+    win.spin_sp_start.setValue(55)
+    win.btn_stepup_apply.click()
+    assert win.chk_stepup.isChecked() is True, "Stepup checkbox should be checked after apply"
+    assert win.speed_slider.value() == 55, f"Speed slider should be set to 55, got {win.speed_slider.value()}"
+    assert win._stepup_running is True, "_stepup_running should be True"
+    assert win.clock.get_state() == SharedClockBridge.STATE_PLAYING, "Playback should start after apply"
+
+    # 停止
+    win.clock.stop()
+
+    # --- 課題 53 検証: 小節ジャンプ時のカウントイン ---
+    win.combo_count_in.setCurrentText("1 小節")
+    win.audio_engine.set_count_in(1)
+    ci_dur = win._get_count_in_duration()
+    assert ci_dur > 0.0, f"Count-in duration must be > 0, got {ci_dur}"
+
+    # 再生中の小節ジャンプ: カウントインが生成されてアンカーされること
+    win.clock.set_anchor(5.0, speed_ratio=1.0, state=SharedClockBridge.STATE_PLAYING)
+    win.spin_jump.setValue(2)
+    m2_sec = win.timeline.get_sec_for_measure(2)
+    win._on_jump_measure()
+
+    assert win.audio_engine._suppress_notes_until_sec == m2_sec, "Notes should be suppressed until measure 2 sec"
+    assert len(win.audio_engine._loop_ci_events) > 0, "Loop CI events should be generated for measure jump"
+    cur_sec = win.clock.get_current_base_sec()
+    assert cur_sec < m2_sec, f"Current anchor ({cur_sec}) must be before measure sec ({m2_sec}) for count-in"
+
+    # 停止中の小節ジャンプ: 再生押下時にカウントインが入ること
+    win.clock.stop()
+    win.spin_jump.setValue(3)
+    m3_sec = win.timeline.get_sec_for_measure(3)
+    win._on_jump_measure()
+    assert win._jump_measure_target_sec == m3_sec, "_jump_measure_target_sec must be set when jumping while stopped"
+
+    # 再生トグル
+    win._on_play_toggle()
+    assert win.audio_engine._suppress_notes_until_sec == m3_sec, "Notes should be suppressed until measure 3 sec on play"
+    assert len(win.audio_engine._loop_ci_events) > 0, "CI events must be generated"
+    assert win.clock.get_state() == SharedClockBridge.STATE_PLAYING, "Should be playing"
+
+    win.clock.stop()
+    win.deleteLater()
+    if os.path.exists(dummy_midi):
+        try: os.remove(dummy_midi)
+        except Exception: pass
+    print("  -> PASS: QA Issues 51-53 (Recent files, Stepup Apply, & Jump Count-in) 100% verified!")
 
 
 if __name__ == "__main__":

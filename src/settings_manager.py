@@ -558,10 +558,11 @@ def add_recent_file(file_path: str):
     """最近開いたMIDIファイルを履歴の先頭に追加して保存 (最大10件)"""
     if not file_path or not os.path.isfile(file_path):
         return
-    norm_path = os.path.normpath(file_path)
+    norm_path = os.path.abspath(os.path.normpath(file_path))
     s = load_settings()
     files = s.get("recent_files", [])
-    files = [p for p in files if os.path.normpath(p) != norm_path]
+    files = [os.path.abspath(os.path.normpath(p)) for p in files if os.path.isfile(p)]
+    files = [p for p in files if p != norm_path]
     files.insert(0, norm_path)
     s["recent_files"] = files[:10]
     save_settings(s)

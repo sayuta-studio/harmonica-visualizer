@@ -614,6 +614,41 @@ class AudioEngine:
         self._next_metro_idx = bisect.bisect_left(self.metro_secs, target_metro_sec)
         self.sync_midi_channel_states(target_note_sec)
 
+    def seek_with_count_in(self, target_sec: float):
+        """指定位置 (target_sec) に向けてカウントイン予備拍を生成し、再生を開始/同期する"""
+        target_sec = max(0.0, float(target_sec))
+        self.all_notes_off()
+        num = getattr(self.timeline, "time_sig_num", 4) if (hasattr(self, "timeline") and self.timeline) else 4
+        den = getattr(self.timeline, "time_sig_den", 4) if (hasattr(self, "timeline") and self.timeline) else 4
+        bpm = getattr(self.timeline, "default_bpm", 120.0) if (hasattr(self, "timeline") and self.timeline) else 120.0
+        beat_dur = (60.0 / bpm) * (4.0 / den)
+        ci_beats = self.count_in_measures * num if self.count_in_measures > 0 else 0
+        ci_dur = ci_beats * beat_dur
+        speed = self.clock.get_speed_ratio() if (hasattr(self, "clock") and self.clock) else 1.0
+
+        if ci_dur > 0:
+            start_sec = target_sec - ci_dur
+            self._suppress_notes_until_sec = target_sec
+            self._loop_ci_events = []
+            for b in range(ci_beats):
+                t = start_sec + b * beat_dur
+                self._loop_ci_events.append({
+                    "sec": t,
+                    "is_accent": (b % num == 0),
+                    "measure": -(self.count_in_measures - (b // num)),
+                    "beat": (b % num) + 1,
+                    "is_count_in": True,
+                })
+            if hasattr(self, "clock") and self.clock:
+                self.clock.set_anchor(start_sec, speed_ratio=speed, state=SharedClockBridge.STATE_PLAYING)
+            self.seek(start_sec, is_loop_ci=True)
+        else:
+            self._suppress_notes_until_sec = None
+            self._loop_ci_events = []
+            if hasattr(self, "clock") and self.clock:
+                self.clock.set_anchor(target_sec, speed_ratio=speed, state=SharedClockBridge.STATE_PLAYING)
+            self.seek(target_sec)
+
     def _get_ui_beep_sound(self):
         """v2.1仕様の1600Hz電子音「ピッ」効果音オブジェクトを生成・返却"""
         if getattr(self, "_ui_beep_sound", None) is None:
