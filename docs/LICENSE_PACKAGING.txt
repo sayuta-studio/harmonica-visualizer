@@ -1,5 +1,5 @@
 ================================================================================
-Harmonica Visualizer Ver.4.2.1 (Harmonica Studio Edition)
+Harmonica Visualizer Ver.4.3.0 (Harmonica Studio Edition)
 Copyright (C) 2026 サユタ
 ================================================================================
 

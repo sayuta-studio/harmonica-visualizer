@@ -1,8 +1,8 @@
-# Harmonica Visualizer (Ver.4.2.1 Harmonica Studio Edition)
+# Harmonica Visualizer (Ver.4.3.0 Harmonica Studio Edition)
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/バージョン-v4.2.1-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/バージョン-v4.3.0-blue.svg?style=flat-square)
 ![License](https://img.shields.io/badge/ライセンス-GNU%20GPL%20v3-green.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/対応OS-Windows%2010%20%7C%2011%20(64--bit)-lightgrey.svg?style=flat-square)
 ![Framework](https://img.shields.io/badge/GUI-PyQt6%20%2F%20OpenGL-orange.svg?style=flat-square)
@@ -28,7 +28,7 @@ MIDIファイルを読み込むだけで、吹き音・吸い音・スライド�
 
 Pythonのインストールや環境構築は不要です。解凍してすぐに利用できるポータブルZIPを配布しています。
 
-1. [**Releases ページ**](https://github.com/sayuta-studio/harmonica-visualizer/releases/latest) から最新の `HarmonicaVisualizer-v4.2.1-windows-x64.zip` をダウンロードします。
+1. [**Releases ページ**](https://github.com/sayuta-studio/harmonica-visualizer/releases/latest) から最新の `HarmonicaVisualizer-v4.3.0-windows-x64.zip` をダウンロードします。
 2. ダウンロードした ZIP ファイルをお好きなフォルダ（「ドキュメント」や「デスクトップ」など）へ展開（すべて解凍）します。
 3. フォルダ内の `HarmonicaVisualizer.exe` をダブルクリックして起動します。
 
@@ -115,7 +115,7 @@ python tests/verify_v420_studio_complete.py
 ```
 
 > **【リリース検証実績】**  
-> Ver.4.2.1 リリース検証環境（Windows 11 Pro 64-bit, Python 3.14, PyQt6 6.8.1）において、上記テストスイートの全12テストスイート・全回帰テストが PASS することを確認済みです。
+> Ver.4.3.0 リリース検証環境（Windows 11 Pro 64-bit, Python 3.14, PyQt6 6.8.1）において、上記テストスイートの全12テストスイート・全回帰テストが PASS することを確認済みです。
 
 ### ポータブル配布パッケージのビルド
 ```powershell
@@ -131,7 +131,7 @@ python -m PyInstaller --clean packaging/HarmonicaVisualizer.spec
 詳細なライセンス条項は同封の [`LICENSE`](LICENSE) ファイルをご確認ください。
 
 ```text
-Harmonica Visualizer (Ver.4.2.1 Harmonica Studio Edition)
+Harmonica Visualizer (Ver.4.3.0 Harmonica Studio Edition)
 Copyright (C) 2026 サユタ
 ```
 
