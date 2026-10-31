@@ -885,20 +885,27 @@ def test_17_qa_issue_58():
     print("[TEST 17] QA Issue 58 (Hole number display unified into style combo with '非表示')...")
     app = QApplication.instance() or QApplication(sys.argv)
 
-    # 1. HarmonicaSettingsDialog の検証
+    # 1. HarmonicaSettingsDialog の検証 (穴番号表記・背景画像配置・くくり統一)
     from dialogs import HarmonicaSettingsDialog
-    test_settings = {"practice_visual": {"hole_num_style": "実機標準 (低音ドット付)", "show_hole_num": True}}
+    test_settings = {"practice_visual": {"hole_num_style": "実機標準 (低音ドット付)", "show_hole_num": True, "bg_fit_mode": "中央トリミング (画面いっぱい)", "bg_image_enabled": True}}
     dlg = HarmonicaSettingsDialog(test_settings, initial_tab=1)
     items_dlg = [dlg.pv_combo_hole_style.itemText(i) for i in range(dlg.pv_combo_hole_style.count())]
     assert "非表示" in items_dlg, f"Dialog hole style combo must have '非表示', got {items_dlg}"
     assert dlg.pv_chk_hole_num.isVisible() is False, "Dialog pv_chk_hole_num must be hidden"
 
+    # 背景画像フィットモードの検証（動画側アコーディオンと完全統一＆チェックボックス非表示化）
+    items_fit = [dlg.pv_combo_bg_fit.itemText(i) for i in range(dlg.pv_combo_bg_fit.count())]
+    assert "非表示 (背景画像オフ)" in items_fit, f"Dialog bg fit combo must have '非表示 (背景画像オフ)', got {items_fit}"
+    assert dlg.pv_chk_bg_enable.isVisible() is False, "Dialog pv_chk_bg_enable must be hidden"
+
     # 非表示を選んで保存
     dlg.pv_combo_hole_style.setCurrentText("非表示")
+    dlg.pv_combo_bg_fit.setCurrentText("非表示 (背景画像オフ)")
     dlg._on_save_clicked()
     saved_pv = dlg.settings.get("practice_visual", {})
     assert saved_pv.get("show_hole_num") is False, f"Expected show_hole_num=False, got {saved_pv.get('show_hole_num')}"
     assert saved_pv.get("hole_num_style") == "非表示", f"Expected hole_num_style='非表示', got {saved_pv.get('hole_num_style')}"
+    assert saved_pv.get("bg_image_enabled") is False, f"Expected bg_image_enabled=False, got {saved_pv.get('bg_image_enabled')}"
     assert dlg.settings.get("show_hole_num") is False, f"Expected top-level show_hole_num=False, got {dlg.settings.get('show_hole_num')}"
     dlg.deleteLater()
 

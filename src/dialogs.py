@@ -133,8 +133,8 @@ class HarmonicaSettingsDialog(QDialog):
         v_sp.setContentsMargins(8, 8, 8, 8)
         v_sp.setSpacing(10)
 
-        # ① 🎵 ノーツ・文字・穴番号表示
-        gb_notes = QGroupBox("🎵 1. ノーツ・文字・穴番号表示")
+        # ① 🎵 演奏・ノーツ表示 (動画制作画面アコーディオンと完全統一)
+        gb_notes = QGroupBox("🎵 1. 演奏・ノーツ表示")
         v_notes = QVBoxLayout(gb_notes)
         v_notes.setSpacing(6)
 
@@ -150,23 +150,10 @@ class HarmonicaSettingsDialog(QDialog):
         self.pv_combo_lang.addItems(["ドレミ", "CDE"])
         r_traj.addWidget(self.pv_combo_lang, stretch=1)
         v_notes.addLayout(r_traj)
-
-        r_sub = QHBoxLayout()
-        r_sub.addWidget(QLabel("穴下予告表示:"))
-        self.pv_combo_grid4 = QComboBox(self)
-        self.pv_combo_grid4.addItems(["4音グリッド表示", "1音表示 (従来)", "非表示"])
-        r_sub.addWidget(self.pv_combo_grid4, stretch=1)
-
-        r_sub.addSpacing(10)
-        r_sub.addWidget(QLabel("穴番号スタイル:"))
-        self.pv_combo_hole_style = QComboBox(self)
-        self.pv_combo_hole_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜)", "非表示"])
-        r_sub.addWidget(self.pv_combo_hole_style, stretch=1)
-        v_notes.addLayout(r_sub)
         v_sp.addWidget(gb_notes)
 
-        # ② 🎨 カラーテーマ・カスタム色・装飾・不透明度
-        gb_color = QGroupBox("🎨 2. カラーテーマ・カスタム色・装飾・不透明度")
+        # ② 🎨 カラーテーマ ＆ ノーツ装飾
+        gb_color = QGroupBox("🎨 2. カラーテーマ ＆ ノーツ装飾")
         v_color = QVBoxLayout(gb_color)
         v_color.setSpacing(6)
 
@@ -209,10 +196,10 @@ class HarmonicaSettingsDialog(QDialog):
         v_color.addLayout(r_lev)
         v_sp.addWidget(gb_color)
 
-        # ③ ☑️ 表示要素のON/OFF
-        gb_elem = QGroupBox("☑️ 3. 表示要素のON/OFF (チェック項目)")
+        # ③ ☑️ 表示要素 ON/OFF ＆ 穴番号 (動画側アコーディオンと同一のくくり)
+        gb_elem = QGroupBox("☑️ 3. 表示要素 ON/OFF ＆ 穴番号")
         v_elem = QVBoxLayout(gb_elem)
-        v_elem.setSpacing(4)
+        v_elem.setSpacing(6)
 
         r_el1 = QHBoxLayout()
         self.pv_chk_notes = QCheckBox("落下ノーツを表示", self)
@@ -236,16 +223,33 @@ class HarmonicaSettingsDialog(QDialog):
         r_el2.addWidget(self.pv_chk_glow)
         r_el2.addWidget(self.pv_chk_legend)
         v_elem.addLayout(r_el2)
+
+        # 穴番号表記 ＆ 穴下ノート表示（動画側アコーディオンと同一のくくり・順序）
+        r_sub = QHBoxLayout()
+        r_sub.addWidget(QLabel("穴番号表記:"))
+        self.pv_combo_hole_style = QComboBox(self)
+        self.pv_combo_hole_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜)", "非表示"])
+        r_sub.addWidget(self.pv_combo_hole_style, stretch=1)
+
+        r_sub.addSpacing(10)
+        r_sub.addWidget(QLabel("穴下ノート表示:"))
+        self.pv_combo_grid4 = QComboBox(self)
+        self.pv_combo_grid4.addItems(["4音グリッド表示", "1音表示 (従来)", "非表示"])
+        r_sub.addWidget(self.pv_combo_grid4, stretch=1)
+        v_elem.addLayout(r_sub)
+
         v_sp.addWidget(gb_elem)
 
-        # ④ 🖼️ 練習画面の背景画像・減光
-        gb_bg = QGroupBox("🖼️ 4. 練習画面の背景画像・減光")
+        # ④ 🖼️ 背景画像 ＆ 減光 (コントラスト) (動画側と完全統一)
+        gb_bg = QGroupBox("🖼️ 4. 背景画像 ＆ 減光 (コントラスト)")
         v_bg = QVBoxLayout(gb_bg)
         v_bg.setSpacing(6)
 
-        r_bg1 = QHBoxLayout()
+        # 課題40: 「背景画像有効化」チェックボックスは廃止し、配置コンボの「非表示」へ一本化（内部互換用に非表示保持）
         self.pv_chk_bg_enable = QCheckBox("背景画像を有効化", self)
-        r_bg1.addWidget(self.pv_chk_bg_enable)
+        self.pv_chk_bg_enable.setVisible(False)
+
+        r_bg1 = QHBoxLayout()
         self.pv_lbl_bg_path = QLabel("未設定 (黒背景)", self)
         self.pv_lbl_bg_path.setStyleSheet("color: #888888; font-size: 11px;")
         r_bg1.addWidget(self.pv_lbl_bg_path, stretch=1)
@@ -258,20 +262,17 @@ class HarmonicaSettingsDialog(QDialog):
         v_bg.addLayout(r_bg1)
 
         r_bg2 = QHBoxLayout()
-        r_bg2.addWidget(QLabel("背景減光比率:"))
-        self.pv_slider_bg_dim = QSlider(Qt.Orientation.Horizontal, self)
-        self.pv_slider_bg_dim.setRange(0, 100)
-        self.pv_lbl_bg_dim_val = QLabel("60%", self)
-        self.pv_lbl_bg_dim_val.setMinimumWidth(36)
-        self.pv_slider_bg_dim.valueChanged.connect(lambda v: self.pv_lbl_bg_dim_val.setText(f"{v}%"))
-        r_bg2.addWidget(self.pv_slider_bg_dim, stretch=1)
-        r_bg2.addWidget(self.pv_lbl_bg_dim_val)
-
-        r_bg2.addSpacing(10)
-        r_bg2.addWidget(QLabel("配置フィット:"))
+        r_bg2.addWidget(QLabel("配置:"))
         self.pv_combo_bg_fit = QComboBox(self)
-        self.pv_combo_bg_fit.addItems(["中央トリミング (画面いっぱい)", "全体を表示 (黒帯)", "引き伸ばし"])
-        r_bg2.addWidget(self.pv_combo_bg_fit)
+        self.pv_combo_bg_fit.addItems([
+            "非表示 (背景画像オフ)",
+            "中央トリミング (画面いっぱい)",
+            "画面内に収める (全体表示)",
+            "横幅に合わせる",
+            "縦幅に合わせる",
+            "画面に引き伸ばす (比率無視)"
+        ])
+        r_bg2.addWidget(self.pv_combo_bg_fit, stretch=1)
 
         r_bg2.addSpacing(10)
         r_bg2.addWidget(QLabel("回転:"))
@@ -279,6 +280,18 @@ class HarmonicaSettingsDialog(QDialog):
         self.pv_combo_bg_rot.addItems(["0° (標準)", "90° (右回転)", "180° (上下反転)", "270° (左回転)"])
         r_bg2.addWidget(self.pv_combo_bg_rot)
         v_bg.addLayout(r_bg2)
+
+        r_bg3 = QHBoxLayout()
+        r_bg3.addWidget(QLabel("暗さ (減光):"))
+        self.pv_slider_bg_dim = QSlider(Qt.Orientation.Horizontal, self)
+        self.pv_slider_bg_dim.setRange(0, 100)
+        self.pv_lbl_bg_dim_val = QLabel("60%", self)
+        self.pv_lbl_bg_dim_val.setMinimumWidth(36)
+        self.pv_slider_bg_dim.valueChanged.connect(lambda v: self.pv_lbl_bg_dim_val.setText(f"{v}%"))
+        r_bg3.addWidget(self.pv_slider_bg_dim, stretch=1)
+        r_bg3.addWidget(self.pv_lbl_bg_dim_val)
+        v_bg.addLayout(r_bg3)
+
         v_sp.addWidget(gb_bg)
 
         # ⑤ 🎷 ハーモニカ本体スキン
@@ -286,7 +299,8 @@ class HarmonicaSettingsDialog(QDialog):
         v_skin = QVBoxLayout(gb_skin)
         v_skin.setSpacing(6)
 
-        self.chk_skin_enabled = QCheckBox("ハーモニカ本体の外観スキン画像を有効化", self)
+        self.chk_skin_enabled = QCheckBox("カスタム表示適用", self)
+        self.chk_skin_enabled.setToolTip("ハーモニカ本体のマウスピース・カバープレート・スライドレバーのカスタムスキンを表示")
         self.chk_skin_enabled.toggled.connect(self._on_skin_toggled)
         v_skin.addWidget(self.chk_skin_enabled)
 
@@ -295,7 +309,7 @@ class HarmonicaSettingsDialog(QDialog):
         self.lbl_skin_path.setStyleSheet("color: #888888; font-size: 11px;")
         row_skin_file.addWidget(self.lbl_skin_path, stretch=1)
 
-        self.btn_select_skin = QPushButton("🎨 スキン詳細設定...", self)
+        self.btn_select_skin = QPushButton("🎨 スキン選択...", self)
         self.btn_select_skin.clicked.connect(self._choose_skin_image)
         row_skin_file.addWidget(self.btn_select_skin)
 
@@ -476,11 +490,15 @@ class HarmonicaSettingsDialog(QDialog):
             self.pv_lbl_bg_path.setText(os.path.basename(f))
             self.pv_lbl_bg_path.setToolTip(f)
             self.pv_chk_bg_enable.setChecked(True)
+            if self.pv_combo_bg_fit.currentText().startswith("非表示"):
+                self.pv_combo_bg_fit.setCurrentText("中央トリミング (画面いっぱい)")
 
     def _pv_clear_bg_image(self):
         self._pv_bg_path = ""
         self.pv_lbl_bg_path.setText("未設定 (黒背景)")
         self.pv_lbl_bg_path.setToolTip("")
+        self.pv_combo_bg_fit.setCurrentText("非表示 (背景画像オフ)")
+        self.pv_chk_bg_enable.setChecked(False)
 
     def _choose_skin_image(self):
         dlg = SkinSelectDialog(self.settings, parent=self)
@@ -558,14 +576,26 @@ class HarmonicaSettingsDialog(QDialog):
         self.pv_chk_glow.setChecked(bool(pv.get("show_glow", True)))
         self.pv_chk_legend.setChecked(bool(pv.get("show_legend", True)))
 
-        self.pv_chk_bg_enable.setChecked(bool(pv.get("bg_image_enabled", True)))
+        bg_en = bool(pv.get("bg_image_enabled", True))
+        cur_fit = pv.get("bg_fit_mode", "中央トリミング (画面いっぱい)")
+        if not bg_en or str(cur_fit).startswith("非表示"):
+            self.pv_combo_bg_fit.setCurrentText("非表示 (背景画像オフ)")
+        elif "引き伸ば" in str(cur_fit) or "引き延ば" in str(cur_fit):
+            self.pv_combo_bg_fit.setCurrentText("画面に引き伸ばす (比率無視)")
+        elif "全体" in str(cur_fit) or "収める" in str(cur_fit):
+            self.pv_combo_bg_fit.setCurrentText("画面内に収める (全体表示)")
+        elif cur_fit in [self.pv_combo_bg_fit.itemText(i) for i in range(self.pv_combo_bg_fit.count())]:
+            self.pv_combo_bg_fit.setCurrentText(cur_fit)
+        else:
+            self.pv_combo_bg_fit.setCurrentText("中央トリミング (画面いっぱい)")
+        self.pv_chk_bg_enable.setChecked("非表示" not in self.pv_combo_bg_fit.currentText())
+
         self._pv_bg_path = pv.get("bg_image_path", "")
         self.pv_lbl_bg_path.setText(os.path.basename(self._pv_bg_path) if self._pv_bg_path else "未設定 (黒背景)")
         self.pv_lbl_bg_path.setToolTip(self._pv_bg_path)
         dim = int(pv.get("bg_dim_ratio", 60))
         self.pv_slider_bg_dim.setValue(dim)
         self.pv_lbl_bg_dim_val.setText(f"{dim}%")
-        self.pv_combo_bg_fit.setCurrentText(pv.get("bg_fit_mode", "中央トリミング (画面いっぱい)"))
         rot_deg = int(pv.get("bg_rotation", 0))
         rot_map = {0: "0° (標準)", 90: "90° (右回転)", 180: "180° (上下反転)", 270: "270° (左回転)"}
         self.pv_combo_bg_rot.setCurrentText(rot_map.get(rot_deg, "0° (標準)"))
@@ -627,10 +657,13 @@ class HarmonicaSettingsDialog(QDialog):
         pv["show_glow"] = self.pv_chk_glow.isChecked()
         pv["show_legend"] = self.pv_chk_legend.isChecked()
 
-        pv["bg_image_enabled"] = self.pv_chk_bg_enable.isChecked()
+        fit_choice = self.pv_combo_bg_fit.currentText()
+        is_bg_on = ("非表示" not in fit_choice)
+        pv["bg_image_enabled"] = is_bg_on
+        self.pv_chk_bg_enable.setChecked(is_bg_on)
         pv["bg_image_path"] = self._pv_bg_path
         pv["bg_dim_ratio"] = self.pv_slider_bg_dim.value()
-        pv["bg_fit_mode"] = self.pv_combo_bg_fit.currentText()
+        pv["bg_fit_mode"] = fit_choice
         rot_rev = {"0° (標準)": 0, "90° (右回転)": 90, "180° (上下反転)": 180, "270° (左回転)": 270}
         pv["bg_rotation"] = rot_rev.get(self.pv_combo_bg_rot.currentText(), 0)
 
