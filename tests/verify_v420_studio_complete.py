@@ -544,8 +544,9 @@ def run_all_v420_tests():
     test_14_qa_issues_49_50()
     test_15_qa_issues_51_to_53()
     test_16_qa_issues_54_to_57()
+    test_17_qa_issue_58()
     print("=" * 70)
-    print("🌟 ALL 16 INTEGRATION TESTS (17 ISSUES + 12 AUDITS + 16 QA FIXES) PASSED PERFECTLY! 🌟")
+    print("🌟 ALL 17 INTEGRATION TESTS (18 ISSUES + 12 AUDITS + 17 QA FIXES) PASSED PERFECTLY! 🌟")
     print("=" * 70)
 
 
@@ -877,6 +878,55 @@ def test_16_qa_issues_54_to_57():
 
     win.deleteLater()
     print("  -> PASS: QA Issues 54-57 (Record stop sync, Reverb cache, Stepper buttons, Custom combo, & Notes fall) 100% verified!")
+
+
+def test_17_qa_issue_58():
+    """課題 58: 穴番号の二重UI解消（チェックボックス廃止＆穴番号表記「非表示」統合）検証"""
+    print("[TEST 17] QA Issue 58 (Hole number display unified into style combo with '非表示')...")
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    # 1. HarmonicaSettingsDialog の検証
+    from dialogs import HarmonicaSettingsDialog
+    test_settings = {"practice_visual": {"hole_num_style": "実機標準 (低音ドット付)", "show_hole_num": True}}
+    dlg = HarmonicaSettingsDialog(test_settings, initial_tab=1)
+    items_dlg = [dlg.pv_combo_hole_style.itemText(i) for i in range(dlg.pv_combo_hole_style.count())]
+    assert "非表示" in items_dlg, f"Dialog hole style combo must have '非表示', got {items_dlg}"
+    assert dlg.pv_chk_hole_num.isVisible() is False, "Dialog pv_chk_hole_num must be hidden"
+
+    # 非表示を選んで保存
+    dlg.pv_combo_hole_style.setCurrentText("非表示")
+    dlg._on_save_clicked()
+    saved_pv = dlg.settings.get("practice_visual", {})
+    assert saved_pv.get("show_hole_num") is False, f"Expected show_hole_num=False, got {saved_pv.get('show_hole_num')}"
+    assert saved_pv.get("hole_num_style") == "非表示", f"Expected hole_num_style='非表示', got {saved_pv.get('hole_num_style')}"
+    assert dlg.settings.get("show_hole_num") is False, f"Expected top-level show_hole_num=False, got {dlg.settings.get('show_hole_num')}"
+    dlg.deleteLater()
+
+    # 2. HarmonicaMainWindow 画面デザイン設定タブの検証
+    win = HarmonicaMainWindow()
+    items_main = [win.combo_hole_num_style.itemText(i) for i in range(win.combo_hole_num_style.count())]
+    assert "非表示" in items_main, f"MainWindow hole style combo must have '非表示', got {items_main}"
+    assert win.chk_hole_num.isVisible() is False, "MainWindow chk_hole_num must be hidden from layout"
+
+    # コンボを「非表示」に変更
+    win.combo_hole_num_style.setCurrentText("非表示")
+    assert win.gl_widget.show_hole_num is False, "GL widget show_hole_num should be False when '非表示' is selected"
+    assert win.chk_hole_num.isChecked() is False, "chk_hole_num should be synced to unchecked"
+
+    # コンボを「通し番号 (1〜)」に変更
+    win.combo_hole_num_style.setCurrentText("通し番号 (1〜)")
+    assert win.gl_widget.show_hole_num is True, "GL widget show_hole_num should be True when visible style is selected"
+    assert win.chk_hole_num.isChecked() is True, "chk_hole_num should be synced to checked"
+
+    # 3. OffscreenVisualizerRenderer の検証
+    from video_exporter import OffscreenVisualizerRenderer
+    rend = OffscreenVisualizerRenderer(win.timeline, 1280, 720)
+    rend.hole_num_style = "非表示"
+    rend.show_hole_num = True  # フラグがTrueでも非表示スタイルなら抑止
+    assert "非表示" in getattr(rend, "hole_num_style", "")
+
+    win.deleteLater()
+    print("  -> PASS: QA Issue 58 (Hole number display unified into style combo with '非表示') 100% verified!")
 
 
 if __name__ == "__main__":

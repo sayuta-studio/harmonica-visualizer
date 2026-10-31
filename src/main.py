@@ -1806,9 +1806,15 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
 
         self.chk_hole_num = QCheckBox("穴番号", self)
         self.chk_hole_num.setChecked(bool(self.user_settings.get("show_hole_num", True)))
+        self.chk_hole_num.setVisible(False)
         self.chk_hole_num.setToolTip("ハーモニカ各ホールの穴番号を表示")
         self.chk_hole_num.toggled.connect(lambda v: (self.gl_widget.set_show_hole_num(v), self._save_current_settings()))
-        grid_chk.addWidget(self.chk_hole_num, 1, 1)
+
+        self.chk_bar_lines = QCheckBox("小節線", self)
+        self.chk_bar_lines.setChecked(bool(self.user_settings.get("show_bar_lines", True)))
+        self.chk_bar_lines.setToolTip("横の小節境界線と小節番号を表示")
+        self.chk_bar_lines.toggled.connect(lambda v: (self.gl_widget.set_show_bar_lines(v), self._save_current_settings()))
+        grid_chk.addWidget(self.chk_bar_lines, 1, 1)
 
         self.chk_ring = QCheckBox("レバーONリング", self)
         self.chk_ring.setChecked(bool(self.user_settings.get("show_ring", self.user_settings.get("use_ring", True))))
@@ -1828,22 +1834,23 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.chk_legend.toggled.connect(lambda v: (self.gl_widget.set_show_legend(v), self._save_current_settings()))
         grid_chk.addWidget(self.chk_legend, 3, 0)
 
-        self.chk_bar_lines = QCheckBox("小節線", self)
-        self.chk_bar_lines.setChecked(bool(self.user_settings.get("show_bar_lines", True)))
-        self.chk_bar_lines.setToolTip("横の小節境界線と小節番号を表示")
-        self.chk_bar_lines.toggled.connect(lambda v: (self.gl_widget.set_show_bar_lines(v), self._save_current_settings()))
-        grid_chk.addWidget(self.chk_bar_lines, 3, 1)
-
         l_chk.addLayout(grid_chk)
 
         r_hole_style = QHBoxLayout()
         r_hole_style.addWidget(QLabel("穴番号表記:"))
         self.combo_hole_num_style = QComboBox(self)
         self.combo_hole_num_style.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.combo_hole_num_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜)"])
+        self.combo_hole_num_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜)", "非表示"])
         cur_hstyle = self.user_settings.get("hole_num_style", "実機標準 (低音ドット付)")
-        self.combo_hole_num_style.setCurrentText("通し番号 (1〜)" if "通し番号" in cur_hstyle else "実機標準 (低音ドット付)")
-        self.combo_hole_num_style.setToolTip("実機表記（C4基準1〜12、16穴:·1〜·4、14穴:・・）か、左端基準の通し番号（1〜）かを選択")
+        if self.user_settings.get("show_hole_num") is False:
+            cur_hstyle = "非表示"
+        if "非表示" in cur_hstyle:
+            self.combo_hole_num_style.setCurrentText("非表示")
+        elif "通し番号" in cur_hstyle:
+            self.combo_hole_num_style.setCurrentText("通し番号 (1〜)")
+        else:
+            self.combo_hole_num_style.setCurrentText("実機標準 (低音ドット付)")
+        self.combo_hole_num_style.setToolTip("実機表記（C4基準1〜12、16穴:·1〜·4、14穴:・・）か、通し番号（1〜）か、または非表示を選択")
         self.combo_hole_num_style.currentTextChanged.connect(self._on_hole_num_style_changed)
         self._configure_sidebar_combo(self.combo_hole_num_style, max_width=230)
         r_hole_style.addWidget(self.combo_hole_num_style, stretch=1)
@@ -3099,6 +3106,10 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.gl_widget.set_show_safe_zone(bool(self.user_settings.get("show_safe_zone", False)))
 
         # UIコントロールへの同期 (blockSignals 徹底)
+        target_hole_style = vis.get("hole_num_style", "実機標準 (低音ドット付)")
+        if vis.get("show_hole_num") is False:
+            target_hole_style = "非表示"
+
         for w_name, val, is_combo, is_slider, is_check in (
             ("traj_combo", traj_m, True, False, False),
             ("lang_combo", vis.get("lang_mode", "ドレミ"), True, False, False),
@@ -3110,7 +3121,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             ("chk_grid", bool(vis.get("show_grid", True)), False, False, True),
             ("chk_bar_lines", bool(vis.get("show_bar_lines", True)), False, False, True),
             ("chk_hole_num", bool(vis.get("show_hole_num", True)), False, False, True),
-            ("combo_hole_num_style", vis.get("hole_num_style", "実機標準 (低音ドット付)"), True, False, False),
+            ("combo_hole_num_style", target_hole_style, True, False, False),
             ("combo_grid4", g4_mode, True, False, False),
             ("chk_ring", bool(vis.get("show_ring", True)), False, False, True),
             ("chk_glow", bool(vis.get("show_glow", True)), False, False, True),
@@ -3203,12 +3214,16 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.gl_widget.set_show_bar_lines(s.get("show_bar_lines", True))
         if hasattr(self, "chk_bar_lines"):
             self.chk_bar_lines.setChecked(bool(s.get("show_bar_lines", True)))
-        self.gl_widget.set_show_hole_num(s.get("show_hole_num", True))
-        self.gl_widget.set_hole_num_style(s.get("hole_num_style", "実機標準 (低音ドット付)"))
+        cur_style = s.get("hole_num_style", "実機標準 (低音ドット付)")
+        is_hole_show = bool(s.get("show_hole_num", True))
+        if not is_hole_show or "非表示" in cur_style:
+            cur_style = "非表示"
+            is_hole_show = False
+        self.gl_widget.set_show_hole_num(is_hole_show)
+        self.gl_widget.set_hole_num_style(cur_style)
         if hasattr(self, "combo_hole_num_style"):
-            cur_style = s.get("hole_num_style", "実機標準 (低音ドット付)")
             self.combo_hole_num_style.blockSignals(True)
-            self.combo_hole_num_style.setCurrentText("通し番号 (1〜)" if "通し番号" in cur_style else "実機標準 (低音ドット付)")
+            self.combo_hole_num_style.setCurrentText(cur_style)
             self.combo_hole_num_style.blockSignals(False)
         self.gl_widget.set_use_ring(s.get("show_ring", s.get("use_ring", True)))
         self.gl_widget.set_show_glow(s.get("show_glow", True))
@@ -5219,8 +5234,15 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self._save_current_settings()
 
     def _on_hole_num_style_changed(self, style: str):
+        is_show = ("非表示" not in str(style))
         self.user_settings["hole_num_style"] = str(style)
+        self.user_settings["show_hole_num"] = is_show
+        if hasattr(self, "chk_hole_num"):
+            self.chk_hole_num.blockSignals(True)
+            self.chk_hole_num.setChecked(is_show)
+            self.chk_hole_num.blockSignals(False)
         self.gl_widget.set_hole_num_style(str(style))
+        self.gl_widget.set_show_hole_num(is_show)
         self._save_current_settings()
 
     # =========================================================================

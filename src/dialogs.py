@@ -160,7 +160,7 @@ class HarmonicaSettingsDialog(QDialog):
         r_sub.addSpacing(10)
         r_sub.addWidget(QLabel("穴番号スタイル:"))
         self.pv_combo_hole_style = QComboBox(self)
-        self.pv_combo_hole_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜)"])
+        self.pv_combo_hole_style.addItems(["実機標準 (低音ドット付)", "通し番号 (1〜)", "非表示"])
         r_sub.addWidget(self.pv_combo_hole_style, stretch=1)
         v_notes.addLayout(r_sub)
         v_sp.addWidget(gb_notes)
@@ -227,10 +227,11 @@ class HarmonicaSettingsDialog(QDialog):
 
         r_el2 = QHBoxLayout()
         self.pv_chk_hole_num = QCheckBox("穴番号を表示", self)
+        self.pv_chk_hole_num.setVisible(False)
         self.pv_chk_ring = QCheckBox("判定リング (吹吸枠)", self)
         self.pv_chk_glow = QCheckBox("発光エフェクト (Glow)", self)
         self.pv_chk_legend = QCheckBox("吹吸凡例を表示", self)
-        r_el2.addWidget(self.pv_chk_hole_num)
+        # 穴番号はスタイルコンボ（非表示）に一本化
         r_el2.addWidget(self.pv_chk_ring)
         r_el2.addWidget(self.pv_chk_glow)
         r_el2.addWidget(self.pv_chk_legend)
@@ -531,7 +532,10 @@ class HarmonicaSettingsDialog(QDialog):
         self.pv_combo_traj.setCurrentText(pv.get("trajectory_mode", "3段階 (練習標準)"))
         self.pv_combo_lang.setCurrentText(pv.get("lang_mode", "ドレミ"))
         self.pv_combo_grid4.setCurrentText(pv.get("grid4_mode", "4音グリッド表示"))
-        self.pv_combo_hole_style.setCurrentText(pv.get("hole_num_style", "実機標準 (低音ドット付)"))
+        hole_style = pv.get("hole_num_style", "実機標準 (低音ドット付)")
+        if pv.get("show_hole_num") is False:
+            hole_style = "非表示"
+        self.pv_combo_hole_style.setCurrentText(hole_style)
 
         self.pv_combo_theme.blockSignals(True)
         self.pv_combo_theme.setCurrentText(pv.get("color_theme", "ノーマル"))
@@ -605,7 +609,8 @@ class HarmonicaSettingsDialog(QDialog):
         pv["trajectory_mode"] = self.pv_combo_traj.currentText()
         pv["lang_mode"] = self.pv_combo_lang.currentText()
         pv["grid4_mode"] = self.pv_combo_grid4.currentText()
-        pv["hole_num_style"] = self.pv_combo_hole_style.currentText()
+        hole_style = self.pv_combo_hole_style.currentText()
+        pv["hole_num_style"] = hole_style
         pv["color_theme"] = self.pv_combo_theme.currentText()
         pv["color_blow"] = self._pv_blow_color
         pv["color_draw"] = self._pv_draw_color
@@ -616,7 +621,8 @@ class HarmonicaSettingsDialog(QDialog):
         pv["show_lookahead"] = self.pv_chk_lookahead.isChecked()
         pv["show_grid"] = self.pv_chk_grid.isChecked()
         pv["show_bar_lines"] = self.pv_chk_bar_lines.isChecked()
-        pv["show_hole_num"] = self.pv_chk_hole_num.isChecked()
+        pv["show_hole_num"] = ("非表示" not in hole_style)
+        self.pv_chk_hole_num.setChecked(pv["show_hole_num"])
         pv["show_ring"] = self.pv_chk_ring.isChecked()
         pv["show_glow"] = self.pv_chk_glow.isChecked()
         pv["show_legend"] = self.pv_chk_legend.isChecked()
