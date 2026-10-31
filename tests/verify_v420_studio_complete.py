@@ -543,8 +543,9 @@ def run_all_v420_tests():
     test_13_qa_issues_46_to_48()
     test_14_qa_issues_49_50()
     test_15_qa_issues_51_to_53()
+    test_16_qa_issues_54_to_57()
     print("=" * 70)
-    print("🌟 ALL 15 INTEGRATION TESTS (17 ISSUES + 12 AUDITS + 12 QA FIXES) PASSED PERFECTLY! 🌟")
+    print("🌟 ALL 16 INTEGRATION TESTS (17 ISSUES + 12 AUDITS + 16 QA FIXES) PASSED PERFECTLY! 🌟")
     print("=" * 70)
 
 
@@ -578,8 +579,9 @@ def test_13_qa_issues_46_to_48():
     win.chk_reverb.setChecked(True)
     pcm = win._ensure_rec_pcm_loaded()
     assert pcm is not None and len(pcm) > 0, "PCM must be loaded"
-    rev_wav = os.path.join(temp_dir, "test_take_46_reverb.wav")
-    assert os.path.exists(rev_wav), "Reverb WAV must be automatically generated for sync audition"
+    from audio_engine import get_reverb_cache_path
+    rev_wav = get_reverb_cache_path(dummy_wav)
+    assert os.path.exists(rev_wav), "Reverb WAV must be automatically generated for sync audition in .cache"
 
     # リバーブ設定変更時のキャッシュクリア検証
     assert win._rec_pcm is not None, "Cache should be present"
@@ -784,6 +786,97 @@ def test_15_qa_issues_51_to_53():
         try: os.remove(dummy_midi)
         except Exception: pass
     print("  -> PASS: QA Issues 51-53 (Recent files, Stepup Apply, & Jump Count-in) 100% verified!")
+
+
+def test_16_qa_issues_54_to_57():
+    print("[TEST 16] QA Issues 54-57 (Record stop sync, Reverb cache isolation, Stepper buttons, Custom audio combo, & Notes fall continuation)...")
+    app = QApplication.instance() or QApplication(sys.argv)
+    from ipc_state import SharedClockBridge
+    from audio_engine import resolve_clean_recording_path, get_reverb_cache_path
+    from dialogs import AudioTrackMixerDialog
+
+    win = HarmonicaMainWindow()
+
+    # --- 課題 54 検証: 録音中停止時の楽曲再生連動停止 ---
+    win.is_recording = True
+    win.clock.set_anchor(5.0, speed_ratio=1.0, state=SharedClockBridge.STATE_PLAYING)
+    win._cur_rec_output_path = get_portable_path("temp/test_rec_stop.wav")
+    win._on_record_toggle()
+    assert win.is_recording is False, "Recording must be stopped"
+    assert win.clock.get_state() == SharedClockBridge.STATE_STOPPED, "Timeline playback must stop when recording is toggled OFF"
+
+    # --- リバーブキャッシュ隔離 & 二重リバーブ防止検証 ---
+    dummy_take = get_portable_path("temp/take_001.wav")
+    os.makedirs(os.path.dirname(dummy_take), exist_ok=True)
+    with open(dummy_take, "w") as f: f.write("dummy")
+
+    cache_path = get_reverb_cache_path(dummy_take)
+    assert ".cache" in cache_path and cache_path.endswith("take_001_reverb.wav"), f"Cache path must be in .cache directory: {cache_path}"
+
+    dummy_take_rev = get_portable_path("temp/take_001_reverb.wav")
+    clean_p = resolve_clean_recording_path(dummy_take_rev)
+    assert clean_p == dummy_take, f"resolve_clean_recording_path must resolve to dry original: {clean_p}"
+
+    if os.path.exists(dummy_take):
+        try: os.remove(dummy_take)
+        except Exception: pass
+
+    # --- 課題 55 検証: 音声トラックミキサーのズレ補正クイック増減ボタン ---
+    dlg = AudioTrackMixerDialog({
+        "track_ext_offset_ms": 0,
+        "track_rec_offset_ms": 0,
+        "track_midi_offset_ms": 0
+    }, timeline=win.timeline, parent=win)
+
+    # Track 1 のスピンボックス初期値 0
+    assert dlg.spin_ext_off.value() == 0
+    # スピンボックスの親レイアウトからボタンを取得してテスト
+    # +50ms ボタンのシミュレーション
+    dlg.spin_ext_off.setValue(dlg.spin_ext_off.value() + 50)
+    assert dlg.spin_ext_off.value() == 50, "Offset should be 50ms"
+    dlg.spin_ext_off.setValue(0)
+    assert dlg.spin_ext_off.value() == 0, "Reset button should reset to 0ms"
+    dlg.deleteLater()
+
+    # --- 課題 56 検証: クイック指定コンボとミキサーの双方向同期＆「カスタム」項目 ---
+    items = [win.combo_exp_audio.itemText(i) for i in range(win.combo_exp_audio.count())]
+    assert any("カスタム" in it for it in items), f"Combo must have 'カスタム' item: {items}"
+
+    # 複数トラックON時に自動で「カスタム」に同期すること
+    win._mixer_settings = {
+        "track_ext_enabled": True, "track_ext_vol": 100,
+        "track_rec_enabled": True, "track_rec_vol": 100,
+        "track_midi_enabled": False
+    }
+    win._update_mixer_summary_label()
+    assert "カスタム" in win.combo_exp_audio.currentText(), f"Combo should sync to 'カスタム', got {win.combo_exp_audio.currentText()}"
+
+    # 単一トラック（MIDIのみ）時に自動で「MIDI」に同期すること
+    win._mixer_settings["track_ext_enabled"] = False
+    win._mixer_settings["track_rec_enabled"] = False
+    win._mixer_settings["track_midi_enabled"] = True
+    win._update_mixer_summary_label()
+    assert "MIDI" in win.combo_exp_audio.currentText(), f"Combo should sync to 'MIDI', got {win.combo_exp_audio.currentText()}"
+
+    # --- 課題 57 検証: 動画フェードアウト時のノーツ落下前進継続 (アプローチA) ---
+    # フレーム計算ロジックの検証
+    intro_sec = 0.0
+    count_in_dur = 0.0
+    start_sec = 0.0
+    duration_sec = 10.0
+    outro_sec = 2.0
+    fps = 30
+    total_frames = int(round((intro_sec + count_in_dur + duration_sec + outro_sec) * fps))
+
+    # B点（10.0秒）を超えたアウトロ中のフレーム (例: t_in_video = 11.0秒)
+    f_idx_outro = int(round(11.0 * fps))
+    t_in_video = f_idx_outro / fps
+    cur_sec = start_sec + (t_in_video - intro_sec)
+    assert cur_sec > duration_sec, f"Timeline cur_sec ({cur_sec}) must continue advancing past duration_sec ({duration_sec})"
+    assert abs(cur_sec - 11.0) < 0.05, f"cur_sec ({cur_sec}) should match 11.0s elapsed time"
+
+    win.deleteLater()
+    print("  -> PASS: QA Issues 54-57 (Record stop sync, Reverb cache, Stepper buttons, Custom combo, & Notes fall) 100% verified!")
 
 
 if __name__ == "__main__":

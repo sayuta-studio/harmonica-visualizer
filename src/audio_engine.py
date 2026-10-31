@@ -1149,6 +1149,36 @@ def apply_harmonica_reverb_numpy(input_wav_path, output_wav_path, reverb_type="�
         return None
 
 
+def resolve_clean_recording_path(wav_path: str) -> str:
+    """_reverb が付与されたパスであっても、同階層の生録音原本 (Dry) を優先解決して返却"""
+    if not wav_path:
+        return ""
+    d, f = os.path.split(wav_path)
+    base, ext = os.path.splitext(f)
+    if base.endswith("_reverb"):
+        orig_base = base[:-7]
+        orig_candidate = os.path.join(d, orig_base + ext)
+        if os.path.isfile(orig_candidate) or not os.path.isfile(wav_path):
+            return orig_candidate
+    return wav_path
+
+
+def get_reverb_cache_path(raw_wav_path: str, ensure_dir: bool = True) -> str:
+    """録音原本に対する専用キャッシュパス (takes/.cache/..._reverb.wav) を生成"""
+    clean_path = resolve_clean_recording_path(raw_wav_path)
+    if not clean_path:
+        return ""
+    d, f = os.path.split(clean_path)
+    cache_dir = os.path.join(d, ".cache")
+    if ensure_dir:
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+        except Exception:
+            pass
+    base, ext = os.path.splitext(f)
+    return os.path.join(cache_dir, f"{base}_reverb{ext}")
+
+
 class AuditionPlayer:
     """pygame.mixer を用いた録音テイク・外部音源の即時試聴管理クラス"""
 
@@ -1839,12 +1869,11 @@ def synthesize_midi_to_wav(midi_notes, current_bpm, max_duration, is_count_in, i
                 target_rec = rec_path
                 eff_rev_type = str(mixer_settings.get("track_rec_reverb_type", reverb_type))
                 eff_rev_wet = int(mixer_settings.get("track_rec_reverb_wet", reverb_wet_pct))
+                clean_rec = resolve_clean_recording_path(rec_path)
+                target_rec = clean_rec
                 if mixer_settings.get("track_rec_reverb", False) and "なし" not in eff_rev_type and "オフ" not in eff_rev_type and eff_rev_wet > 0:
-                    base_no_ext = os.path.splitext(rec_path)[0]
-                    if base_no_ext.endswith("_reverb"):
-                        base_no_ext = base_no_ext[:-7]
-                    rev_p = base_no_ext + "_reverb.wav"
-                    apply_harmonica_reverb_numpy(rec_path, rev_p, eff_rev_type, eff_rev_wet)
+                    rev_p = get_reverb_cache_path(clean_rec)
+                    apply_harmonica_reverb_numpy(clean_rec, rev_p, eff_rev_type, eff_rev_wet)
                     if os.path.exists(rev_p):
                         target_rec = rev_p
                 pcm_2 = load_external_audio_pcm(target_rec, sample_rate=sample_rate)

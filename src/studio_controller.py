@@ -22,7 +22,7 @@ import settings_manager
 import project_manager
 from config import get_portable_path
 from ipc_state import SharedClockBridge
-from audio_engine import load_external_audio_pcm, synthesize_midi_to_wav, apply_harmonica_reverb_numpy
+from audio_engine import load_external_audio_pcm, synthesize_midi_to_wav, apply_harmonica_reverb_numpy, resolve_clean_recording_path, get_reverb_cache_path
 from video_exporter import (
     check_ffmpeg_available,
     VideoExportThread,
@@ -367,10 +367,33 @@ class StudioExportMixin:
             parts.append("無音")
         self.lbl_mixer_summary.setText("構成: " + " + ".join(parts))
 
+        # 課題 56: クイック指定コンボとの双方向自動同期
+        ext_on = cfg.get("track_ext_enabled", False)
+        rec_on = cfg.get("track_rec_enabled", False)
+        midi_on = cfg.get("track_midi_enabled", False)
+        active_count = sum([ext_on, rec_on, midi_on])
+
+        if hasattr(self, "combo_exp_audio"):
+            self.combo_exp_audio.blockSignals(True)
+            if active_count > 1:
+                self.combo_exp_audio.setCurrentText("🎛️ カスタム (ミキサー詳細設定)")
+            elif active_count == 1:
+                if ext_on:
+                    self.combo_exp_audio.setCurrentText("伴奏音源 (外部音源優先)")
+                elif rec_on:
+                    self.combo_exp_audio.setCurrentText("マイク録音テイク (演奏収録)")
+                elif midi_on:
+                    self.combo_exp_audio.setCurrentText("MIDIガイド音 (内部音源)")
+            else:
+                self.combo_exp_audio.setCurrentText("無音 (映像のみ)")
+            self.combo_exp_audio.blockSignals(False)
+
     def _on_quick_audio_source_changed(self, choice: str):
         """クイック指定コンボが切り替えられた際にミキサー設定を追従"""
         cfg = self._get_current_mixer_settings()
-        if "無音" in choice:
+        if "カスタム" in choice:
+            pass  # カスタム選択時は現在のミキサー設定をそのまま維持
+        elif "無音" in choice:
             cfg["track_ext_enabled"] = False
             cfg["track_rec_enabled"] = False
             cfg["track_midi_enabled"] = False
@@ -743,12 +766,13 @@ class StudioExportMixin:
         rec_path = getattr(self, "last_recorded_path", None)
         if rec_path and os.path.isfile(rec_path):
             try:
-                target_path = rec_path
+                clean_path = resolve_clean_recording_path(rec_path)
+                target_path = clean_path
                 if hasattr(self, "chk_reverb") and self.chk_reverb.isChecked():
-                    rev_path = os.path.splitext(rec_path)[0] + "_reverb.wav"
+                    rev_path = get_reverb_cache_path(clean_path)
                     rev_type = self.combo_reverb_type.currentText() if hasattr(self, "combo_reverb_type") else "ルーム (自然な部屋鳴り)"
                     wet = self.slider_reverb_wet.value() if hasattr(self, "slider_reverb_wet") else 35
-                    apply_harmonica_reverb_numpy(rec_path, rev_path, rev_type, wet)
+                    apply_harmonica_reverb_numpy(clean_path, rev_path, rev_type, wet)
                     if os.path.exists(rev_path):
                         target_path = rev_path
                 self._rec_pcm = load_external_audio_pcm(target_path, sample_rate=44100)

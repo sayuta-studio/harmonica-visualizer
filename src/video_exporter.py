@@ -1352,17 +1352,15 @@ class VideoExportThread(QThread):
                         cur_sec = start_sec - count_in_dur
                     elif t_in_video < intro_sec + count_in_dur:
                         cur_sec = (start_sec - count_in_dur) + (t_in_video - intro_sec)
-                    elif t_in_video < intro_sec + count_in_dur + duration_sec:
-                        cur_sec = start_sec + (t_in_video - (intro_sec + count_in_dur))
                     else:
-                        cur_sec = end_sec
+                        # 課題 57: B点以降の後半余白中もフリーズさせず等速進行を継続 (アプローチA)
+                        cur_sec = start_sec + (t_in_video - (intro_sec + count_in_dur))
                 else:
                     if t_in_video < intro_sec:
                         cur_sec = start_sec - (intro_sec - t_in_video)
-                    elif t_in_video < intro_sec + duration_sec:
-                        cur_sec = start_sec + (t_in_video - intro_sec)
                     else:
-                        cur_sec = end_sec
+                        # 課題 57: B点以降の後半余白中もフリーズさせず等速進行を継続 (アプローチA)
+                        cur_sec = start_sec + (t_in_video - intro_sec)
 
                 raw_bytes = renderer.render_frame_bytes(
                     cur_sec,

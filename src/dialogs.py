@@ -2286,6 +2286,22 @@ class SkinSelectDialog(QDialog):
         }
 
 
+def _add_offset_stepper_buttons(layout, spin: QSpinBox):
+    """ズレ補正スピンボックス横に [-50] [-10] [0] [+10] [+50] ms のクリック調整ボタン群を配置"""
+    for label, delta in [("-50", -50), ("-10", -10), ("0", None), ("+10", 10), ("+50", 50)]:
+        btn = QPushButton(label)
+        btn.setFixedWidth(36 if len(label) <= 3 else 40)
+        btn.setFixedHeight(22)
+        btn.setStyleSheet("QPushButton { font-size: 11px; padding: 1px 2px; }")
+        if delta is None:
+            btn.setToolTip("ズレ補正を 0ms にリセット")
+            btn.clicked.connect(lambda _, s=spin: s.setValue(0))
+        else:
+            btn.setToolTip(f"{delta:+d}ms 調整")
+            btn.clicked.connect(lambda _, s=spin, d=delta: s.setValue(s.value() + d))
+        layout.addWidget(btn)
+
+
 class AudioTrackMixerDialog(QDialog):
     """動画音声トラック・ミキサー (3系統マルチトラック合成ダイアログ)"""
 
@@ -2360,6 +2376,7 @@ class AudioTrackMixerDialog(QDialog):
         self.spin_ext_off.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spin_ext_off.setValue(int(self.settings.get("track_ext_offset_ms", 0)))
         r_ext_o.addWidget(self.spin_ext_off)
+        _add_offset_stepper_buttons(r_ext_o, self.spin_ext_off)
         r_ext_o.addStretch()
         l_ext.addLayout(r_ext_o)
 
@@ -2415,6 +2432,7 @@ class AudioTrackMixerDialog(QDialog):
         self.spin_rec_off.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spin_rec_off.setValue(int(self.settings.get("track_rec_offset_ms", 0)))
         r_rec_opts.addWidget(self.spin_rec_off)
+        _add_offset_stepper_buttons(r_rec_opts, self.spin_rec_off)
         r_rec_opts.addStretch()
         l_rec.addLayout(r_rec_opts)
 
@@ -2470,6 +2488,7 @@ class AudioTrackMixerDialog(QDialog):
         self.spin_midi_off.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.spin_midi_off.setValue(int(self.settings.get("track_midi_offset_ms", 0)))
         r_midi_opts.addWidget(self.spin_midi_off)
+        _add_offset_stepper_buttons(r_midi_opts, self.spin_midi_off)
         r_midi_opts.addStretch()
         l_midi.addLayout(r_midi_opts)
 

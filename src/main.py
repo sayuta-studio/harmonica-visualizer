@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 from ipc_state import SharedClockBridge
 from midi_timeline import MidiTimelineData
 from gl_visualizer import HarmonicaGLWidget
-from audio_engine import AudioEngine, AudioRecorder, AuditionPlayer, apply_harmonica_reverb_numpy
+from audio_engine import AudioEngine, AudioRecorder, AuditionPlayer, apply_harmonica_reverb_numpy, resolve_clean_recording_path, get_reverb_cache_path
 from dialogs import PartSelectDialog, AudioTrackMixerDialog, HarmonicaSettingsDialog
 import settings_manager
 import project_manager
@@ -2590,7 +2590,8 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             "伴奏音源 (外部音源優先)",
             "マイク録音テイク (演奏収録)",
             "MIDIガイド音 (内部音源)",
-            "無音 (映像のみ)"
+            "無音 (映像のみ)",
+            "🎛️ カスタム (ミキサー詳細設定)"
         ])
         self.combo_exp_audio.setToolTip("動画に合成する音声ソースのクイック設定")
         self._configure_sidebar_combo(self.combo_exp_audio, max_width=230)
@@ -5395,9 +5396,11 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.btn_rec.setStyleSheet("")
             self.lbl_rec_status.setText("● 待機中 (上部 [🔴録音] で開始)")
             self.lbl_rec_status.setStyleSheet("color: #94A3B8; font-weight: bold;")
+            if hasattr(self, "clock") and self.clock.get_state() == SharedClockBridge.STATE_PLAYING:
+                self._on_stop()
 
             if saved_path and dur > 0:
-                self.last_recorded_path = saved_path
+                self.last_recorded_path = resolve_clean_recording_path(saved_path)
                 self._rec_pcm = None
                 trim_info = f" (前奏{trim_sec:.1f}秒自動カット済)" if trim_sec > 0.0 else ""
                 self._set_elided_label_text(self.lbl_rec_take, f"録音テイク: {os.path.basename(saved_path)} ({dur:.1f}秒)", saved_path, max_width=300)
@@ -5407,8 +5410,9 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
                 if self.chk_reverb.isChecked():
                     rev_type = self.combo_reverb_type.currentText()
                     wet = self.slider_reverb_wet.value()
-                    rev_path = os.path.splitext(saved_path)[0] + "_reverb.wav"
-                    apply_harmonica_reverb_numpy(saved_path, rev_path, rev_type, wet)
+                    clean_saved = resolve_clean_recording_path(saved_path)
+                    rev_path = get_reverb_cache_path(clean_saved)
+                    apply_harmonica_reverb_numpy(clean_saved, rev_path, rev_type, wet)
                     self.lbl_status_msg.setText(f"💾 録音完了＆リバーブ生成: {os.path.basename(saved_path)} ({dur:.1f}秒{trim_info})")
                 else:
                     self.lbl_status_msg.setText(f"💾 録音完了: {os.path.basename(saved_path)} ({dur:.1f}秒{trim_info})")
@@ -5430,10 +5434,11 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         else:
             if not getattr(self, "last_recorded_path", None) or not os.path.exists(self.last_recorded_path):
                 return
-            target_path = self.last_recorded_path
+            clean_target = resolve_clean_recording_path(self.last_recorded_path)
+            target_path = clean_target
             if self.chk_reverb.isChecked():
-                rev_path = os.path.splitext(self.last_recorded_path)[0] + "_reverb.wav"
-                apply_harmonica_reverb_numpy(self.last_recorded_path, rev_path, self.combo_reverb_type.currentText(), self.slider_reverb_wet.value())
+                rev_path = get_reverb_cache_path(clean_target)
+                apply_harmonica_reverb_numpy(clean_target, rev_path, self.combo_reverb_type.currentText(), self.slider_reverb_wet.value())
                 if os.path.exists(rev_path):
                     target_path = rev_path
 
