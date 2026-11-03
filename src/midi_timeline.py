@@ -684,6 +684,71 @@ class MidiTimelineData:
             nd["is_editable"] = is_note_editable(pitch, self.inst_type)
             nd["in_range"] = is_note_in_range(pitch, self.inst_type)
 
+        # 5. スライドレバーホールド（2分休符未満押しっぱなし）区間の事前計算
+        self._build_lever_hold_intervals()
+
+    def _build_lever_hold_intervals(self):
+        """スライドレバーONの連続区間（2分休符未満）を事前マージして高速二分探索用に構築"""
+        self.lever_hold_intervals = []
+        self.lever_hold_starts = []
+        if not self.main_notes:
+            return
+
+        active_notes = [n for n in self.main_notes if not n.get("is_muted", False)]
+        if not active_notes:
+            return
+
+        max_gap_ticks = self.ticks_per_beat * 2  # 2分休符（2拍分）
+        merged = []
+        cur_start_sec = None
+        cur_end_sec = None
+        last_end_tick = None
+        last_lever_on = False
+
+        for nd in active_notes:
+            is_lever_on = (nd.get("lever") == "ON")
+            s_tick = nd["start_tick"]
+            e_tick = nd["end_tick"]
+            s_sec = nd["start_sec"]
+            e_sec = nd["end_sec"]
+
+            if is_lever_on:
+                if last_lever_on and (s_tick - last_end_tick < max_gap_ticks):
+                    # 2分休符未満で直前のスライドONと連続 -> マージ
+                    cur_end_sec = max(cur_end_sec, e_sec)
+                    last_end_tick = max(last_end_tick, e_tick)
+                else:
+                    if cur_start_sec is not None:
+                        merged.append((cur_start_sec, cur_end_sec))
+                    cur_start_sec = s_sec
+                    cur_end_sec = e_sec
+                    last_end_tick = e_tick
+                last_lever_on = True
+            else:
+                # レバーOFFの有効ノーツが挟まった場合はホールド区間を終了
+                if cur_start_sec is not None:
+                    merged.append((cur_start_sec, cur_end_sec))
+                    cur_start_sec = None
+                    cur_end_sec = None
+                last_lever_on = False
+                last_end_tick = e_tick
+
+        if cur_start_sec is not None:
+            merged.append((cur_start_sec, cur_end_sec))
+
+        self.lever_hold_intervals = merged
+        self.lever_hold_starts = [iv[0] for iv in merged]
+
+    def is_lever_held(self, cur_sec: float) -> bool:
+        """指定時刻 cur_sec でスライドレバーがホールド（押しっぱなし）されているかを二分探索 O(log N) で高速判定"""
+        if not getattr(self, "lever_hold_starts", None):
+            return False
+        idx = bisect.bisect_right(self.lever_hold_starts, cur_sec) - 1
+        if idx >= 0:
+            iv_start, iv_end = self.lever_hold_intervals[idx]
+            return iv_start <= cur_sec < iv_end
+        return False
+
     def tick_to_sec(self, tick: float) -> float:
         """指定Tickをテンポマップに基づき原曲経過秒数へ高速二分探索変換"""
         if not self.tempo_timeline or not self.tempo_start_ticks:

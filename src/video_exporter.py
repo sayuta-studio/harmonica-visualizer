@@ -600,7 +600,7 @@ class OffscreenVisualizerRenderer:
         active_holes = {}
         active_hole_cells = set()
         active_hole_notes = {}
-        lever_pressed = False
+        lever_pressed = self.timeline.is_lever_held(cur_sec) if self.timeline else False
         notes = self.timeline.main_notes if self.timeline else []
         n_secs = [n["start_sec"] for n in notes]
 

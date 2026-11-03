@@ -1067,7 +1067,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
         active_holes = {}        # hole_num -> action ("吹" / "吸")
         active_hole_cells = set() # (hole_num, action, lever)
         active_hole_notes = {}    # hole_num -> note_val
-        lever_pressed = False
+        lever_pressed = self.timeline.is_lever_held(cur_sec) if self.timeline else False
 
         if self.show_notes and self.midi_notes and px_per_sec > 0:
             idx_start = bisect.bisect_left(self.note_start_secs, cur_sec - self.max_note_dur_sec)
