@@ -708,9 +708,9 @@ class MidiTimelineData:
         for nd in active_notes:
             is_lever_on = (nd.get("lever") == "ON")
             s_tick = nd["start_tick"]
-            e_tick = nd["end_tick"]
+            e_tick = nd.get("end_tick", s_tick + nd.get("dur_tick", 0))
             s_sec = nd["start_sec"]
-            e_sec = nd["end_sec"]
+            e_sec = nd.get("end_sec", s_sec + nd.get("dur_sec", 0.0))
 
             if is_lever_on:
                 if last_lever_on and (s_tick - last_end_tick < max_gap_ticks):
