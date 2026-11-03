@@ -69,18 +69,22 @@ DEFAULT_HARMONICA_MAP = {
 # 🚀【解決】：シ(B3/59)の「吹ON」誤定義を完全に削除しました
 ALTERNATIVE_PRESETS = {
     "スライド最小化": {
-        53: {"hole": 2, "action": "吸", "lever": "OFF", "note_name": "F3"},  
-        65: {"hole": 6, "action": "吸", "lever": "OFF", "note_name": "F4"},  
-        77: {"hole": 10, "action": "吸", "lever": "OFF", "note_name": "F5"}, 
-        89: {"hole": 14, "action": "吸", "lever": "OFF", "note_name": "F6"}, 
+        53: {"hole": 2, "action": "吸", "lever": "OFF", "note_name": "F3"},
+        65: {"hole": 6, "action": "吸", "lever": "OFF", "note_name": "F4"},
+        77: {"hole": 10, "action": "吸", "lever": "OFF", "note_name": "F5"},
+        89: {"hole": 14, "action": "吸", "lever": "OFF", "note_name": "F6"},
+        60: {"hole": 5, "action": "吹", "lever": "OFF", "note_name": "C4"},
+        72: {"hole": 9, "action": "吹", "lever": "OFF", "note_name": "C5"},
+        84: {"hole": 13, "action": "吹", "lever": "OFF", "note_name": "C6"},
     },
     "スライド優先": {
-        60: {"hole": 4, "action": "吸", "lever": "ON",  "note_name": "C4"},   
-        72: {"hole": 8, "action": "吸", "lever": "ON",  "note_name": "C5"},   
-        84: {"hole": 12, "action": "吸", "lever": "ON",  "note_name": "C6"},  
-        64: {"hole": 5, "action": "吸", "lever": "ON",  "note_name": "E4"},   
-        76: {"hole": 9, "action": "吸", "lever": "ON",  "note_name": "E5"},
-        88: {"hole": 13, "action": "吸", "lever": "ON",  "note_name": "E6"},
+        60: {"hole": 4, "action": "吸", "lever": "ON", "note_name": "C4"},
+        72: {"hole": 8, "action": "吸", "lever": "ON", "note_name": "C5"},
+        84: {"hole": 12, "action": "吸", "lever": "ON", "note_name": "C6"},
+        53: {"hole": 2, "action": "吹", "lever": "ON", "note_name": "F3"},
+        65: {"hole": 6, "action": "吹", "lever": "ON", "note_name": "F4"},
+        77: {"hole": 10, "action": "吹", "lever": "ON", "note_name": "F5"},
+        89: {"hole": 14, "action": "吹", "lever": "ON", "note_name": "F6"},
     }
 }
 # エイリアス登録（新名称および旧名称の後方互換）
@@ -546,6 +550,8 @@ def get_note_fingering(note, inst_type):
     lookup_note = note
     if "バス" in inst_type:
         lookup_note = note + 36
+    if lookup_note == 60 and "16穴" not in str(inst_type) and "14穴" not in str(inst_type):
+        return DEFAULT_HARMONICA_MAP.get(60)
     return ACTIVE_HARMONICA_MAP.get(lookup_note)
 
 
@@ -562,6 +568,8 @@ def get_note_fingering_for_song(start_tick, note, inst_type):
             return candidates[override_idx]
             
     # B. 曲ごとの選択プリセットによる自動解決
+    if lookup_note == 60 and "16穴" not in str(inst_type) and "14穴" not in str(inst_type):
+        return DEFAULT_HARMONICA_MAP.get(60)
     preset_overrides = ALTERNATIVE_PRESETS.get(CURRENT_SONG_PRESET, {})
     if lookup_note in preset_overrides:
         return preset_overrides[lookup_note]
