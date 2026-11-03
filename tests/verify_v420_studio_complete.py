@@ -524,6 +524,105 @@ def test_12_qa_issues_40_to_45():
     win.deleteLater()
     print("  -> PASS: All QA issues 40-45 thoroughly verified and working seamlessly!")
 
+
+
+def test_18_qa_issues_59_60():
+    """課題 59 & 60: スライド優先プリセットF/E修正・12穴C4保護 & スライドレバーホールド検証"""
+    print("[TEST 18] QA Issues 59 & 60 (Slide priority preset F/E fix, 12-hole C4 guard, & Lever hold)...")
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    # 1. 課題 59: プリセット定義と運指解決の検証
+    from harmonica_map import (
+        ALTERNATIVE_PRESETS,
+        get_note_fingering,
+        get_note_fingering_for_song,
+        apply_fingering_preset,
+        DEFAULT_HARMONICA_MAP,
+    )
+
+    p_pri = ALTERNATIVE_PRESETS["スライド優先"]
+    # ファ (53, 65, 77, 89) が吹ONとして定義されていること
+    assert 53 in p_pri and p_pri[53]["action"] == "吹" and p_pri[53]["lever"] == "ON"
+    assert 65 in p_pri and p_pri[65]["action"] == "吹" and p_pri[65]["lever"] == "ON"
+    assert 77 in p_pri and p_pri[77]["action"] == "吹" and p_pri[77]["lever"] == "ON"
+    assert 89 in p_pri and p_pri[89]["action"] == "吹" and p_pri[89]["lever"] == "ON"
+
+    # ミ (64, 76, 88) に誤った吸ON定義が存在しないこと
+    assert 64 not in p_pri
+    assert 76 not in p_pri
+    assert 88 not in p_pri
+
+    # ド (60, 72, 84) が吸ONとして定義されていること
+    assert 60 in p_pri and p_pri[60]["action"] == "吸" and p_pri[60]["lever"] == "ON"
+    assert 72 in p_pri and p_pri[72]["action"] == "吸" and p_pri[72]["lever"] == "ON"
+    assert 84 in p_pri and p_pri[84]["action"] == "吸" and p_pri[84]["lever"] == "ON"
+
+    # 12穴モデルでの C4 (60) 保護検証:
+    import harmonica_map
+    harmonica_map.CURRENT_SONG_PRESET = "スライド優先"
+    apply_fingering_preset("スライド優先")
+
+    # 16穴モデルでは 4穴 吸 ON
+    f_16 = get_note_fingering(60, "16穴 (64音 / C3〜D7)")
+    assert f_16["hole"] == 4 and f_16["action"] == "吸" and f_16["lever"] == "ON"
+
+    # 12穴モデルでは 4穴が存在しないため、5穴 吹 OFF (C4) に保護されること
+    f_12 = get_note_fingering(60, "12穴 (48音 / C4〜D7)")
+    assert f_12["hole"] == 5 and f_12["action"] == "吹" and f_12["lever"] == "OFF"
+
+    f_song_12 = get_note_fingering_for_song(0, 60, "12穴 (48音 / C4〜D7)")
+    assert f_song_12["hole"] == 5 and f_song_12["action"] == "吹" and f_song_12["lever"] == "OFF"
+
+    # ファ (65 = F4) は 12穴でも 6穴 吹 ON (スライド優先時)
+    f_song_f4 = get_note_fingering_for_song(0, 65, "12穴 (48音 / C4〜D7)")
+    assert f_song_f4["hole"] == 6 and f_song_f4["action"] == "吹" and f_song_f4["lever"] == "ON"
+
+    # 2. 課題 60: スライドレバーの押しっぱなし（2分休符未満ホールド）処理の検証
+    from midi_timeline import MidiTimelineData
+    timeline = MidiTimelineData()
+    timeline.ticks_per_beat = 480  # 4分音符=480, 2分音符=960 ticks
+
+    # テストノーツの構築:
+    # ノート1: tick 0〜480 (0.0〜0.5s), lever ON (C#4)
+    # 隙間: 240 ticks (8分休符 = 0.25s) < 960 ticks (2分休符) -> ホールド継続すべき
+    # ノート2: tick 720〜1200 (0.75〜1.25s), lever ON (D#4)
+    # 隙間: 1200 ticks (2分休符以上 = 1.25s) >= 960 ticks -> 一旦離すべき
+    # ノート3: tick 2400〜2880 (2.5〜3.0s), lever ON (F#4)
+    # 隙間: 240 ticks (8分休符) だが間に lever OFF ノーツあり -> 離すべき
+    # ノート4: tick 3120〜3600 (3.25〜3.75s), lever OFF (G4)
+    # ノート5: tick 3840〜4320 (4.0〜4.5s), lever ON (G#4)
+
+    timeline.main_notes = [
+        {"note": 61, "start_tick": 0, "dur_tick": 480, "start_sec": 0.0, "dur_sec": 0.5, "end_sec": 0.5, "lever": "ON", "is_muted": False, "hole": 5, "action": "吹"},
+        {"note": 63, "start_tick": 720, "dur_tick": 480, "start_sec": 0.75, "dur_sec": 0.5, "end_sec": 1.25, "lever": "ON", "is_muted": False, "hole": 5, "action": "吸"},
+        {"note": 66, "start_tick": 2400, "dur_tick": 480, "start_sec": 2.5, "dur_sec": 0.5, "end_sec": 3.0, "lever": "ON", "is_muted": False, "hole": 6, "action": "吸"},
+        {"note": 67, "start_tick": 3120, "dur_tick": 480, "start_sec": 3.25, "dur_sec": 0.5, "end_sec": 3.75, "lever": "OFF", "is_muted": False, "hole": 7, "action": "吹"},
+        {"note": 68, "start_tick": 3840, "dur_tick": 480, "start_sec": 4.0, "dur_sec": 0.5, "end_sec": 4.5, "lever": "ON", "is_muted": False, "hole": 7, "action": "吹"},
+    ]
+
+    timeline._build_lever_hold_intervals()
+
+    # ノート1発音中 (0.2s): ホールドされている
+    assert timeline.is_lever_held(0.2) is True
+    # ノート1とノート2の間の休符 (0.6s): 2分休符未満なのでホールド継続！
+    assert timeline.is_lever_held(0.6) is True
+    # ノート2発音中 (1.0s): ホールドされている
+    assert timeline.is_lever_held(1.0) is True
+    # ノート2終了直後 (1.3s): 隙間が2分休符以上あるためレバーOFF！
+    assert timeline.is_lever_held(1.3) is False
+    assert timeline.is_lever_held(2.0) is False
+    # ノート3発音中 (2.7s): ホールドされている
+    assert timeline.is_lever_held(2.7) is True
+    # ノート3とノート4の間、またはノート4発音中 (3.5s): lever OFF ノーツがあるためレバーOFF！
+    assert timeline.is_lever_held(3.5) is False
+    # ノート5発音中 (4.2s): ホールドされている
+    assert timeline.is_lever_held(4.2) is True
+    # ノート5終了後 (4.6s): 終了後はレバーOFF！
+    assert timeline.is_lever_held(4.6) is False
+
+    print("  -> PASS: QA Issues 59 & 60 (Slide priority F/E, 12-hole C4 guard, & Lever hold) 100% verified!")
+
+
 def run_all_v420_tests():
     print("=" * 70)
     print("Harmonica Visualizer Ver.4.2.0 Studio Complete Verification Suite")
@@ -545,6 +644,7 @@ def run_all_v420_tests():
     test_15_qa_issues_51_to_53()
     test_16_qa_issues_54_to_57()
     test_17_qa_issue_58()
+    test_18_qa_issues_59_60()
     print("=" * 70)
     print("🌟 ALL 17 INTEGRATION TESTS (18 ISSUES + 12 AUDITS + 17 QA FIXES) PASSED PERFECTLY! 🌟")
     print("=" * 70)
