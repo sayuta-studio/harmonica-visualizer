@@ -22,6 +22,10 @@ from harmonica_map import (
 )
 from config import get_note_dest_x, get_portable_path
 
+# 定数定義 (マジックナンバー排除)
+MIDI_DRUM_CHANNEL: int = 9  # Standard GM Percussion/Drum Channel (0-indexed channel 10)
+HALF_REST_BEATS: int = 2   # 2分休符相当の拍数（スライド音レバー保持の接続閾値）
+
 # デフォルト組み込み高品位クロマチックハーモニカ音階デモ（16進数バイト列）
 DEMO_MIDI_HEX = (
     "4d546864000000060001000101e04d54726b0000023f00ff031d31362d486f6c652043204368726f6d61746963204861726d6f6e69636100"
@@ -312,7 +316,7 @@ class MidiTimelineData:
                     elif msg.type == "note_on" and msg.velocity > 0:
                         note_count += 1
                         ch_counts[msg.channel] = ch_counts.get(msg.channel, 0) + 1
-                        if msg.channel != 9 and 24 <= msg.note <= 98:
+                        if msg.channel != MIDI_DRUM_CHANNEL and 24 <= msg.note <= 98:
                             in_range_count += 1
 
             if note_count > 0:
@@ -481,10 +485,10 @@ class MidiTimelineData:
                     }
                     part_id = msg.channel if getattr(self, "split_by_channel", False) else t_idx
                     is_main = (part_id in self.main_track_indices)
-                    if is_main and msg.channel != 9 and 24 <= msg.note <= 98:
+                    if is_main and msg.channel != MIDI_DRUM_CHANNEL and 24 <= msg.note <= 98:
                         parsed_main.append(n_obj)
-                    elif not is_main or msg.channel == 9:
-                        if self.accomp_track_indices is None or (part_id in self.accomp_track_indices) or msg.channel == 9:
+                    elif not is_main or msg.channel == MIDI_DRUM_CHANNEL:
+                        if self.accomp_track_indices is None or (part_id in self.accomp_track_indices) or msg.channel == MIDI_DRUM_CHANNEL:
                             parsed_accomp.append(n_obj)
 
         # 終了しなかったノーツのクローズ
@@ -698,7 +702,7 @@ class MidiTimelineData:
         if not active_notes:
             return
 
-        max_gap_ticks = self.ticks_per_beat * 2  # 2分休符（2拍分）
+        max_gap_ticks = self.ticks_per_beat * HALF_REST_BEATS  # 2分休符（2拍分）
         merged = []
         cur_start_sec = None
         cur_end_sec = None
