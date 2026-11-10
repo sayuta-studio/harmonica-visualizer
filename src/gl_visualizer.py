@@ -1444,8 +1444,6 @@ class HarmonicaGLWidget(QOpenGLWidget):
                              Qt.AlignmentFlag.AlignCenter, "📱 下部UI（タイトル・アカウント名）被りエリア")
             painter.restore()
 
-        painter.end()
-
     def _draw_procedural_lever(self, painter, lever_x, y_center_s, scale, lever_pressed):
         """テクスチャ画像がない場合のプロシージャルメタリックレバー描画 (v2.1準拠)"""
         btn_w = max(1.0, 16.0 * scale)
