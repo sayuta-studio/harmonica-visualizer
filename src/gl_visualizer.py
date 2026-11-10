@@ -1371,7 +1371,14 @@ class HarmonicaGLWidget(QOpenGLWidget):
                     rect_note = QRectF(cx - w_pitch_s * 0.5, y_center_s + 50.0 * scale, w_pitch_s, 20.0 * scale)
                     _draw_bordered_text_qt(painter, rect_note, note_text, self.font_note, self.color_white, self.color_black, border_w=2.0 * scale)
 
-        # 7. モードHUDバナー (運指変更モード / 非表示モード) & フローティングトースト描画
+        # 7. モードHUDバナー (運指変更モード / 非表示モード) & トースト & セーフゾーン描画
+        self._draw_hud_overlays(painter, x_start, y_offset, total_w, y_center_s, scale, disp_w, disp_h, x_offset)
+
+        painter.end()
+
+    def _draw_hud_overlays(self, painter, x_start: float, y_offset: float, total_w: float,
+                           y_center_s: float, scale: float, disp_w: float, disp_h: float, x_offset: float):
+        """各種HUDオーバーレイ（運指変更・非表示モードバナー、トースト通知、Shortsセーフゾーン）の描画"""
         if getattr(self, "mute_edit_mode", False):
             banner_rect = QRectF(x_start + 10.0 * scale, y_offset + 8.0 * scale, total_w - 20.0 * scale, 24.0 * scale)
             painter.setPen(QPen(QColor("#F43F5E"), 1.0))
@@ -1403,7 +1410,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
             painter.setFont(font_toast)
             painter.drawText(toast_rect, Qt.AlignmentFlag.AlignCenter, self.toast_msg)
 
-        # 6.5. Shortsセーフゾーンガイド枠描画 (案C: 9:16かつshow_safe_zone有効時)
+        # Shortsセーフゾーンガイド枠描画 (9:16かつshow_safe_zone有効時)
         if getattr(self, "show_safe_zone", False) and "9:16" in str(self.aspect_ratio):
             painter.save()
             sz_top = y_offset + int(disp_h * 0.14)

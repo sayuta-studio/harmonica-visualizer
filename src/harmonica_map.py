@@ -483,24 +483,27 @@ def apply_monophonic_filter(main_notes: list, mode: str = "すべて有効", cus
                 if s2 >= e1:
                     break
 
-                # 0.03秒以上の重複がある場合のみ重なり音と判定
+                # 0.03秒以上の重複がある場合のみ重なり音と判定（ガード節でネスト平坦化）
                 overlap = min(e1, e2) - max(s1, s2)
-                if overlap >= 0.03:
-                    p2 = n2["note"]
-                    if p1 == p2:
-                        continue
-                    if mode == "高音優先 (上パート)":
-                        # 低い方をグレーアウト (is_muted = True)
-                        if p1 < p2:
-                            n1["is_muted"] = True
-                        else:
-                            n2["is_muted"] = True
-                    elif mode == "低音優先 (下パート)":
-                        # 高い方をグレーアウト (is_muted = True)
-                        if p1 > p2:
-                            n1["is_muted"] = True
-                        else:
-                            n2["is_muted"] = True
+                if overlap < 0.03:
+                    continue
+
+                p2 = n2["note"]
+                if p1 == p2:
+                    continue
+
+                if mode == "高音優先 (上パート)":
+                    # 低い方をグレーアウト (is_muted = True)
+                    if p1 < p2:
+                        n1["is_muted"] = True
+                    else:
+                        n2["is_muted"] = True
+                elif mode == "低音優先 (下パート)":
+                    # 高い方をグレーアウト (is_muted = True)
+                    if p1 > p2:
+                        n1["is_muted"] = True
+                    else:
+                        n2["is_muted"] = True
 
     # 2. 個別ノーツの例外オーバーライドの適用 (移調に不変な原曲ノート番号 raw_note をキーとする)
     for nd in main_notes:
