@@ -28,7 +28,8 @@ from config import (
     CANVAS_WIDTH, W_PITCH, D_HOLE,
     get_canvas_height_by_ratio, get_y_trajectory_params,
     get_layout_params, get_lever_highlight_color, get_portable_path,
-    format_hole_number
+    format_hole_number, is_hole_number_visible,
+    calc_trajectory_x, calc_vertical_band_layout
 )
 from harmonica_map import (
     SONG_MUTED_NOTES, save_song_profile, FINGERING_CANDIDATES, SONG_FINGERING_OVERRIDES, save_song_fingering,
@@ -36,16 +37,7 @@ from harmonica_map import (
 )
 
 
-def _calc_trajectory_x(yv, lane_l, lane_r, dest_l, dest_r, y_col, y_str, h_diag):
-    """斜め収束軌道のX座標計算"""
-    if yv >= y_str or h_diag <= 0:
-        return dest_l, dest_r, (dest_l + dest_r) * 0.5
-    if yv <= y_col:
-        return lane_l, lane_r, (lane_l + lane_r) * 0.5
-    ratio = (yv - y_col) / h_diag
-    xl = lane_l + (dest_l - lane_l) * ratio
-    xr = lane_r + (dest_r - lane_r) * ratio
-    return xl, xr, (xl + xr) * 0.5
+_calc_trajectory_x = calc_trajectory_x
 
 
 def _draw_bordered_text_qt(painter, rect: QRectF, text: str, font: QFont,
@@ -339,25 +331,9 @@ class HarmonicaGLWidget(QOpenGLWidget):
 
         disp_w = CANVAS_WIDTH * scale
         disp_h = base_h * scale
-        if "9:16" in str(self.aspect_ratio):
-            if "Shorts安全" in str(self.vertical_layout_mode) or "セーフゾーン" in str(self.vertical_layout_mode):
-                target_h = base_h
-                eff_y_offset = y_offset - int(disp_h * 0.22)
-            elif "16:9" in str(self.vertical_layout_mode):
-                target_h = 540.0
-                band_h = target_h * scale
-                if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
-                    eff_y_offset = y_offset + int(disp_h * 0.04)
-                elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
-                    eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
-                else: # 中央
-                    eff_y_offset = y_offset + (disp_h - band_h) * 0.5
-            else:
-                target_h = base_h
-                eff_y_offset = y_offset
-        else:
-            target_h = base_h
-            eff_y_offset = y_offset
+        eff_y_offset, target_h, band_h, _ = calc_vertical_band_layout(
+            self.aspect_ratio, self.vertical_layout_mode, base_h, disp_h, scale, y_offset
+        )
 
         y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(target_h, self.trajectory_mode)
         visible_indices, x_start_base, x_shift, x_shift_notes = get_layout_params(self.inst_type, 1.0)
@@ -743,25 +719,9 @@ class HarmonicaGLWidget(QOpenGLWidget):
             except Exception as ex:
                 print(f"[Warning] Background image draw error: {ex}")
 
-        if "9:16" in str(self.aspect_ratio):
-            if "Shorts安全" in str(self.vertical_layout_mode) or "セーフゾーン" in str(self.vertical_layout_mode):
-                target_h = base_h
-                eff_y_offset = y_offset - int(disp_h * 0.22)
-            elif "16:9" in str(self.vertical_layout_mode):
-                target_h = 540.0
-                band_h = target_h * scale
-                if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
-                    eff_y_offset = y_offset + int(disp_h * 0.04)
-                elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
-                    eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
-                else: # 中央
-                    eff_y_offset = y_offset + (disp_h - band_h) * 0.5
-            else:
-                target_h = base_h
-                eff_y_offset = y_offset
-        else:
-            target_h = base_h
-            eff_y_offset = y_offset
+        eff_y_offset, target_h, band_h, _ = calc_vertical_band_layout(
+            self.aspect_ratio, self.vertical_layout_mode, base_h, disp_h, scale, y_offset
+        )
 
         y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(target_h, self.trajectory_mode)
         visible_indices, x_start_base, x_shift, x_shift_notes = get_layout_params(self.inst_type, 1.0)
@@ -857,7 +817,7 @@ class HarmonicaGLWidget(QOpenGLWidget):
             p.setBrush(self.color_led_off)  # #080808
             p.drawEllipse(hole_rect)
 
-            if self.show_hole_num and "非表示" not in getattr(self, "hole_num_style", ""):
+            if is_hole_number_visible(self.show_hole_num, getattr(self, "hole_num_style", "")):
                 num_rect = QRectF(cx - w_pitch_s * 0.5, y_center_s + 14.0 * scale, w_pitch_s, 20.0 * scale)
                 num_str = format_hole_number(k, self.inst_type, getattr(self, "hole_num_style", "実機標準 (低音ドット付)"))
                 _draw_bordered_text_qt(p, num_rect, num_str, self.font_hole, self.color_white, self.color_black, border_w=1.5 * scale)
@@ -979,29 +939,10 @@ class HarmonicaGLWidget(QOpenGLWidget):
         cur_sec = self.clock.get_current_base_sec(lookahead_sec=0.008)
 
         # レイアウトパラメータ取得
-        if "9:16" in str(self.aspect_ratio):
-            if "Shorts安全" in str(self.vertical_layout_mode) or "セーフゾーン" in str(self.vertical_layout_mode):
-                target_h = base_h
-                eff_y_offset = y_offset - int(disp_h * 0.22)
-                clip_rect = None
-            elif "16:9" in str(self.vertical_layout_mode):
-                target_h = 540.0
-                band_h = target_h * scale
-                if str(self.vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(self.vertical_layout_mode):
-                    eff_y_offset = y_offset + int(disp_h * 0.04)
-                elif str(self.vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(self.vertical_layout_mode):
-                    eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
-                else: # 中央
-                    eff_y_offset = y_offset + (disp_h - band_h) * 0.5
-                clip_rect = QRectF(x_offset, eff_y_offset, disp_w, band_h)
-            else:
-                target_h = base_h
-                eff_y_offset = y_offset
-                clip_rect = None
-        else:
-            target_h = base_h
-            eff_y_offset = y_offset
-            clip_rect = None
+        eff_y_offset, target_h, band_h, has_clip = calc_vertical_band_layout(
+            self.aspect_ratio, self.vertical_layout_mode, base_h, disp_h, scale, y_offset
+        )
+        clip_rect = QRectF(x_offset, eff_y_offset, disp_w, band_h) if has_clip else None
 
         y_center, y_col, y_str, y_hole, h_diag, h_str = get_y_trajectory_params(target_h, self.trajectory_mode)
         visible_indices, x_start_base, x_shift, x_shift_notes = get_layout_params(self.inst_type, 1.0)

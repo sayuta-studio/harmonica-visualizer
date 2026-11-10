@@ -451,3 +451,53 @@ def format_hole_number(hole_index: int, inst_type: str = "16穴 (64音・C調)",
         return str(k - 1)
     else:
         return str(k + 1)
+
+
+def is_hole_number_visible(show_hole_num: bool, hole_num_style: str = "") -> bool:
+    """穴番号が表示対象かどうかを判定（「非表示」スタイルまたは show_hole_num=False であれば False）"""
+    return bool(show_hole_num) and ("非表示" not in str(hole_num_style))
+
+
+def calc_trajectory_x(yv: float, lane_l: float, lane_r: float, dest_l: float, dest_r: float,
+                      y_col: float, y_str: float, h_diag: float):
+    """斜め収束軌道のX座標計算（ノーツ左端、右端、中心Xを返却）"""
+    if yv >= y_str or h_diag <= 0:
+        return dest_l, dest_r, (dest_l + dest_r) * 0.5
+    if yv <= y_col:
+        return lane_l, lane_r, (lane_l + lane_r) * 0.5
+    ratio = (yv - y_col) / h_diag
+    xl = lane_l + (dest_l - lane_l) * ratio
+    xr = lane_r + (dest_r - lane_r) * ratio
+    return xl, xr, (xl + xr) * 0.5
+
+
+def calc_vertical_band_layout(aspect_ratio: str, vertical_layout_mode: str, base_h: float,
+                              disp_h: float, scale: float, y_offset: float):
+    """
+    9:16 Shorts および各種アスペクト比におけるハーモニカ帯の有効Yオフセット、基準高さ、帯高さ、クリップ要否を一元計算。
+    戻り値: (eff_y_offset: float, target_h: float, band_h: float, has_clip: bool)
+    """
+    if "9:16" in str(aspect_ratio):
+        if "Shorts安全" in str(vertical_layout_mode) or "セーフゾーン" in str(vertical_layout_mode):
+            target_h = base_h
+            eff_y_offset = y_offset - int(disp_h * 0.22)
+            return eff_y_offset, target_h, target_h * scale, False
+        elif "16:9" in str(vertical_layout_mode):
+            target_h = 540.0
+            band_h = target_h * scale
+            if str(vertical_layout_mode).startswith("上半分") or "上半分 16:9" in str(vertical_layout_mode):
+                eff_y_offset = y_offset + int(disp_h * 0.04)
+            elif str(vertical_layout_mode).startswith("下半分") or "下半分 16:9" in str(vertical_layout_mode):
+                eff_y_offset = y_offset + disp_h - band_h - int(disp_h * 0.04)
+            else:  # 中央
+                eff_y_offset = y_offset + (disp_h - band_h) * 0.5
+            return eff_y_offset, target_h, band_h, True
+        else:
+            target_h = base_h
+            eff_y_offset = y_offset
+            return eff_y_offset, target_h, target_h * scale, False
+    else:
+        target_h = base_h
+        eff_y_offset = y_offset
+        return eff_y_offset, target_h, target_h * scale, False
+
