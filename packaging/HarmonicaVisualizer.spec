@@ -30,6 +30,7 @@ a = Analysis(
         'numpy',
         'mido',
         'PIL',
+        'ui_widgets',
     ],
     hookspath=[],
     hooksconfig={},
