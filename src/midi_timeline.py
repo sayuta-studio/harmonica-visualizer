@@ -18,6 +18,7 @@ from harmonica_map import (
     is_note_in_range,
     is_note_editable,
     get_note_name,
+    get_instrument_range,
 )
 from config import get_note_dest_x, get_portable_path
 
@@ -550,7 +551,6 @@ class MidiTimelineData:
         if not active_notes:
             return {"status": "empty", "message": "主旋律ノーツが存在しません"}
 
-        from harmonica_map import get_instrument_range, get_note_name
         target_inst = inst_type or self.inst_type
         inst_min, inst_max = get_instrument_range(target_inst)
 

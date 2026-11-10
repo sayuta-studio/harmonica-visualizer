@@ -18,6 +18,7 @@ import time
 import math
 from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF, QRect, pyqtSignal
 from PyQt6.QtGui import (
+    QImageReader,
     QPainter, QColor, QPen, QBrush, QFont, QPixmap, QImage, QTransform,
     QPolygonF, QFontMetricsF, QRadialGradient
 )
@@ -30,6 +31,7 @@ from config import (
     format_hole_number
 )
 from harmonica_map import (
+    SONG_MUTED_NOTES, save_song_profile, FINGERING_CANDIDATES, SONG_FINGERING_OVERRIDES, save_song_fingering,
     is_note_in_range, get_note_name, get_hole_4_notes, BLOW_NOTES_MIDI
 )
 
@@ -420,7 +422,6 @@ class HarmonicaGLWidget(QOpenGLWidget):
         raw_pitch = nd.get("raw_note", nd["note"])
         key = f"{round(start_sec, 3)}_{raw_pitch}"
         new_muted = not nd.get("is_muted", False)
-        from harmonica_map import SONG_MUTED_NOTES, save_song_profile
         SONG_MUTED_NOTES[key] = new_muted
 
         # 単音化モード（高音優先/低音優先）設定時のみ、有効化した際に同タイミングの重複ノーツを自動除外 (シーソー動作)
@@ -455,12 +456,6 @@ class HarmonicaGLWidget(QOpenGLWidget):
         pitch = nd["note"]
         start_tick = nd["start_tick"]
         lookup_note = pitch + 36 if "バス" in self.inst_type else pitch
-
-        from harmonica_map import (
-            FINGERING_CANDIDATES,
-            SONG_FINGERING_OVERRIDES,
-            save_song_fingering
-        )
 
         if lookup_note not in FINGERING_CANDIDATES:
             return
@@ -696,7 +691,6 @@ class HarmonicaGLWidget(QOpenGLWidget):
         if self.bg_image_enabled and self.bg_image_path and os.path.isfile(self.bg_image_path):
             try:
                 if self.bg_image_path != self._cached_bg_path or self._cached_bg_image is None:
-                    from PyQt6.QtGui import QImageReader
                     reader = QImageReader(self.bg_image_path)
                     reader.setAutoTransform(True)
                     self._cached_bg_image = reader.read()

@@ -14,6 +14,7 @@ import json
 import shutil
 import hashlib
 from typing import Optional, Dict, Any
+from PyQt6.QtWidgets import QMessageBox
 
 from config import get_portable_path
 
@@ -223,7 +224,6 @@ def resolve_song_project(midi_path: str, interactive_parent=None) -> dict:
         if stored_sha and file_sha256 and stored_sha != file_sha256:
             should_create_new = True
             if interactive_parent is not None:
-                from PyQt6.QtWidgets import QMessageBox
                 ans = QMessageBox.question(
                     interactive_parent,
                     "同名MIDI衝突の検知",

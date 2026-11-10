@@ -36,12 +36,14 @@ from ipc_state import SharedClockBridge
 from midi_timeline import MidiTimelineData
 from gl_visualizer import HarmonicaGLWidget
 from audio_engine import AudioEngine, AudioRecorder, AuditionPlayer, apply_harmonica_reverb_numpy, resolve_clean_recording_path, get_reverb_cache_path
-from dialogs import PartSelectDialog, AudioTrackMixerDialog, HarmonicaSettingsDialog
+import dialogs
+from dialogs import PartSelectDialog, AudioTrackMixerDialog, HarmonicaSettingsDialog, SkinSelectDialog, FingeringEditorDialog
 import settings_manager
 import project_manager
 from studio_controller import StudioExportMixin
 import harmonica_map
-from harmonica_map import CURRENT_SONG_PRESET, apply_fingering_preset
+from harmonica_map import CURRENT_SONG_PRESET, apply_fingering_preset, normalize_fingering_preset
+import config
 from config import get_portable_path
 
 # 共通ダークモードスタイルシート (DAW仕様 クラシックL型)
@@ -605,7 +607,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.setAcceptDrops(True)
 
         # 0. デフォルト3Dスキン生成
-        import config
         config.generate_default_skins()
 
         # 1. ユーザー設定ロード
@@ -1347,7 +1348,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.combo_fing_preset = QComboBox(self)
         self.combo_fing_preset.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.combo_fing_preset.addItems(["スライド最小化 (標準)", "スライド優先 (異名同音)"])
-        from harmonica_map import normalize_fingering_preset
         self.combo_fing_preset.setCurrentText(normalize_fingering_preset(self.user_settings.get("fingering_preset", "スライド最小化 (標準)")))
         self.combo_fing_preset.setToolTip("同音異穴が存在するノーツの自動運指選択ルール（最小化＝スライドOFF優先 / 優先＝同音異名ON活用）")
         self.combo_fing_preset.currentTextChanged.connect(self._on_fingering_preset_changed)
@@ -2870,34 +2870,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.spin_jump.setValue(new_m)
         self._on_jump_measure()
 
-    def _on_visual_target_changed(self, target_text: str):
-        """画面作りタブで編集する対象（練習用スタイル vs 動画プリセット）の切り替え"""
-        if "動画プリセット" in target_text:
-            self._visual_edit_target = "video"
-            active_p = settings_manager.get_working_video_state(self.user_settings)
-            p_name = self.user_settings.get("active_video_preset", "📱 YouTube Shorts (縦型・解説)")
-            ratio = active_p.get("aspect_ratio", "16:9")
-            is_chroma = "クロマキー" in active_p.get("export_style", "")
-            chroma_col = active_p.get("export_bg_color", "ノーマル（黒）")
-            self._apply_visual_dict_to_ui_and_gl(active_p, aspect_ratio=ratio, is_chromakey=is_chroma, chroma_color=chroma_col)
-            if hasattr(self, "lbl_visual_target_hint"):
-                self.lbl_visual_target_hint.setText(f"現在: 動画プリセット [{p_name}] を編集中（比率: {ratio}）")
-                self.lbl_visual_target_hint.setStyleSheet("color: #F43F5E; font-size: 10px; font-weight: bold;")
-            if hasattr(self, "f_ratio"):
-                self.f_ratio.setEnabled(True)
-            if hasattr(self, "w_design_preset_bar"):
-                self.w_design_preset_bar.setVisible(True)
-        else:
-            self._visual_edit_target = "practice"
-            pv = self.user_settings.get("practice_visual", settings_manager.DEFAULT_PRACTICE_VISUAL)
-            self._apply_visual_dict_to_ui_and_gl(pv, aspect_ratio="16:9", is_chromakey=False, chroma_color="ノーマル（黒）")
-            if hasattr(self, "lbl_visual_target_hint"):
-                self.lbl_visual_target_hint.setText("現在: 練習用スタイルを編集中（常時16:9・日常の作業環境）")
-                self.lbl_visual_target_hint.setStyleSheet("color: #38BDF8; font-size: 10px;")
-            if hasattr(self, "f_ratio"):
-                self.f_ratio.setEnabled(False)
-            if hasattr(self, "w_design_preset_bar"):
-                self.w_design_preset_bar.setVisible(False)
 
     def _on_tab_changed(self, index: int):
         if index == 0:
@@ -3896,11 +3868,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             f"現在の「練習画面」の見た目設定を動画制作画面にコピーしました。\n（プリセット「{active}」に恒久保存する場合は「💾 保存」を押してください）"
         )
 
-    def _on_jump_design_for_video(self):
-        """「🎨 このプリセットの画面デザインを編集...」ボタン：画面作りタブに移動し、ターゲットを動画プリセットに設定"""
-        self.tab_widget.setCurrentIndex(1)
-        if hasattr(self, "combo_visual_target"):
-            self.combo_visual_target.setCurrentIndex(1)
 
     def _on_title_template_changed(self, text: str):
         """タイトル配置テンプレート切替時、「なし」なら入力項目をグレーアウト"""
@@ -3994,12 +3961,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.sidebar_frame.setVisible(not is_visible)
         self.btn_toggle_sidebar.setText("◀ パネル" if is_visible else "▶ 全画面")
 
-    def _on_future_feature_clicked(self, feature_name: str, step_name: str):
-        self.lbl_status_msg.setText(f"ℹ️ {feature_name} は {step_name} で実装予定です")
-        QMessageBox.information(
-            self, "将来実装機能",
-            f"【{feature_name}】\n\nこの機能はロードマップの「{step_name}」にて実装・統合予定です。\n現在はレイアウトプレースホルダーとして配置されています。"
-        )
 
     # =========================================================================
     # カラーテーマ・装飾ハンドラ
@@ -4052,11 +4013,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
     # =========================================================================
     # 背景画像 & スキンハンドラ
     # =========================================================================
-    def _on_bg_enable_toggled(self, checked: bool):
-        self.gl_widget.bg_image_enabled = checked
-        self.gl_widget.update()
-        self.lbl_status_msg.setText(f"🖼️ 背景画像表示: {'ON' if checked else 'OFF'}")
-        self._save_current_settings()
 
     def _on_select_bg_image(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -4120,7 +4076,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self._save_current_settings()
 
     def _on_select_custom_skin(self):
-        from dialogs import SkinSelectDialog
         dlg = SkinSelectDialog(self.user_settings, parent=self)
         if dlg.exec():
             res = dlg.get_selected_skins()
@@ -4141,7 +4096,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.lbl_status_msg.setText("🎨 ハーモニカスキン設定を更新しました")
 
     def _on_reset_preset_skin(self):
-        from config import get_portable_path
         skins_dir = get_portable_path("skins")
         self.gl_widget.set_custom_skins(
             mouthpiece_path=os.path.join(skins_dir, "マウスピース_メタル.png"),
@@ -4157,7 +4111,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self.lbl_status_msg.setText("↺ スキンを標準メタル・シルバーに初期化しました")
 
     def _on_fingering_preset_changed(self, preset_name: str):
-        import harmonica_map
         harmonica_map.CURRENT_SONG_PRESET = preset_name
         harmonica_map.apply_fingering_preset(preset_name)
         if self.timeline and self.timeline.filepath:
@@ -4199,7 +4152,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         self._update_transpose_lock_state()
 
     def _on_open_fingering_dialog(self):
-        from dialogs import FingeringEditorDialog
         dlg = FingeringEditorDialog(
             timeline=self.timeline,
             clock=self.clock,
@@ -4222,8 +4174,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self.lbl_status_msg.setText("💾 変え指設定を保存・適用しました")
 
     def _on_reset_song_fingering(self):
-        from dialogs import confirm_dialog
-        if confirm_dialog(
+        if dialogs.confirm_dialog(
             self,
             "運指データの初期化確認",
             f"曲「{self.timeline.filename}」の個別運指データをすべて初期化（リセット）し、\n運指プリセットの初期状態へ戻しますか？",
@@ -4483,8 +4434,7 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
         cur_trans = self.spin_transpose.value()
         key_lbl = harmonica_map.format_transpose_key_label(cur_trans)
         
-        from dialogs import confirm_dialog
-        if not confirm_dialog(
+        if not dialogs.confirm_dialog(
             self,
             "別キー用の運指作成（移調ロック解除）",
             f"現在の運指（変え指）を現在のキー用パターン（例: {key_lbl}）として自動バックアップ保存した上で、\n"
@@ -4989,7 +4939,6 @@ class HarmonicaMainWindow(QMainWindow, StudioExportMixin):
             self._check_out_of_range_and_notify()
 
     def _on_monophonic_mode_changed(self, mode: str):
-        import harmonica_map
         harmonica_map.CURRENT_MONOPHONIC_MODE = mode
         self.timeline.set_monophonic_mode(mode)
         self.gl_widget.set_timeline_data(self.timeline)

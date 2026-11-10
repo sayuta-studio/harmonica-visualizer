@@ -20,6 +20,7 @@ import math
 import threading
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QRectF, QPointF
 from PyQt6.QtGui import (
+    QImageReader,
     QImage, QPainter, QColor, QPen, QBrush, QFont, QFontMetricsF, QPolygonF, QTransform, QRadialGradient
 )
 
@@ -32,7 +33,7 @@ from config import (
 from harmonica_map import (
     is_note_in_range, get_note_name, get_hole_4_notes, BLOW_NOTES_MIDI
 )
-from audio_engine import get_reverb_filter_arg, synthesize_midi_to_wav
+from audio_engine import get_reverb_filter_arg, synthesize_midi_to_wav, load_external_audio_pcm
 
 
 def calc_export_resolution(res_text: str, ratio_text: str) -> tuple[int, int]:
@@ -266,7 +267,6 @@ class OffscreenVisualizerRenderer:
         # 0. 背景画像 (完成動画モード時のみ)
         if not self.is_chromakey_mode and not self.is_transparent_mode and self.bg_image_path and os.path.isfile(self.bg_image_path):
             try:
-                from PyQt6.QtGui import QImageReader
                 reader = QImageReader(self.bg_image_path)
                 reader.setAutoTransform(True)
                 bg_raw = reader.read()
@@ -1175,7 +1175,6 @@ class VideoExportThread(QThread):
             else:
                 if audio_path and os.path.isfile(audio_path):
                     try:
-                        from audio_engine import load_external_audio_pcm
                         ext_audio_pcm = load_external_audio_pcm(audio_path, sample_rate=44100)
                     except Exception as e:
                         print(f"[VideoExportThread] 外部音源デコードエラー: {e}")

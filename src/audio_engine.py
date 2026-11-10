@@ -16,6 +16,14 @@ import time
 import bisect
 import threading
 import ctypes
+import wave
+import subprocess
+import numpy as np
+import pygame
+try:
+    import pygame._sdl2.audio as sdl2_audio
+except Exception:
+    sdl2_audio = None
 from ctypes import wintypes
 
 from ipc_state import SharedClockBridge
@@ -188,7 +196,6 @@ class AudioEngine:
         if self.synth_voices:
             return
         try:
-            import pygame
             if pygame.mixer.get_init() is None:
                 pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
             # ハーモニカ演奏音域 (24〜98) の倍音波形を事前キャッシュ
@@ -220,7 +227,6 @@ class AudioEngine:
         snd = self.synth_voices.get(note)
         if snd:
             try:
-                import pygame
                 ch = pygame.mixer.find_channel()
                 if ch:
                     vol = (max(0, min(127, velocity)) / 127.0) * self.volume_ratio if not self.is_muted else 0.0
@@ -653,8 +659,6 @@ class AudioEngine:
         """v2.1仕様の1600Hz電子音「ピッ」効果音オブジェクトを生成・返却"""
         if getattr(self, "_ui_beep_sound", None) is None:
             try:
-                import numpy as np
-                import pygame
                 if pygame.mixer.get_init() is None:
                     pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
                 sr = 44100
@@ -940,10 +944,8 @@ class AudioRecorder:
     def get_input_devices():
         """接続されているマイク・オーディオインターフェースの一覧を取得"""
         try:
-            import pygame
             if not pygame.get_init():
                 pygame.init()
-            import pygame._sdl2.audio as sdl2_audio
             names = sdl2_audio.get_audio_device_names(True)
             return list(names) if names else []
         except Exception as e:
@@ -953,10 +955,8 @@ class AudioRecorder:
     def start_recording(self, device_name=None, sample_rate=44100, channels=1):
         """マイク録音を開始 (PCM16 バッファ蓄積)"""
         try:
-            import pygame
             if not pygame.get_init():
                 pygame.init()
-            import pygame._sdl2.audio as sdl2_audio
 
             self.buffer = bytearray()
             self.sample_rate = int(sample_rate)
@@ -1005,7 +1005,6 @@ class AudioRecorder:
             return None, 0.0
 
         try:
-            import wave
             out_abs = os.path.abspath(output_wav_path)
             os.makedirs(os.path.dirname(out_abs), exist_ok=True)
 
@@ -1074,8 +1073,6 @@ def apply_harmonica_reverb_numpy(input_wav_path, output_wav_path, reverb_type="�
     Python/NumPy による高速かつ高品質なリバーブ付加（試聴・即時プレビュー用）。
     FFmpeg未導入や非同期呼び出しを必要とせず、10msオーダーで残響付きWAVを生成します。
     """
-    import wave
-    import numpy as np
 
     if not input_wav_path or not os.path.exists(input_wav_path):
         return None
@@ -1189,7 +1186,6 @@ class AuditionPlayer:
 
     def _init_mixer(self):
         try:
-            import pygame
             if not pygame.mixer.get_init():
                 pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
         except Exception as e:
@@ -1200,8 +1196,6 @@ class AuditionPlayer:
         if not file_path or not os.path.exists(file_path):
             return False
         try:
-            import pygame
-            import wave
             self._init_mixer()
             start_sec = max(0.0, float(start_sec))
             sound_created = False
@@ -1261,8 +1255,6 @@ class AuditionPlayer:
 # ==============================================================================
 # 高音質MIDI物理合成 ＆ 外部音源ロード・ノーマライズ (動画書き出し用)
 # ==============================================================================
-import wave
-import numpy as np
 
 
 def generate_harmonica_tone(freq, num_samples, sample_rate):
@@ -1322,7 +1314,6 @@ def generate_accompaniment_tone(freq, num_samples, sample_rate):
 
 def load_external_audio_pcm(filepath, sample_rate=44100):
     """外部オーディオファイルを44.1kHz 16-bit 2chステレオのNumPy配列として読み込み"""
-    import subprocess
     if not filepath or not os.path.exists(filepath):
         raise FileNotFoundError(f"音源ファイルが見つかりません: {filepath}")
 
@@ -1349,7 +1340,6 @@ def load_external_audio_pcm(filepath, sample_rate=44100):
         print(f"[AudioEngine] FFmpegデコードフォールバック試行: {e}")
 
     try:
-        import pygame
         if pygame.mixer.get_init() is not None:
             snd = pygame.mixer.Sound(filepath)
             arr = pygame.sndarray.array(snd)

@@ -10,7 +10,20 @@ import os
 import sys
 import time
 import copy
+import subprocess
 import project_manager
+import settings_manager
+import harmonica_map
+from harmonica_map import (
+    CURRENT_SONG_PRESET,
+    CURRENT_MONOPHONIC_MODE,
+    normalize_fingering_preset,
+    FINGERING_CANDIDATES,
+    SONG_FINGERING_OVERRIDES,
+    SONG_MUTED_NOTES,
+    is_note_editable,
+    get_candidate_label,
+)
 from PyQt6.QtCore import Qt, QRectF, QUrl, QTimer
 from PyQt6.QtGui import QColor, QPixmap, QImage, QPainter, QPen, QBrush, QFont, QDesktopServices
 from PyQt6.QtWidgets import (
@@ -421,13 +434,11 @@ class HarmonicaSettingsDialog(QDialog):
     def _on_open_current_song_dir(self):
         p_dir = project_manager.get_active_project_dir()
         if not p_dir:
-            from config import get_portable_path
             p_dir = get_portable_path("projects/_demo_chromatic")
         self._open_dir(p_dir)
 
     def _open_dir(self, path: str):
         if not path:
-            from config import get_portable_path
             path = get_portable_path("projects/_demo_chromatic")
         try:
             os.makedirs(path, exist_ok=True)
@@ -693,7 +704,6 @@ class HarmonicaSettingsDialog(QDialog):
 
     def _refresh_presets_table(self):
         """公式5大プリセットの一覧テーブルを描画"""
-        import settings_manager
         presets_dict = self.settings.get("video_presets", {})
         official_names = list(settings_manager.DEFAULT_VIDEO_PRESETS.keys())
         self.table_presets.setRowCount(len(official_names))
@@ -730,7 +740,6 @@ class HarmonicaSettingsDialog(QDialog):
             default_yes=False
         ):
             return
-        import settings_manager
         if "video_presets" not in self.settings:
             self.settings["video_presets"] = {}
         for k, v in settings_manager.DEFAULT_VIDEO_PRESETS.items():
@@ -831,7 +840,6 @@ class PartSelectDialog(QDialog):
                             cm.blockSignals(True)
                             cm.setChecked(True)
                             cm.blockSignals(False)
-                            from PyQt6.QtWidgets import QMessageBox
                             QMessageBox.information(self, "主旋律選択", "主旋律トラックは最低1つ選択されている必要があります。")
 
                 def on_accomp_toggled(checked):
@@ -841,7 +849,6 @@ class PartSelectDialog(QDialog):
                             ca.blockSignals(True)
                             ca.setChecked(False)
                             ca.blockSignals(False)
-                            from PyQt6.QtWidgets import QMessageBox
                             QMessageBox.information(self, "主旋律選択", "このトラックは現在唯一の主旋律です。伴奏に変更する前に別の主旋律トラックを選択してください。")
                             return
                         cm.blockSignals(True)
@@ -953,7 +960,6 @@ class FingeringEditorDialog(QDialog):
         self.audio_engine = audio_engine
         self.gl_widget = gl_widget
 
-        import harmonica_map
         self._initial_overrides = copy.deepcopy(harmonica_map.SONG_FINGERING_OVERRIDES)
         self._initial_muted = copy.deepcopy(harmonica_map.SONG_MUTED_NOTES)
         self._initial_preset = harmonica_map.CURRENT_SONG_PRESET
@@ -1047,7 +1053,6 @@ class FingeringEditorDialog(QDialog):
         ctrl_layout.addWidget(QLabel("運指プリセット:"))
         self.combo_preset = QComboBox(self)
         self.combo_preset.addItems(["スライド最小化 (標準)", "スライド優先 (異名同音)"])
-        from harmonica_map import CURRENT_SONG_PRESET, CURRENT_MONOPHONIC_MODE, normalize_fingering_preset
         self.combo_preset.setCurrentText(normalize_fingering_preset(CURRENT_SONG_PRESET))
         self.combo_preset.currentTextChanged.connect(self._on_preset_changed)
         ctrl_layout.addWidget(self.combo_preset)
@@ -1165,12 +1170,6 @@ class FingeringEditorDialog(QDialog):
 
     def _populate_table(self):
         """現在のタイムライン主旋律ノーツを元にテーブルを構築"""
-        from harmonica_map import (
-            FINGERING_CANDIDATES,
-            SONG_FINGERING_OVERRIDES,
-            is_note_editable,
-            get_candidate_label
-        )
 
         self.table.setRowCount(0)
         self._row_note_map.clear()
@@ -1438,7 +1437,6 @@ class FingeringEditorDialog(QDialog):
 
     def _on_pattern_switched(self, idx: int):
         """運指パターンの切替"""
-        import harmonica_map
         p_name = self.combo_patterns.currentText()
         harmonica_map.CURRENT_ACTIVE_PATTERN_NAME = p_name
 
@@ -1500,7 +1498,6 @@ class FingeringEditorDialog(QDialog):
             QMessageBox.warning(self, "重複エラー", f"パターン「{new_name}」は既に存在します。")
             return
 
-        import harmonica_map
         cur_trans = getattr(self.timeline, "transpose_semitones", 0) if self.timeline else 0
         cur_trans_acc = getattr(self.timeline, "transpose_accomp", True) if self.timeline else True
         cur_snapshot = harmonica_map.build_current_pattern_snapshot(
@@ -1538,7 +1535,6 @@ class FingeringEditorDialog(QDialog):
 
     def _on_save_new_pattern(self):
         """現在の運指設定を別名パターンとして保存"""
-        import harmonica_map
         cur_trans = getattr(self.timeline, "transpose_semitones", 0) if self.timeline else 0
         cur_trans_acc = getattr(self.timeline, "transpose_accomp", True) if self.timeline else True
         key_lbl = harmonica_map.format_transpose_key_label(cur_trans)
@@ -1585,7 +1581,6 @@ class FingeringEditorDialog(QDialog):
         ):
             if p_name in self._patterns:
                 del self._patterns[p_name]
-                import harmonica_map
                 if self.timeline and self.timeline.filepath:
                     harmonica_map.save_song_profile(self.timeline.filepath, {"patterns": self._patterns})
             self._update_pattern_combo()
@@ -1593,7 +1588,6 @@ class FingeringEditorDialog(QDialog):
 
     def _revert_single_note(self, nd: dict, lookup_note: int):
         """指定ノーツの個別変え指カスタムを解除し標準に戻す"""
-        from harmonica_map import SONG_FINGERING_OVERRIDES
         start_tick = nd["start_tick"]
         key = (start_tick, lookup_note)
         if key in SONG_FINGERING_OVERRIDES:
@@ -1611,7 +1605,6 @@ class FingeringEditorDialog(QDialog):
 
     def _on_candidate_changed(self, row: int, nd: dict, lookup_note: int, candidates: list, new_idx: int):
         """候補コンボ変更時のリアルタイム反映 (メモリ上のみ更新・明示保存までファイル未保存)"""
-        from harmonica_map import SONG_FINGERING_OVERRIDES
 
         start_tick = nd["start_tick"]
         SONG_FINGERING_OVERRIDES[(start_tick, lookup_note)] = new_idx
@@ -1636,7 +1629,6 @@ class FingeringEditorDialog(QDialog):
         raw_pitch = nd.get("raw_note", nd["note"])
         key = f"{round(start_sec, 3)}_{raw_pitch}"
         new_muted = not nd.get("is_muted", False)
-        from harmonica_map import SONG_MUTED_NOTES
         SONG_MUTED_NOTES[key] = new_muted
 
         mono_mode = getattr(self.timeline, "monophonic_mode", "すべて有効") if self.timeline else "すべて有効"
@@ -1664,7 +1656,6 @@ class FingeringEditorDialog(QDialog):
 
     def _on_monophonic_mode_changed(self, mode: str):
         """重なり音（単音化モード）変更"""
-        import harmonica_map
         harmonica_map.CURRENT_MONOPHONIC_MODE = mode
         if self.timeline:
             self.timeline.set_monophonic_mode(mode)
@@ -1699,7 +1690,6 @@ class FingeringEditorDialog(QDialog):
 
     def _on_preset_changed(self, preset_name: str):
         """運指プリセット変更"""
-        import harmonica_map
         harmonica_map.CURRENT_SONG_PRESET = preset_name
         harmonica_map.apply_fingering_preset(preset_name)
 
@@ -1719,7 +1709,6 @@ class FingeringEditorDialog(QDialog):
             "個別設定したすべての変え指を解除し、プリセット標準の運指に戻しますか？\n（除外ノーツの状態はそのまま維持されます）",
             default_yes=False
         ):
-            import harmonica_map
             harmonica_map.SONG_FINGERING_OVERRIDES.clear()
             if self.timeline:
                 self.timeline.rebind_fingerings(self.timeline.inst_type)
@@ -1739,7 +1728,6 @@ class FingeringEditorDialog(QDialog):
             "除外（ミュート）されているすべてのノーツを有効化し、\n通常通り発音・表示される状態に戻しますか？\n（運指カスタムはそのまま維持されます）",
             default_yes=False
         ):
-            import harmonica_map
             harmonica_map.SONG_MUTED_NOTES.clear()
             if self.timeline:
                 self.timeline.rebind_fingerings(self.timeline.inst_type)
@@ -1753,7 +1741,6 @@ class FingeringEditorDialog(QDialog):
 
     def _on_save_and_close(self):
         """明示的に設定をファイルへ保存して閉じる"""
-        import harmonica_map
         if self.timeline and self.timeline.filepath:
             p_name = self.combo_patterns.currentText()
             harmonica_map.CURRENT_ACTIVE_PATTERN_NAME = p_name
@@ -1781,7 +1768,6 @@ class FingeringEditorDialog(QDialog):
     def reject(self):
         """ダイアログキャンセル/閉じる時の未保存変更破棄およびロールバック処理"""
         if not self._is_saved:
-            import harmonica_map
             has_changes = (
                 harmonica_map.SONG_FINGERING_OVERRIDES != self._initial_overrides or
                 harmonica_map.SONG_MUTED_NOTES != self._initial_muted or
@@ -1939,7 +1925,6 @@ class ExportProgressDialog(QDialog):
             self.accept()
 
     def _open_folder(self):
-        import subprocess
         norm_path = os.path.normpath(self.output_path)
         if os.path.isfile(norm_path):
             subprocess.Popen(f'explorer /select,"{norm_path}"')
@@ -2057,7 +2042,6 @@ class SkinSelectDialog(QDialog):
         self.setMinimumSize(680, 480)
         self.setModal(True)
 
-        from config import get_portable_path
         self.skins_dir = get_portable_path("skins")
 
         self.body_options = [

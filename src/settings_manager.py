@@ -568,18 +568,7 @@ def add_recent_file(file_path: str):
     save_settings(s)
 
 
-def extract_visual_from_settings(s: dict) -> dict:
-    """設定辞書からビジュアル関連キーのみを安全に抽出した辞書を返却"""
-    pv = s.get("practice_visual", {})
-    res = {}
-    for k in VISUAL_KEYS:
-        if k in pv:
-            res[k] = pv[k]
-        elif k in s:
-            res[k] = s[k]
-        else:
-            res[k] = DEFAULT_PRACTICE_VISUAL.get(k)
-    return res
+
 
 
 def get_active_preset_dict(s: dict) -> dict:
@@ -632,12 +621,4 @@ def delete_video_preset(preset_name: str) -> bool:
     return False
 
 
-def reset_default_preset(preset_name: str) -> bool:
-    """公式プリセットを初期状態値へリセット"""
-    if preset_name not in DEFAULT_VIDEO_PRESETS:
-        return False
-    s = load_settings()
-    presets = s.get("video_presets", {})
-    presets[preset_name] = copy.deepcopy(DEFAULT_VIDEO_PRESETS[preset_name])
-    save_settings(s)
-    return True
+

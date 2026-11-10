@@ -10,6 +10,12 @@
 
 import os
 import sys
+import math
+import shutil
+import colorsys
+import numpy as np
+# lazy import for harmonica_map to avoid circular dependency
+from PIL import Image, ImageDraw
 import shutil
 
 from pathlib import Path
@@ -96,20 +102,7 @@ def get_canvas_height_by_ratio(ratio_str):
     else:
         return 540.0   # 16:9 (ワイド標準)
 
-def get_y_layout_params(canvas_height):
-    """
-    全体のキャンバス高さ (canvas_height) に応じて、
-    下部基準でハーモニカ幾何学が1ミリも動かず完全不動となるように、
-    各Y軸の座標を計算・変換して返します（2段階ビジュアル基準）。
-    """
-    y_offset = canvas_height - 540
-    
-    y_center = 460 + y_offset        # 420から40px下げ
-    y_collide_line = 260 + y_offset  # 2段階モード標準の収束開始ライン
-    y_hole_line = 445 + y_offset     # 衝突終点をホールの最上端（入り口のフチ、穴の真上）へ同期設定！
-    height_converge = 185            # 2段階収束高さ（445 - 260 = 185）
-    
-    return y_center, y_collide_line, y_hole_line, height_converge
+
 
 
 def get_y_trajectory_params(canvas_height, trajectory_mode="3段階 (練習標準)"):
@@ -139,23 +132,7 @@ def get_y_trajectory_params(canvas_height, trajectory_mode="3段階 (練習標�
     return y_center, y_collide_line, y_straight_line, y_hole_line, height_diag, height_straight
 
 
-def get_visualizer_layout_params(ratio_str, max_w=960, max_h=540):
-    """
-    親フレームの有効領域 (max_w x max_h) 内にアスペクト比を厳密に維持して最大フィットするように、
-    表示用Canvasの物理幅 (width)、物理高さ (height)、および対応する描画スケール (scale) を解決します。
-    """
-    base_w = 960.0
-    base_h = float(get_canvas_height_by_ratio(ratio_str))
 
-    avail_w = max(304.0, float(max_w))
-    avail_h = max(240.0, float(max_h))
-
-    scale = min(avail_w / base_w, avail_h / base_h)
-    display_w = max(1, int(round(base_w * scale)))
-    display_h = max(1, int(round(base_h * scale)))
-    exact_scale = display_w / base_w
-
-    return display_w, display_h, exact_scale
 
 # カラーパレット (デフォルト値：SettingsController of テーマ機能によって動的に上書きされます)
 COLOR_BLOW_RGB = (255, 85, 0)     # 吹き：オレンジ
@@ -189,12 +166,7 @@ LEVER_WIDTH_DEFAULT = 48
 LEVER_HEIGHT_DEFAULT = 48
 
 
-def hex_to_rgb(hex_str):
-    """HEXカラーコード文字列 (#RRGGBB または #RGB) を (R, G, B) タプルに変換します。"""
-    hex_str = hex_str.lstrip('#')
-    if len(hex_str) == 3:
-        hex_str = "".join(c * 2 for c in hex_str)
-    return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
+
 
 
 def get_layout_params(inst_type, scale=1.0):
@@ -285,8 +257,6 @@ def draw_metallic_button_pil_flat(btn_w, btn_h, is_on=False):
     左上に光源をシミュレートした立体的な『扁平縦長ステンレス楕円ボタン』を
     Pillowで生成して返します（スキン自動生成および動画出力のフォールバック描画で共通利用）。
     """
-    import math
-    from PIL import Image
 
     img = Image.new("RGBA", (btn_w, btn_h), (0, 0, 0, 0))
     rx = btn_w / 2.0
@@ -338,7 +308,6 @@ def get_lever_highlight_color(hex_color):
     - 暗い〜中明度色:
       地色の色相を保持しつつ、明度と彩度を引き上げた高輝度ネオン発光ライン。
     """
-    import colorsys
     if not hex_color or not str(hex_color).startswith("#"):
         return "#FFFFFF"
     h_str = str(hex_color).lstrip("#")
@@ -364,22 +333,7 @@ def get_lever_highlight_color(hex_color):
     return f"#{int(round(hr * 255.0)):02X}{int(round(hg * 255.0)):02X}{int(round(hb * 255.0)):02X}"
 
 
-def get_lever_highlight_rgb(hex_color):
-    """NumPy/Pillow RGBタプル形式でレバーハイライト色を返します。"""
-    hi_hex = get_lever_highlight_color(hex_color).lstrip("#")
-    r = int(hi_hex[0:2], 16)
-    g = int(hi_hex[2:4], 16)
-    b = int(hi_hex[4:6], 16)
-    return (r, g, b)
 
-
-def get_lever_highlight_bgr(hex_color):
-    """OpenCV/NumPy BGRタプル形式でレバーハイライト色を返します。"""
-    hi_hex = get_lever_highlight_color(hex_color).lstrip("#")
-    r = int(hi_hex[0:2], 16)
-    g = int(hi_hex[2:4], 16)
-    b = int(hi_hex[4:6], 16)
-    return (b, g, r)
 
 
 
@@ -389,8 +343,6 @@ def generate_default_skins():
     skins/ 内にマウスピース・レバーのPNGスキンが存在しない場合、
     Pillowを用いて、美しく金属光沢を施した画像を動的に生成書き出しします。
     """
-    import numpy as np
-    from PIL import Image, ImageDraw
     skins_dir = get_portable_path("skins")
     os.makedirs(skins_dir, exist_ok=True)
     
